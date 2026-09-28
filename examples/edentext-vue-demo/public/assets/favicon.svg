@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="1.4 2.9 58.1 58.1">
+  <!-- Leaves and bud fold along the midrib into a light and a dark half. The stem stays
+       brand slate on every background: an <img> cannot see the app's theme. -->
+  <defs>
+    <linearGradient id="clay-light" x2="0" y2="1"><stop offset="0" stop-color="#eea583"/><stop offset="1" stop-color="#dc7d57"/></linearGradient>
+    <linearGradient id="clay-dark" x2="0" y2="1"><stop offset="0" stop-color="#c4643f"/><stop offset="1" stop-color="#9f4b2c"/></linearGradient>
+    <linearGradient id="slate-light" x2="0" y2="1"><stop offset="0" stop-color="#80a2c3"/><stop offset="1" stop-color="#5b7fa3"/></linearGradient>
+    <linearGradient id="slate-dark" x2="0" y2="1"><stop offset="0" stop-color="#48667f"/><stop offset="1" stop-color="#2f475e"/></linearGradient>
+  </defs>
+  <path fill="#4c6c8a" d="M34.2,59 C32.1,44 31.95,27 32.8,15 L30.4,15 C28.85,27 28.5,44 29.8,59 A2.2,2.2 0 0 0 34.2,59 Z"/>
+  <g transform="translate(-0.13,0) rotate(4 31 26)">
+    <path fill="url(#clay-light)" d="M31,26 C24,14 12,11 4,18 Q18,20 31,26 Z"/>
+    <path fill="url(#clay-dark)" d="M4,18 C11,29 23,31 31,26 Q18,20 4,18 Z"/>
+  </g>
+  <g transform="translate(-0.18,0) rotate(-4 31 42)">
+    <path fill="url(#slate-light)" d="M31,42 C38,30 50,27 58,34 Q44,36 31,42 Z"/>
+    <path fill="url(#slate-dark)" d="M58,34 C51,45 39,47 31,42 Q44,36 58,34 Z"/>
+  </g>
+  <g transform="translate(0.6,0)">
+    <path fill="url(#clay-light)" d="M31,15 C27.5,12 28,7 31,3.5 Z"/>
+    <path fill="url(#clay-dark)" d="M31,15 C34.5,12 34,7 31,3.5 Z"/>
+  </g>
+</svg>
