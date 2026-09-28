@@ -1,0 +1,33 @@
+{
+  "name": "edentext-vue",
+  "version": "0.1.0",
+  "description": "A browser-only Vue 3 rich-text document editor with ODT, DOCX and PDF export.",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/vue/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-edentext-vue-package.mjs",
+    "postpack": "node ../../scripts/prepare-edentext-vue-package.mjs --clean"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/vue/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./style.css": "./dist/style.css",
+    "./assets/*": "./dist/assets/*",
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "vue": "^3.4.0"
+  },
+  "sideEffects": ["./dist/style.css"]
+}

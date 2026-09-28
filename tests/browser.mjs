@@ -9,6 +9,8 @@ import * as playwright from 'playwright-core';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
 export function checker() {
   const failures = [];
@@ -26,8 +28,8 @@ export async function previewServer(port) {
     console.log('no dist/, building…');
     execSync('npm run build', { cwd: ROOT, stdio: 'inherit' });
   }
-  const proc = spawn('npm', ['run', 'preview', '--', '--port', String(port), '--strictPort'],
-    { cwd: ROOT, stdio: 'ignore', detached: true });
+  const proc = spawn(npmCommand, ['run', 'preview', '--', '--port', String(port), '--strictPort'],
+    { cwd: ROOT, stdio: 'ignore', detached: true, shell: process.platform === 'win32' });
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 500));
     if (await fetch(`http://localhost:${port}/`).then(() => true).catch(() => false)) return proc;
@@ -40,8 +42,8 @@ export async function previewServer(port) {
 export async function devServer(port) {
   const up = () => fetch(`http://localhost:${port}/`).then(() => true).catch(() => false);
   if (await up()) return null;
-  const proc = spawn('npx', ['vite', '--port', String(port), '--strictPort'],
-    { cwd: ROOT, stdio: 'ignore', detached: true });
+  const proc = spawn(npxCommand, ['vite', '--port', String(port), '--strictPort'],
+    { cwd: ROOT, stdio: 'ignore', detached: true, shell: process.platform === 'win32' });
   // Up twice in a row: on macOS a cold server answered once and then refused the next request.
   let ok = 0;
   for (let i = 0; i < 120 && ok < 2; i++) {

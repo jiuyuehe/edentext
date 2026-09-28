@@ -13,9 +13,15 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
+    "build:app": "vite build",
+    "build:lib": "vite build --config vite.lib.config.ts && vue-tsc -p tsconfig.lib.json --declaration --emitDeclarationOnly --outDir packages/edentext-vue/dist",
+    "demo:vue": "npm --prefix examples/edentext-vue-demo run dev",
+    "build:demo:vue": "npm --prefix examples/edentext-vue-demo run build",
     "preview": "vite preview",
     "relay": "node relay/server.mjs",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check:lib": "vue-tsc -p tsconfig.lib.json --noEmit",
+    "pack:lib": "npm run build:lib && npm pack ./packages/edentext-vue",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:lo": "vitest run tests/lo-roundtrip.test.ts tests/lo-fuzz.test.ts tests/lo-render-consistency.test.ts tests/lo-password.test.ts tests/lo-revisions.test.ts",
@@ -34,6 +40,7 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tsconfig/svelte": "^5.0.8",
+    "@vitejs/plugin-vue": "^6.0.9",
     "@vitest/coverage-v8": "^5.1.0",
     "dictionary-de": "^3.0.0",
     "dictionary-el": "^4.0.0",
@@ -51,7 +58,9 @@
     "typescript": "^6.0.3",
     "vite": "^8.0.14",
     "vitest": "^5.1.0",
-    "ws": "^8.22.2"
+    "ws": "^8.22.2",
+    "vue": "^3.5.43",
+    "vue-tsc": "^3.3.11"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
@@ -91,6 +100,9 @@
     "utif2": "^4.1.0",
     "y-protocols": "1.0.7",
     "yjs": "13.6.33"
+  },
+  "allowScripts": {
+    "core-js@3.49.0": true
   },
   "overrides": {
     "prosemirror-transform": "1.12.2"

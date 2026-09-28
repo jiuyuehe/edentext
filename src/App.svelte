@@ -117,7 +117,8 @@
   import NoteOptionsDialog from './lib/components/NoteOptionsDialog.svelte';
   import SaveFormatDialog from './lib/components/SaveFormatDialog.svelte';
   import { t, locale, setLocale, uiRtl } from './lib/i18n/i18n.svelte';
-  import { isLocale } from './lib/i18n/config';
+  import { isLocale, type Locale } from './lib/i18n/config';
+  import type { NativeEdenTextApi, NativeEdenTextAppProps } from './lib/native/types';
   import { fnv1a } from './lib/utils/hash';
   import { ltrIsland, withShortcut } from './lib/i18n/shortcut';
   import { DEFAULT_SHORTCUTS, matchesEvent, shortcutHint } from './lib/editor/shortcuts';
@@ -132,6 +133,23 @@
   type WithLaunchQueue = Window & {
     launchQueue?: { setConsumer: (c: (p: { files: FileSystemFileHandle[] }) => void) => void };
   };
+
+  // App.svelte remains the native EdenText application. These props only provide a
+  // narrow command bridge for framework wrappers; they do not replace any native
+  // toolbar, editor, pagination, or document state.
+  let {
+    initialUiLocale,
+    initialDocumentLanguage,
+    initialNewDocument = false,
+    assetBaseUrl,
+    onReady,
+  }: NativeEdenTextAppProps = $props();
+  let nativeApiReady = false;
+
+  function appAsset(name: string): string {
+    const base = assetBaseUrl?.replace(/\/$/, '');
+    return base ? `${base}/${name}` : name;
+  }
 
   let editor: Editor | null = $state(null);
   let tick: number = $state(0);
@@ -309,6 +327,10 @@
   let documentLanguageOther: string | null = $state(loadDocumentLanguageOther());
   function setDocumentLanguage(code: DocumentLanguage) {
     ({ main: documentLanguage, other: documentLanguageOther } = pickDocumentLanguage(documentLanguage, documentLanguageOther, code));
+  }
+
+  function setUiLocale(next: Locale): void {
+    setLocale(next);
   }
 
   // The document name (without .odt). Source of truth for the save filename;
@@ -1367,6 +1389,43 @@
     else await applyImport(new Uint8Array(await file.arrayBuffer()), null, file.name);
   }
 
+  // Framework wrappers pass bytes into the same importer used by the native file
+  // picker. No parallel Vue document model is created here.
+  async function openDocument(source: File | Blob | ArrayBuffer | Uint8Array, filename?: string): Promise<void> {
+    const bytes = source instanceof Uint8Array
+      ? source
+      : source instanceof ArrayBuffer
+        ? new Uint8Array(source)
+        : new Uint8Array(await source.arrayBuffer());
+    const sourceName = filename
+      ?? (typeof File !== 'undefined' && source instanceof File ? source.name : undefined)
+      ?? 'document.odt';
+    await applyImport(bytes, null, sourceName);
+  }
+
+  // The Vue wrapper receives this object after the real native editor exists. The
+  // methods below call the same functions wired to EdenText's own ribbon buttons.
+  $effect(() => {
+    if (nativeApiReady || !editor) return;
+    nativeApiReady = true;
+    if (initialUiLocale) setUiLocale(initialUiLocale);
+    if (initialDocumentLanguage) setDocumentLanguage(initialDocumentLanguage);
+    if (initialNewDocument) startBlank();
+
+    const api: NativeEdenTextApi = {
+      newDocument: () => handleNew(),
+      openFile: () => handleOpen(),
+      openDocument,
+      save: () => handleSave(),
+      saveAs: (format) => handleSaveAs(format),
+      exportDocument: (format) => format === 'pdf' ? handleExportPdf() : handleSaveAs(format),
+      setUiLocale,
+      setDocumentLanguage,
+      focus: () => editor?.commands.focus(),
+    };
+    queueMicrotask(() => onReady?.(api));
+  });
+
   // Both exporters take the same document-wide arguments, and every save path needs
   // one of them. The exporter module loads on first use.
   function exportLanguage() {
@@ -2108,6 +2167,7 @@
       onToggleNavigator={toggleNavigator}
       {aiOpen}
       onToggleAi={() => (aiOpen = !aiOpen)}
+      {assetBaseUrl}
     />
   </div>
   {:else}
@@ -2117,7 +2177,7 @@
   <header class:expanded={toolbarExpanded}>
     {#if !whiteLabel}
     <button class="logo-btn" data-cmd="about" onclick={() => (aboutOpen = true)} aria-label={t().about.label} title={t().about.label}>
-      <img src="EdenText.png" alt="EdenText" class="app-logo" />
+      <img src={appAsset('EdenText.png')} alt="EdenText" class="app-logo" />
     </button>
     {/if}
     <Toolbar editor={activeEditor} tick={activeTick} onManageStyles={openStyleManager} scripts={numberingScripts(documentLanguage, documentLanguageOther, locale())} />
@@ -2605,7 +2665,7 @@
     </div>
   </footer>
 
-  <AboutDialog bind:open={aboutOpen} />
+  <AboutDialog bind:open={aboutOpen} {assetBaseUrl} />
   <TemplateGalleryDialog bind:open={templateGalleryOpen} onPick={applyTemplate} onPickHost={applyHostTemplate} />
   <AutoCorrectDialog bind:open={autoCorrectOpen} />
   <DictationConsent />
