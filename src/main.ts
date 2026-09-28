@@ -1,8 +1,7 @@
 import { mount } from 'svelte';
 import App from './App.svelte';
 import './styles/global.css';
-import { loadTheme, applyTheme, loadAccent, applyAccent } from './lib/storage/theme';
-import { locale } from './lib/i18n/i18n.svelte';
+import { startNativeApp } from './lib/native/bootstrap';
 import { startTabPresence, pruneOldDocuments } from './lib/storage/docScope';
 import { dragDialogs } from './lib/utils/dragWindow';
 
@@ -13,17 +12,8 @@ void pruneOldDocuments();
 
 dragDialogs();
 
-// Apply saved theme before mount to prevent flash of wrong theme
-applyTheme(loadTheme());
-applyAccent(loadAccent());
-
-// Resolve the UI locale before mount and reflect it on <html lang> (chrome a11y)
-document.documentElement.lang = locale();
-
-// Keep 'auto' in sync when system theme changes
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if (loadTheme() === 'auto') applyTheme('auto');
-});
+// Apply the same native theme/chrome bootstrap used by the Vue host.
+startNativeApp();
 
 // Offline support (public/sw.js). Not in dev, where a worker would serve the cached
 // build over the one being edited.

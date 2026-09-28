@@ -2,7 +2,12 @@
   import { t } from '../i18n/i18n.svelte';
   const REPO_URL = 'https://github.com/stffnb/edentext';
 
-  let { open = $bindable(false) }: { open?: boolean } = $props();
+  let { open = $bindable(false), assetBaseUrl = '' }: { open?: boolean; assetBaseUrl?: string } = $props();
+
+  function appAsset(name: string): string {
+    const base = assetBaseUrl.replace(/\/$/, '');
+    return base ? `${base}/${name}` : name;
+  }
 
   let dialogEl: HTMLDialogElement | null = $state(null);
 
@@ -40,9 +45,9 @@
       </svg>
     </button>
 
-    <img class="icon" src="favicon.svg" alt="" aria-hidden="true" />
+    <img class="icon" src={appAsset('favicon.svg')} alt="" aria-hidden="true" />
 
-    <img class="logo" src="EdenText.png" alt="EdenText" />
+    <img class="logo" src={appAsset('EdenText.png')} alt="EdenText" />
 
     <p class="tagline">{t().about.tagline}</p>
 

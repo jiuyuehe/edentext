@@ -96,6 +96,7 @@
     navigatorOpen = false, onToggleNavigator,
     aiOpen = false, onToggleAi,
     recentFiles = [], onOpenRecent, onForgetRecent,
+    assetBaseUrl = '',
   }: {
     editor: Editor | null;
     tick: number;
@@ -155,6 +156,7 @@
     onBrowserDocuments?: () => void;
     onProtect?: () => void;
     hasPassword?: boolean;
+    assetBaseUrl?: string;
     onAutoCorrect?: () => void;
     onAutoText?: () => void;
     onNewComment?: () => void;
@@ -163,6 +165,11 @@
     aiOpen?: boolean;
     onToggleAi?: () => void;
   } = $props();
+
+  function appAsset(name: string): string {
+    const base = assetBaseUrl.replace(/\/$/, '');
+    return base ? `${base}/${name}` : name;
+  }
 
   // Word opens on Home every time, so the active tab is not persisted.
   let tab = $state<Tab>('home');
@@ -516,7 +523,7 @@
     <UiLanguagePicker />
 
     <button class="rb-logo-btn" onclick={() => run(onAbout)} title={t().about.label} aria-label={t().about.label}>
-      <img src="favicon.svg" alt="" aria-hidden="true" />
+      <img src={appAsset('favicon.svg')} alt="" aria-hidden="true" />
     </button>
   </div>
 

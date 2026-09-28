@@ -5,6 +5,9 @@
 .vite
 debug
 coverage
+output
+tmp-vue-native.png
+tmp-vue-native-fixed.png
 dist
 docs/others
 node_modules
