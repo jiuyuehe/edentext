@@ -93,6 +93,39 @@ npm run build    # production build → dist/
 
 Built with Svelte 5, TypeScript, Vite and TipTap 3 (ProseMirror).
 
+## Vue 3 package
+
+The repository also builds the browser-only Vue 3 integration package
+`edentext-vue`. It mounts the original EdenText `App.svelte` unchanged and
+exposes only a thin command bridge for new/open/save-as and language settings.
+The Vue layer does not rebuild the Ribbon or maintain a second document model.
+
+```bash
+npm install edentext-vue vue
+```
+
+```vue
+<script setup lang="ts">
+import { EdentextEditor } from 'edentext-vue';
+import 'edentext-vue/style.css';
+</script>
+
+<template>
+  <div style="height: 100vh">
+    <EdentextEditor
+      locale="zh-Hans"
+      document-language="zh-CN"
+      initial-new-document
+    />
+  </div>
+</template>
+```
+
+Build and inspect the publishable package with `npm run build:lib` and
+`npm pack ./packages/edentext-vue --dry-run`. See
+[`docs/edentext-vue.md`](docs/edentext-vue.md) for the Vue API and npm release
+workflow.
+
 ## Self-hosting
 
 There is no backend and no state on the server; documents stay in the browser.

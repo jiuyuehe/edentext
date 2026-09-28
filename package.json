@@ -13,8 +13,14 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
+    "build:app": "vite build",
+    "build:lib": "vite build --config vite.lib.config.ts && vue-tsc -p tsconfig.lib.json --declaration --emitDeclarationOnly --outDir packages/edentext-vue/dist",
+    "demo:vue": "npm --prefix examples/edentext-vue-demo run dev",
+    "build:demo:vue": "npm --prefix examples/edentext-vue-demo run build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check:lib": "vue-tsc -p tsconfig.lib.json --noEmit",
+    "pack:lib": "npm run build:lib && npm pack ./packages/edentext-vue",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:lo": "vitest run tests/lo-roundtrip.test.ts tests/lo-fuzz.test.ts tests/lo-render-consistency.test.ts tests/lo-password.test.ts",
@@ -30,6 +36,7 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tsconfig/svelte": "^5.0.8",
+    "@vitejs/plugin-vue": "^6.0.9",
     "@vitest/coverage-v8": "^4.1.10",
     "dictionary-de": "^3.0.0",
     "dictionary-en": "^4.0.0",
@@ -43,7 +50,9 @@
     "svelte-check": "^4.7.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.14",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "vue": "^3.5.43",
+    "vue-tsc": "^3.3.11"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
@@ -78,5 +87,8 @@
     "jspdf": "^4.2.1",
     "odf-kit": "^0.13.5",
     "utif2": "^4.1.0"
+  },
+  "allowScripts": {
+    "core-js@3.49.0": true
   }
 }

@@ -78,7 +78,8 @@ export function toggleHeaderStyle(axis: HeaderAxis) {
   return ({ state, tr, dispatch, commands }: CommandProps): boolean => {
     // A styled table: flip the Table Style Option the gallery's checkbox shows.
     if (styledTable(state)) {
-      return commands.setTableLook(LOOK_REGION[axis], !isHeaderStyled(state, axis));
+      return (commands as unknown as { setTableLook: (region: string, enabled: boolean) => boolean })
+        .setTableLook(LOOK_REGION[axis], !isHeaderStyled(state, axis));
     }
     const info = headerCellPositions(state, axis);
     if (!info) return false;
