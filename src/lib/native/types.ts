@@ -13,9 +13,15 @@ export interface NativeEdenTextApi {
   newDocument(): void;
   openFile(): Promise<void>;
   openDocument(source: File | Blob | ArrayBuffer | Uint8Array, filename?: string): Promise<void>;
+  /** Replace the current document for a host-managed open; failures reject instead of showing an alert. */
+  replaceDocument(source: File | Blob | ArrayBuffer | Uint8Array, filename: string): Promise<void>;
   save(): Promise<void>;
   saveAs(format: DocumentFormat): Promise<void>;
   exportDocument(format: DocumentFormat | 'pdf'): Promise<void>;
+  /** Build an export in memory without opening a file picker or downloading it. */
+  exportDocumentBytes(format: DocumentFormat): Promise<Uint8Array>;
+  /** Set the active author's name for comments, revisions and exported metadata. */
+  setAuthor(name: string): void;
   setUiLocale(locale: Locale): void;
   setDocumentLanguage(language: DocumentLanguage): void;
   focus(): void;
@@ -28,7 +34,15 @@ export interface NativeEdenTextAppProps {
   initialDocumentLanguage?: DocumentLanguage;
   /** Start with the native application's blank-document command after mount. */
   initialNewDocument?: boolean;
-  /** Optional base URL for native logo/icon assets when the package is self-hosted. */
+  /** Render without native file actions; Ctrl/Cmd+S is forwarded to the host. */
+  embedded?: boolean;
+  /** Active editor identity used for comments, revisions and exported metadata. */
+  author?: string;
+  /** Base URL containing package runtime assets, including dictionaries and thesauri. */
   assetBaseUrl?: string;
+  /** Theme is applied to this editor host instead of the document root. */
+  themeTarget?: HTMLElement;
+  /** Called when the embedded UI requests a host save. */
+  onSaveRequest?: () => void;
   onReady?: (api: NativeEdenTextApi) => void;
 }

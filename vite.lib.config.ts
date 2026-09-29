@@ -1,8 +1,11 @@
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
 import { cp } from 'node:fs/promises';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { scopeEdentextVueCss } from './scripts/scope-edentext-vue-css.mjs';
 import pkg from './package.json' with { type: 'json' };
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
@@ -27,8 +30,37 @@ function copyPackageAssets() {
   };
 }
 
+function scopePackageCss(): Plugin {
+  const fontDirectory = `${projectRoot}/src/assets/fonts`;
+  const fontPathsByHash = new Map<string, string>();
+  for (const fileName of readdirSync(fontDirectory)) {
+    const filePath = `${fontDirectory}/${fileName}`;
+    const bytes = readFileSync(filePath);
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    fontPathsByHash.set(digest, `./assets/fonts/${fileName}`);
+  }
+
+  return {
+    name: 'scope-edentext-vue-css',
+    enforce: 'post' as const,
+    generateBundle(_options, bundle) {
+      for (const output of Object.values(bundle)) {
+        if (output.type !== 'asset' || output.fileName !== 'style.css' || output.source === undefined) continue;
+        let css = typeof output.source === 'string' ? output.source : new TextDecoder().decode(output.source);
+        css = css.replace(/url\((['"]?)(data:font\/[^;]+;base64,([^'")]+))\1\)/g, (match, quote, dataUrl, base64) => {
+          const digest = createHash('sha256').update(Buffer.from(base64, 'base64')).digest('hex');
+          const fontPath = fontPathsByHash.get(digest);
+          if (!fontPath) throw new Error('Unable to match an embedded EdenText font asset to its package file.');
+          return `url(${quote}${fontPath}${quote})`;
+        });
+        output.source = scopeEdentextVueCss(css);
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [vue({ include: [/\.vue$/] }), svelte({ include: [/\.svelte$/] }), copyPackageAssets()],
+  plugins: [vue({ include: [/\.vue$/] }), svelte({ include: [/\.svelte$/] }), scopePackageCss(), copyPackageAssets()],
   publicDir: false,
   build: {
     outDir: 'packages/edentext-vue/dist',

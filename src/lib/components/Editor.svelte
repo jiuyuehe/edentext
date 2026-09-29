@@ -80,7 +80,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     headerFirstDoc = $bindable(null), footerFirstDoc = $bindable(null), differentFirstPage = false,
     headerEvenDoc = $bindable(null), footerEvenDoc = $bindable(null), differentOddEven = false,
     hfEditor = $bindable(null), hfActive = $bindable(null), hfTick = $bindable(0),
-    extraHfSections = $bindable([]), pages = $bindable([]),
+    extraHfSections = $bindable([]), pages = $bindable([]), themeTarget,
   }: {
     editor: Editor | null; tick: number; currentPage: number; numPages: number; zoom: number;
     /** The sheet of every page in document px, for the navigator's thumbnails. */
@@ -95,6 +95,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     splitView?: boolean;
     /** How many pages sit side by side (LibreOffice's View layout ▸ Columns); 1 = off. */
     pageColumns?: number;
+    /** Container whose CSS variables scope this editor instance. */
+    themeTarget?: HTMLElement;
     /** Bumped by App for each document it opens; re-arms the settle gate. */
     documentEpoch?: number;
     /** A right-to-left page: the body's base direction, so its columns fill from the right. */
@@ -188,10 +190,10 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   // Apply the page margins + orientation to the :root CSS vars (visual padding,
   // page dimensions, and pagination all read these). DOM-only, safe in effects.
   $effect(() => {
-    applyMarginVars(pageMargins);
+    applyMarginVars(pageMargins, themeTarget ?? document.documentElement);
   });
   $effect(() => {
-    applyPageSizeVars(pageFormat, orientation);
+    applyPageSizeVars(pageFormat, orientation, themeTarget ?? document.documentElement);
   });
 
   // A header/footer that reaches past the body's margin (its distance from the edge plus
@@ -460,7 +462,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   }
 
   $effect(() => {
-    const s = document.documentElement.style;
+    const s = (themeTarget ?? document.documentElement).style;
     s.setProperty('--pb-section-numstart', sectionNumStarts);
     s.setProperty('--pb-section-startson', sectionStartsOn);
     s.setProperty('--pb-section-inset', sectionInset);
@@ -570,7 +572,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   // notes, so a change to it has to re-measure — and the line is drawn from the same
   // custom properties.
   $effect(() => {
-    applyNoteVars(noteSettings());
+    applyNoteVars(noteSettings(), themeTarget ?? document.documentElement);
     const ed = editor;
     if (!ed) return;
     requestAnimationFrame(() => {
@@ -686,6 +688,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     let p = 1;
     while (p < pageBoxes.length && pageBoxes[p].top <= y) p++;
     return Math.max(1, Math.min(numPages, p));
+  }
   }
 
   // --- Right-click context menu (text menu, spelling suggestions merged in) ---

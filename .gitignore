@@ -9,6 +9,7 @@ output
 tmp-vue-native.png
 tmp-vue-native-fixed.png
 dist
+examples/edentext-vue-demo/public/assets
 docs/others
 node_modules
 probe.mjs

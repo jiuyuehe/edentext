@@ -146,11 +146,14 @@ function resolveMode(mode: ThemeMode): 'light' | 'dark' | 'allBlack' {
 // Each theme's --color-bg (global.css), for the browser's own bar.
 const THEME_BG = { light: '#e6e9eb', dark: '#2f2f31', allBlack: '#0d1117' };
 
-export function applyTheme(mode: ThemeMode): void {
+export function applyTheme(mode: ThemeMode, target: HTMLElement = document.documentElement): void {
   const resolved = resolveMode(mode);
-  document.documentElement.setAttribute('data-theme', resolved);
+  target.setAttribute('data-theme', resolved);
   // The bar follows the picked theme, not the system scheme the tags' media query names.
-  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', THEME_BG[resolved]));
+  if (target === document.documentElement) {
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', THEME_BG[resolved]));
+  }
+}
 }
 
 // The chrome's accent colour; 'slate' is the logo's and stays the stored-nothing default.
@@ -182,11 +185,10 @@ export function saveAccent(accent: Accent): void {
   else localStorage.setItem(ACCENT_KEY, accent);
 }
 
-// A custom accent goes on <html> inline, where it outranks every theme's own slate.
-export function applyAccent(accent: Accent): void {
-  const root = document.documentElement;
-  if (isCustomAccent(accent)) root.style.setProperty('--brand-slate', accent);
-  else root.style.removeProperty('--brand-slate');
-  if (accent === 'slate') root.removeAttribute('data-accent');
-  else root.setAttribute('data-accent', isCustomAccent(accent) ? 'custom' : accent);
+// A custom accent is inline on this target, so it overrides the theme's slate.
+export function applyAccent(accent: Accent, target: HTMLElement = document.documentElement): void {
+  if (isCustomAccent(accent)) target.style.setProperty('--brand-slate', accent);
+  else target.style.removeProperty('--brand-slate');
+  if (accent === 'slate') target.removeAttribute('data-accent');
+  else target.setAttribute('data-accent', isCustomAccent(accent) ? 'custom' : accent);
 }

@@ -78,8 +78,8 @@ export function savePageMargins(m: PageMargins): void {
 // Sets --user-margin-{top,bottom,left,right} (in px) on the document root, where
 // they inherit down to .tiptap (see editor.css). Drives both the visual padding
 // and the pagination math in pageBreaks.ts.
-export function applyMarginVars(m: PageMargins): void {
-  const root = document.documentElement.style;
+export function applyMarginVars(m: PageMargins, target: HTMLElement = document.documentElement): void {
+  const root = target.style;
   root.setProperty('--user-margin-top',    `${cmToPx(m.top)}px`);
   root.setProperty('--user-margin-bottom', `${cmToPx(m.bottom)}px`);
   root.setProperty('--user-margin-left',   `${cmToPx(m.left)}px`);

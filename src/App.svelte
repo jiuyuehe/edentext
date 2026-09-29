@@ -25,7 +25,7 @@
   import { takeOpenedFile } from './lib/storage/desktopFiles';
   import { IDB_SRC, imageKey, lackedKeys, mapSrcs, showWaitingWith, untilHeld, withHeldImages } from './lib/storage/imageStore';
   import { loadRecentFiles, rememberRecentFile, readRecentFile, forgetRecentFile, forgetRecentFiles, pruneRecentFiles, getHandle, type RecentFile } from './lib/storage/recentFiles';
-  import { isProtected, decryptPackage, WRONG_PASSWORD } from './lib/crypto/protect';
+  import { isProtected, decryptPackage, encryptPackage, WRONG_PASSWORD } from './lib/crypto/protect';
   import { convertUnsupportedImages } from './lib/import/imageFormats';
   import { repairContent, repairZones } from './lib/import/repairContent';
   import en from './lib/i18n/locales/en';
@@ -59,7 +59,7 @@
   import { loadDocName, saveDocName, loadDocFormat, saveDocFormat, stripOdtExtension, docNameOfFile, sanitizeNameForFile, deriveFilename, filenameFor, loadDocProtected, saveDocProtected, loadDocFile, saveDocFile, type DocumentFormat } from './lib/storage/documentName';
   import { loadDocProperties, saveDocProperties, EMPTY_DOC_PROPERTIES, type DocProperties } from './lib/storage/docProperties';
   import { userName, setUserName } from './lib/storage/userName.svelte';
-  import { embedded, attribution, whiteLabel, collabKey } from './lib/embed/mode';
+  import { embedded as embedMode, attribution, whiteLabel, collabKey } from './lib/embed/mode';
   import CollabDialog, { type CollabNotice } from './lib/components/CollabDialog.svelte';
   import CollabPeople from './lib/components/CollabPeople.svelte';
   import CollabNews from './lib/components/CollabNews.svelte';
@@ -141,7 +141,11 @@
     initialUiLocale,
     initialDocumentLanguage,
     initialNewDocument = false,
+    embedded = embedMode,
+    author = '',
     assetBaseUrl,
+    themeTarget,
+    onSaveRequest,
     onReady,
   }: NativeEdenTextAppProps = $props();
   let nativeApiReady = false;
@@ -309,7 +313,10 @@
   let themeOpen = $state(false);
   let toolbarExpanded = $state(loadToolbarExpanded());
   // Which chrome mounts: the floating island or the ribbon. Both drive one editor.
-  let chromeMode: ChromeMode = $state(loadChromeMode());
+  function initialChromeMode(): ChromeMode {
+    return embedded ? 'ribbon' : loadChromeMode();
+  }
+  let chromeMode: ChromeMode = $state(initialChromeMode());
   let showFormattingMarks = $state(loadFormattingMarks());
   let showFieldShading = $state(loadFieldShading());
   let showPageLabels = $state(loadPageLabels());
@@ -331,6 +338,11 @@
 
   function setUiLocale(next: Locale): void {
     setLocale(next);
+  }
+
+  function setAuthor(name: string): void {
+    docProps = { ...docProps, author: name.trim() };
+    saveDocProperties(docProps);
   }
 
   // The document name (without .odt). Source of truth for the save filename;
@@ -475,7 +487,7 @@
   // A chrome the embedding host picked is not the reader's own choice to keep.
   let hostChrome: ChromeMode | null = null;
   $effect(() => {
-    if (chromeMode !== hostChrome) saveChromeMode(chromeMode);
+    if (!embedded && chromeMode !== hostChrome) saveChromeMode(chromeMode);
   });
 
   $effect(() => {
@@ -510,7 +522,9 @@
   persistLayout();
 
   $effect(() => {
-    applyTabIntervalVar(layout.tabIntervalCm);
+  $effect(() => {
+    applyTabIntervalVar(layout.tabIntervalCm, themeTarget ?? document.documentElement);
+  });
   });
 
   $effect(() => {
@@ -564,7 +578,7 @@
   function selectTheme(m: ThemeMode, keep = true) {
     themeMode = m;
     if (keep) saveTheme(m);
-    applyTheme(m);
+    applyTheme(m, themeTarget ?? document.documentElement);
     themeOpen = false;
   }
 
@@ -1143,7 +1157,15 @@
   // `host` is an embedding application's or the session's load: it replaces the document
   // unasked, and hears of warnings and failures instead of the reader. `asked`: the reader
   // already agreed to replace it. False = nothing was opened.
-  async function applyImport(bytes: Uint8Array, handle: FileSystemFileHandle | null, sourceName?: string, host?: { warn: (warnings: string[]) => void }, asked = false, templateName?: string): Promise<boolean> {
+  async function applyImport(
+    bytes: Uint8Array,
+    handle: FileSystemFileHandle | null,
+    sourceName?: string,
+    host?: { warn: (warnings: string[]) => void },
+    asked = false,
+    templateName?: string,
+    options: { replaceCurrent?: boolean; throwOnError?: boolean } = {},
+  ): Promise<boolean> {
     if (!editor || (!host && leaveFirst({ file: { bytes, name: sourceName ?? '', handle } }))) return false;
     try {
       // Before anything reads the archive: an encrypted file is not one yet.
@@ -1172,7 +1194,7 @@
 
       const hasContent = editor.state.doc.textContent.length > 0 || editor.state.doc.childCount > 1;
       busyTask = null;
-      if (hasContent && !host && !asked && !confirm(t().dialogs.confirmReplace)) {
+      if (hasContent && !host && !asked && !options.replaceCurrent && !confirm(t().dialogs.confirmReplace)) {
         return false;
       }
       busyTask = 'loading';
@@ -1209,7 +1231,7 @@
       // Adopt the document's named paragraph styles (built-ins + the file's own).
       setStyleSheet({ ...result.styles, table: tableStyles });
       setNoteSettings(result.notes);
-      docProps = result.props;
+      docProps = author.trim() ? { ...result.props, author: author.trim() } : result.props;
       saveDocProperties(docProps);
       // Adopt header/footer + first-page variants (null clears the zone); end any edit.
       hfActive = null;
@@ -1258,8 +1280,10 @@
       busyTask = null;
       if (host) throw err;
       console.error('[import] Failed to open file:', err);
+      const message = err instanceof Error ? localizeImportMessage(err.message) : t().dialogs.couldNotOpen;
+      if (options.throwOnError) throw new Error(message);
       if (err instanceof Error && CHUNK_FAILURE.test(err.message)) reportLoadFailure(t().dialogs.couldNotOpen, err);
-      else alert(err instanceof Error ? localizeImportMessage(err.message) : t().dialogs.couldNotOpen);
+      else alert(message);
       return false;
     }
   }
@@ -1403,6 +1427,29 @@
     await applyImport(bytes, null, sourceName);
   }
 
+  async function replaceDocument(source: File | Blob | ArrayBuffer | Uint8Array, filename: string): Promise<void> {
+    if (!editor) throw new Error('EdenText is not ready yet');
+    const bytes = source instanceof Uint8Array
+      ? source
+      : source instanceof ArrayBuffer
+        ? new Uint8Array(source)
+        : new Uint8Array(await source.arrayBuffer());
+    const opened = await applyImport(bytes, null, filename, undefined, false, undefined, { replaceCurrent: true, throwOnError: true });
+    if (!opened) throw new Error('Document import was canceled');
+  }
+
+  async function exportDocumentBytes(kind: DocumentFormat): Promise<Uint8Array> {
+    if (!editor) throw new Error('EdenText is not ready yet');
+    if (!(await ensurePassword())) throw new Error('Export canceled while setting document protection');
+    const bytes = await buildBytes(kind, editor.getJSON() as TiptapNode);
+    return docPassword ? encryptPackage(bytes, docPassword) : bytes;
+  }
+
+  function requestSave(): void {
+    if (embedded) onSaveRequest?.();
+    else void handleSave();
+  }
+
   // The Vue wrapper receives this object after the real native editor exists. The
   // methods below call the same functions wired to EdenText's own ribbon buttons.
   $effect(() => {
@@ -1416,9 +1463,12 @@
       newDocument: () => handleNew(),
       openFile: () => handleOpen(),
       openDocument,
-      save: () => handleSave(),
+      replaceDocument,
+      save: async () => requestSave(),
       saveAs: (format) => handleSaveAs(format),
       exportDocument: (format) => format === 'pdf' ? handleExportPdf() : handleSaveAs(format),
+      exportDocumentBytes,
+      setAuthor,
       setUiLocale,
       setDocumentLanguage,
       focus: () => editor?.commands.focus(),
@@ -1982,8 +2032,8 @@
     // own binding (save page, find, open, zoom). Everything editor-scoped lives in
     // the Shortcuts extension instead.
     const appActions: [string, () => void][] = [
-      [DEFAULT_SHORTCUTS.save, handleSave],
-      [DEFAULT_SHORTCUTS.open, handleOpen],
+      [DEFAULT_SHORTCUTS.save, requestSave],
+      [DEFAULT_SHORTCUTS.open, embedded ? () => {} : handleOpen],
       [DEFAULT_SHORTCUTS.print, handlePrint],
       [DEFAULT_SHORTCUTS.find, () => openFind('find')],
       [DEFAULT_SHORTCUTS.replace, () => openFind('replace')],
@@ -2102,6 +2152,7 @@
     <Ribbon
       editor={activeEditor}
       tick={activeTick}
+      {embedded}
       bind:documentName
       {documentFormat}
       {dirty}
@@ -2140,12 +2191,12 @@
       {themeMode}
       onSelectTheme={selectTheme}
       {pdfBusy}
-      onNew={handleNew}
+      onNew={embedded ? undefined : handleNew}
       onNewFromTemplate={() => (templateGalleryOpen = true)}
-      onOpen={handleOpen}
-      onSave={handleSave}
-      onSaveAs={handleSaveAs}
-      onSaveTemplate={handleSaveTemplate}
+      onOpen={embedded ? undefined : handleOpen}
+      onSave={requestSave}
+      onSaveAs={embedded ? undefined : handleSaveAs}
+      onSaveTemplate={embedded ? undefined : handleSaveTemplate}
       recentFiles={menuRecentFiles}
       onOpenRecent={(id) => { const f = recentFiles.find((r) => r.id === id); if (f) void handleOpenRecent(f); }}
       onForgetRecent={handleForgetRecent}
@@ -2510,6 +2561,7 @@
     bind:pages={pageBoxes}
     onDocumentLost={resetDocumentState}
     {documentEpoch}
+    {themeTarget}
     pageRtl={layout.pageRtl}
     bind:editor
     bind:tick
@@ -2676,6 +2728,7 @@
     bind:open={settingsOpen}
     bind:section={settingsSection}
     {themeMode}
+    accentTarget={themeTarget}
     onSelectTheme={selectTheme}
     bind:showRuler
     bind:showFormattingMarks

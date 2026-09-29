@@ -28,6 +28,7 @@ const loaders: Record<Exclude<Locale, 'en'>, () => Promise<{ default: Messages }
 let catalogs = $state.raw<Partial<Record<Locale, Messages>>>({ en });
 const initial = loadAppLanguage();
 let current = $state<Locale>(initial);
+let languageTarget: HTMLElement | null = null;
 // The language asked for last, so a slower earlier fetch does not switch back to its own.
 let wanted: Locale = initial;
 
@@ -54,7 +55,6 @@ export function locale(): Locale {
   return current;
 }
 
-/** Switches once the catalog is in; resolves when the language is the active one. */
 /** The interface runs right to left; script-placed parts mirror by it. */
 export function uiRtl(): boolean {
   return isRtlLocale(current);
@@ -66,6 +66,13 @@ export function startEdge(anchor: DOMRect): { side: 'left' | 'right'; offset: nu
   return uiRtl() ? { side: 'right', offset: window.innerWidth - anchor.right } : { side: 'left', offset: anchor.left };
 }
 
+export function setLanguageTarget(target: HTMLElement | null): void {
+  languageTarget = target;
+  if (!target) return;
+  target.lang = current;
+  target.dir = isRtlLocale(current) ? 'rtl' : 'ltr';
+}
+
 export async function setLocale(next: Locale, keep = true): Promise<void> {
   wanted = next;
   if (keep) saveAppLanguage(next);
@@ -73,5 +80,9 @@ export async function setLocale(next: Locale, keep = true): Promise<void> {
   if (wanted !== next) return;
   current = next;
   // <html lang dir> = UI locale (chrome a11y); document content language is separate.
-  reflectLocale(next);
+  if (languageTarget) {
+    languageTarget.lang = next;
+    languageTarget.dir = isRtlLocale(next) ? 'rtl' : 'ltr';
+  } else reflectLocale(next);
+}
 }

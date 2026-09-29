@@ -1,5 +1,5 @@
 import { loadChecker, type Checker } from './dictionary';
-import { langSlot, loadDocumentLanguage, type DocumentLanguage, type LangSlot } from '../storage/documentLanguage';
+import { langSlot, type DocumentLanguage, type LangSlot } from '../storage/documentLanguage';
 import { ASIAN_SCRIPT_RE, COMPLEX_SCRIPT_RE } from '../utils/script';
 import { volatile } from '../storage/docScope';
 
@@ -36,12 +36,6 @@ class SpellController {
   private readonly personal = new Set<string>(loadPersonal());
   private readonly ignored = new Set<string>(); // session-only "Ignore all"
   private readonly subs = new Set<() => void>();
-
-  constructor() {
-    if (typeof localStorage !== 'undefined') {
-      void this.setLanguage(loadDocumentLanguage());
-    }
-  }
 
   getLanguage(): DocumentLanguage {
     return this.code;

@@ -54,6 +54,7 @@
     onAutoCorrect,
     documentLanguage,
     onLanguage,
+    accentTarget,
   }: {
     open?: boolean;
     /** The side-bar entry shown; the AI pane opens the dialog on 'ai'. */
@@ -70,6 +71,7 @@
     onAutoCorrect: () => void;
     documentLanguage: DocumentLanguage;
     onLanguage: (code: DocumentLanguage) => void;
+    accentTarget?: HTMLElement;
   } = $props();
 
   // Each choice named by its region and shown on a day past the 12th, so the order of day
@@ -105,7 +107,7 @@
   function pickAccent(a: Accent) {
     accent = a;
     saveAccent(a);
-    applyAccent(a);
+    applyAccent(a, accentTarget ?? document.documentElement);
   }
   // The custom panel starts from the accent on screen, so a preset can be fine-tuned; it
   // previews live, Cancel restores the accent it opened over.

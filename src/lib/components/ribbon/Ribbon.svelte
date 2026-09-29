@@ -93,6 +93,7 @@
     aiOpen = false, onToggleAi,
     recentFiles = [], onOpenRecent, onForgetRecent,
     assetBaseUrl = '',
+    embedded = false,
   }: {
     editor: Editor | null;
     tick: number;
@@ -155,6 +156,7 @@
     onProtect?: () => void;
     hasPassword?: boolean;
     assetBaseUrl?: string;
+    embedded?: boolean;
     onAutoCorrect?: () => void;
     onAutoText?: () => void;
     onNewComment?: () => void;
@@ -236,7 +238,7 @@
 
 <div class="ribbon">
   <div class="ribbon-tabs" class:strip-only={collapsed} use:pinPanels>
-    <div class="file-tab-wrap" use:clickOutside={'file'}>
+    {#if !embedded}<div class="file-tab-wrap" use:clickOutside={'file'}>
       <button
         class="ribbon-tab-file"
         class:open={isMenuOpen('file')}
@@ -334,11 +336,11 @@
           </button>
         </RibbonMenu>
       {/if}
-    </div>
+    </div>{/if}
 
-    <button class="qa-btn" onclick={onSave} disabled={!editor || pdfBusy} title={`${t().app.save} (${withShortcut('Ctrl+S')})`}>
+    {#if !embedded}<button class="qa-btn" onclick={onSave} disabled={!editor || pdfBusy} title={`${t().app.save} (${withShortcut('Ctrl+S')})`}>
       <Icon name="save" size={16} />
-    </button>
+    </button>{/if}
     <ReadGate>
       <HistoryButton {editor} {tick} direction="undo" />
       <HistoryButton {editor} {tick} direction="redo" />
@@ -361,7 +363,7 @@
 
     <CommandSearch commands={searchable} onRun={runCommand} onCancel={() => editor?.commands.focus()} />
 
-    <div class="doc-name" dir="ltr">
+    {#if !embedded}<div class="doc-name" dir="ltr">
       <span class="doc-name-sizer" aria-hidden="true" bind:clientWidth={docNameSizerWidth}>{documentName || namePlaceholder}</span>
       <input
         class="doc-name-input"
@@ -375,10 +377,8 @@
         onblur={() => (documentName = documentName.trim())}
       />
       <span class="doc-name-ext">.{documentFormat}</span>
-    </div>
-    <!-- Beside the name, not inside it: the name box is capped at 16rem, and the
-         label would take that width off the name itself. -->
-    {#if dirty}<span class="doc-dirty">• {t().app.unsavedChanges}</span>{/if}
+    </div>{/if}
+    {#if dirty && !embedded}<span class="doc-dirty">• {t().app.unsavedChanges}</span>{/if}
 
     <!-- Word puts this chevron in the band's corner. It rides the strip so the band
          keeps its full width: a flex row can only reserve a column, never a corner. -->
