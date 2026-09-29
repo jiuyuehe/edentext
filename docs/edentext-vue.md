@@ -1,6 +1,6 @@
 # EdenText Vue 3 npm 包使用与发布指南
 
-`edentext-vue` 是 EdenText 原生 Web 应用的 Vue 3 薄封装。Vue 组件只负责挂载和销毁原生 `App.svelte`，以及把少量宿主命令转发给原生 EdenText：新建、打开、保存、另存、界面语言和文档默认语言。
+`edentext-vue` 是 EdenText 原生 Web 应用的 Vue 3 薄封装。Vue 组件负责挂载和销毁原生 `App.svelte`，并提供新建、打开、静默替换、内存导出、保存请求和语言/作者设置等宿主命令。
 
 Ribbon、编辑器、分页、页眉页脚、表格、图片、审阅、查找替换、模板、ODT/DOCX/PDF 等功能全部来自原生 EdenText，不在 Vue 层重新实现。
 
@@ -16,7 +16,7 @@ npm install edentext-vue vue
 
 ### 最小调用
 
-宿主必须给组件一个明确高度：
+宿主必须给组件一个明确高度，并将包的 `dist/assets` 内容复制到可访问的静态目录：
 
 ```vue
 <script setup lang="ts">
@@ -43,7 +43,7 @@ import 'edentext-vue/style.css';
 </style>
 ```
 
-组件内部显示的是 EdenText 原生 UI，不需要也不应该在 Vue 页面外部重新做一个工具栏。
+组件内部显示的是 EdenText 原生 UI，不需要也不应该在 Vue 页面外部重新做一个工具栏。`style.css` 会把 UI 选择器、主题和页面尺寸变量收进 `.edentext-vue-host`；`asset-base-url` 用于 logo、图标、拼写词典和同义词数据。字体由 `style.css` 的相对资源引用加载。
 
 ### Props
 
@@ -55,7 +55,11 @@ interface EdentextEditorProps {
   documentLanguage?: string;
   /** 挂载完成后调用一次原生“新建文档”，用于打开空文档。 */
   initialNewDocument?: boolean;
-  /** 可选：EdenText.png 和 favicon.svg 所在的静态资源目录。 */
+  /** 隐藏原生文件操作，并将 Ctrl/Cmd+S 转发给宿主。 */
+  embedded?: boolean;
+  /** 评论、修订和导出元数据使用的作者名。 */
+  author?: string;
+  /** 包运行时资源目录的基准 URL。 */
   assetBaseUrl?: string;
 }
 ```
@@ -77,6 +81,12 @@ interface EdentextEditorApi {
     filename?: string,
   ): Promise<void>;
 
+  /** 静默替换当前文档；导入失败时 reject。 */
+  replaceDocument(
+    source: File | Blob | ArrayBuffer | Uint8Array,
+    filename: string,
+  ): Promise<void>;
+
   /** 调用原生 Save；已打开文件会保存回原文件，未保存文件会进入原生保存流程。 */
   save(): Promise<void>;
 
@@ -85,6 +95,12 @@ interface EdentextEditorApi {
 
   /** 调用原生导出流程；ODT/DOCX 走 Save As，PDF 走 EdenText 原生 PDF 导出。 */
   exportDocument(format: 'odt' | 'docx' | 'pdf'): Promise<void>;
+
+  /** 在内存中构建 ODT/DOCX 字节，不打开文件选择器或触发下载。 */
+  exportDocumentBytes(format: 'odt' | 'docx'): Promise<Uint8Array>;
+
+  /** 设置评论、修订和导出元数据使用的作者名。 */
+  setAuthor(name: string): void;
 
   setUiLocale(locale: UiLocale): void;
   setDocumentLanguage(language: string): void;
@@ -111,11 +127,16 @@ function onReady(api: EdentextEditorApi) {
 }
 
 async function openFile(file: File) {
-  await editor.value?.openDocument(file, file.name);
+  await editor.value?.replaceDocument(file, file.name);
 }
 
-async function saveAsDocx() {
-  await editor.value?.saveAs('docx');
+async function saveToHost() {
+  const bytes = await editor.value?.exportDocumentBytes('docx');
+  if (!bytes) return;
+  const file = new File([bytes], 'draft.docx', {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+  await uploadDocx(file); // 调用宿主自己的上传接口
 }
 </script>
 
@@ -125,30 +146,36 @@ async function saveAsDocx() {
       ref="editor"
       locale="zh-Hans"
       document-language="zh-CN"
+      embedded
+      author="Current User"
       @ready="onReady"
+      @save-request="saveToHost"
     />
   </div>
 </template>
 ```
 
-`ready` 事件只在原生 EdenText editor 实例真正创建完成后触发；在此之前不要调用实例方法。`error` 事件报告挂载错误。组件卸载时会自动卸载 Svelte 原生应用和其资源；通常不需要手动调用 `destroy()`，手动调用只适用于宿主明确要提前销毁的场景。
+`ready` 事件只在原生 EdenText editor 实例真正创建完成后触发；在此之前不要调用实例方法。`error` 事件报告挂载错误。`embedded` 隐藏原生 New/Open/Save 菜单与文档名；Ctrl/Cmd+S 和 `api.save()` 会触发 `save-request`，由宿主选择上传、下载或其他保存方式。组件卸载时会自动卸载 Svelte 原生应用和其资源；通常不需要手动调用 `destroy()`。
 
 ### 新建、打开、另存和语言
 
 ```ts
 editor.value?.newDocument();
 await editor.value?.openFile();
-await editor.value?.openDocument(bytes, '合同.docx');
+await editor.value?.openDocument(bytes, 'draft.docx');
+await editor.value?.replaceDocument(bytes, 'draft.docx');
 await editor.value?.save();
 await editor.value?.saveAs('odt');
 await editor.value?.exportDocument('pdf');
+const docxBytes = await editor.value?.exportDocumentBytes('docx');
+editor.value?.setAuthor('Current User');
 editor.value?.setUiLocale('zh-Hans');
 editor.value?.setDocumentLanguage('zh-CN');
 ```
 
-这些方法都调用原生 EdenText 已有的命令，因此确认弹窗、密码处理、最近文件、格式识别、File System Access API 和浏览器下载行为保持原生一致。
+`openDocument` 保留原生打开时的替换确认和错误提示。`replaceDocument` 是明确的宿主替换命令，会跳过替换确认，并在导入失败时 reject。`exportDocumentBytes` 复用原生 DOCX/ODT exporter，在内存中生成字节并保留文档密码，不调用文件选择器或浏览器下载。普通模式下 `save`/`saveAs` 保持原生保存行为。
 
-Vue 层不提供 `v-model`，也不暴露 TipTap、ProseMirror、Svelte 实例或另外一套 JSON 文档状态。宿主需要把文件上传到服务端时，可以在调用 `openDocument` 前自行读取文件；导出文件则通过原生 `save`/`saveAs` 流程完成。
+Vue 层不提供 `v-model`，也不暴露 TipTap、ProseMirror、Svelte 实例或另外一套 JSON 文档状态。宿主可调用 `replaceDocument` 打开文件，再用 `exportDocumentBytes` 把输出交给自己的上传 API。
 
 ## 仓库内运行 Vue demo
 
@@ -158,9 +185,9 @@ npm run build:lib
 npm run demo:vue
 ```
 
-然后访问 Vite 输出的本地地址。demo 只创建一个 Vue 容器并挂载 `EdentextEditor`，不创建额外 header 或工具栏；`initial-new-document` 会让原生 EdenText 打开空文档。
+然后访问 Vite 输出的本地地址。demo 提供“打开本地 DOCX”和“新建空白 DOCX”，通过 cloud-drive 风格弹窗验证静默打开、作者设置、宿主保存请求和字节导出。保存会下载结果文件来模拟上传前的输出；正式集成时将下载替换为云盘 API。
 
-npm 部署时如果使用包内 logo/icon，建议把 `dist/assets/EdenText.png` 和 `dist/assets/favicon.svg` 复制到宿主静态目录，并通过 `asset-base-url` 指向该目录。
+运行 demo 时 `predev`/`prebuild` 会把 package 中的词典和同义词文件复制到 `examples/edentext-vue-demo/public/assets/`。正式部署时把 package 的 `dist/assets/*` 放到 `asset-base-url` 对应目录。
 
 也可以只构建 demo：
 

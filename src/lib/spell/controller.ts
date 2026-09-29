@@ -1,5 +1,5 @@
 import { loadChecker, type Checker } from './dictionary';
-import { loadDocumentLanguage, type DocumentLanguage } from '../storage/documentLanguage';
+import type { DocumentLanguage } from '../storage/documentLanguage';
 import { volatile } from '../storage/docScope';
 
 const PERSONAL_KEY = 'edentext-user-dictionary';
@@ -29,12 +29,6 @@ class SpellController {
   private readonly personal = new Set<string>(loadPersonal());
   private readonly ignored = new Set<string>(); // session-only "Ignore all"
   private readonly subs = new Set<() => void>();
-
-  constructor() {
-    if (typeof localStorage !== 'undefined') {
-      void this.setLanguage(loadDocumentLanguage());
-    }
-  }
 
   getLanguage(): DocumentLanguage {
     return this.code;

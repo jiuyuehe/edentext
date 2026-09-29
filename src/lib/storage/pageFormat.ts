@@ -53,9 +53,9 @@ export function pageDimsCm(format: PageFormat, orientation: Orientation): { w: n
 // Sets --user-page-{width,height} (px) on the document root, where they inherit
 // down to .paper / .tiptap (see editor.css) and are read per layout pass by
 // pageBreaks.ts. Supersedes applyOrientationVars, which only knew A4.
-export function applyPageSizeVars(format: PageFormat, orientation: Orientation): void {
+export function applyPageSizeVars(format: PageFormat, orientation: Orientation, target: HTMLElement = document.documentElement): void {
   const { w, h } = pageDimsCm(format, orientation);
-  const root = document.documentElement.style;
+  const root = target.style;
   root.setProperty('--user-page-width', `${w * PX_PER_CM}px`);
   root.setProperty('--user-page-height', `${h * PX_PER_CM}px`);
 }

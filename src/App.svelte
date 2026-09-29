@@ -12,7 +12,7 @@
   import { exportPdf, printPdf, printRaster } from './lib/export/pdf';
   import { supportsFsAccess, saveDocument, openOdt, allowWrite } from './lib/export/saveFile';
   import { loadRecentFiles, rememberRecentFile, readRecentFile, forgetRecentFile, forgetRecentFiles, pruneRecentFiles, getHandle, type RecentFile } from './lib/storage/recentFiles';
-  import { isProtected, decryptPackage, WRONG_PASSWORD } from './lib/crypto/protect';
+  import { isProtected, decryptPackage, encryptPackage, WRONG_PASSWORD } from './lib/crypto/protect';
   import { convertUnsupportedImages } from './lib/import/imageFormats';
   import { repairContent, repairZones } from './lib/import/repairContent';
   import en from './lib/i18n/locales/en';
@@ -109,7 +109,11 @@
     initialUiLocale,
     initialDocumentLanguage,
     initialNewDocument = false,
+    embedded = false,
+    author = '',
     assetBaseUrl,
+    themeTarget,
+    onSaveRequest,
     onReady,
   }: NativeEdenTextAppProps = $props();
   let nativeApiReady = false;
@@ -267,7 +271,10 @@
   let themeOpen = $state(false);
   let toolbarExpanded = $state(loadToolbarExpanded());
   // Which chrome mounts: the floating island or the ribbon. Both drive one editor.
-  let chromeMode: ChromeMode = $state(loadChromeMode());
+  function initialChromeMode(): ChromeMode {
+    return embedded ? 'ribbon' : loadChromeMode();
+  }
+  let chromeMode: ChromeMode = $state(initialChromeMode());
   let showFormattingMarks = $state(loadFormattingMarks());
   let showFieldShading = $state(loadFieldShading());
   let showRuler = $state(loadRuler());
@@ -296,6 +303,11 @@
 
   function setUiLocale(next: Locale): void {
     setLocale(next);
+  }
+
+  function setAuthor(name: string): void {
+    docProps = { ...docProps, author: name.trim() };
+    saveDocProperties(docProps);
   }
 
   // The document name (without .odt). Source of truth for the save filename;
@@ -352,7 +364,7 @@
   }
 
   $effect(() => {
-    saveChromeMode(chromeMode);
+    if (!embedded) saveChromeMode(chromeMode);
   });
 
   $effect(() => {
@@ -389,7 +401,7 @@
 
   $effect(() => {
     saveTabInterval(tabIntervalCm);
-    applyTabIntervalVar(tabIntervalCm);
+    applyTabIntervalVar(tabIntervalCm, themeTarget ?? document.documentElement);
   });
 
   $effect(() => {
@@ -477,7 +489,7 @@
   function selectTheme(m: ThemeMode) {
     themeMode = m;
     saveTheme(m);
-    applyTheme(m);
+    applyTheme(m, themeTarget ?? document.documentElement);
     themeOpen = false;
   }
 
@@ -890,14 +902,19 @@
     }
   }
 
-  async function applyImport(bytes: Uint8Array, handle: FileSystemFileHandle | null, sourceName?: string) {
-    if (!editor) return;
+  async function applyImport(
+    bytes: Uint8Array,
+    handle: FileSystemFileHandle | null,
+    sourceName?: string,
+    options: { replaceCurrent?: boolean; throwOnError?: boolean } = {},
+  ): Promise<boolean> {
+    if (!editor) return false;
     try {
       // Before anything reads the archive: an encrypted file is not one yet.
       let password: string | null = null;
       if (isProtected(bytes)) {
         const opened = await unprotect(bytes);
-        if (!opened) return;
+        if (!opened) return false;
         ({ bytes, password } = opened);
       }
       busyTask = 'loading';
@@ -935,8 +952,8 @@
 
       const hasContent = editor.state.doc.textContent.length > 0 || editor.state.doc.childCount > 1;
       busyTask = null;
-      if (hasContent && !confirm(t().dialogs.confirmReplace)) {
-        return;
+      if (!options.replaceCurrent && hasContent && !confirm(t().dialogs.confirmReplace)) {
+        return false;
       }
       busyTask = 'loading';
       await painted();
@@ -982,7 +999,7 @@
       // an imported table finds its style again by name.
       setStyleSheet({ ...result.styles, table: styleSheet().table });
       setNoteSettings(result.notes);
-      docProps = result.props;
+      docProps = author.trim() ? { ...result.props, author: author.trim() } : result.props;
       saveDocProperties(docProps);
       // Adopt header/footer + first-page variants (null clears the zone); end any edit.
       hfActive = null;
@@ -1031,10 +1048,14 @@
         console.warn('[import] Opened file with limitations:', result.warnings, missingFonts);
         alert(t().dialogs.openedWithLimitations(warnings.join('\n• ')));
       }
+      return true;
     } catch (err) {
       busyTask = null;
       console.error('[import] Failed to open file:', err);
-      alert(err instanceof Error ? localizeImportMessage(err.message) : t().dialogs.couldNotOpen);
+      const message = err instanceof Error ? localizeImportMessage(err.message) : t().dialogs.couldNotOpen;
+      if (options.throwOnError) throw new Error(message);
+      alert(message);
+      return false;
     }
   }
 
@@ -1115,6 +1136,29 @@
     await applyImport(bytes, null, sourceName);
   }
 
+  async function replaceDocument(source: File | Blob | ArrayBuffer | Uint8Array, filename: string): Promise<void> {
+    if (!editor) throw new Error('EdenText is not ready yet');
+    const bytes = source instanceof Uint8Array
+      ? source
+      : source instanceof ArrayBuffer
+        ? new Uint8Array(source)
+        : new Uint8Array(await source.arrayBuffer());
+    const opened = await applyImport(bytes, null, filename, { replaceCurrent: true, throwOnError: true });
+    if (!opened) throw new Error('Document import was canceled');
+  }
+
+  async function exportDocumentBytes(kind: DocumentFormat): Promise<Uint8Array> {
+    if (!editor) throw new Error('EdenText is not ready yet');
+    if (!(await ensurePassword())) throw new Error('Export canceled while setting document protection');
+    const bytes = await buildBytes(kind, editor.getJSON() as TiptapNode);
+    return docPassword ? encryptPackage(bytes, docPassword) : bytes;
+  }
+
+  function requestSave(): void {
+    if (embedded) onSaveRequest?.();
+    else void handleSave();
+  }
+
   // The Vue wrapper receives this object after the real native editor exists. The
   // methods below call the same functions wired to EdenText's own ribbon buttons.
   $effect(() => {
@@ -1128,9 +1172,12 @@
       newDocument: () => handleNew(),
       openFile: () => handleOpen(),
       openDocument,
-      save: () => handleSave(),
+      replaceDocument,
+      save: async () => requestSave(),
       saveAs: (format) => handleSaveAs(format),
       exportDocument: (format) => format === 'pdf' ? handleExportPdf() : handleSaveAs(format),
+      exportDocumentBytes,
+      setAuthor,
       setUiLocale,
       setDocumentLanguage,
       focus: () => editor?.commands.focus(),
@@ -1398,8 +1445,8 @@
     // own binding (save page, find, open, zoom). Everything editor-scoped lives in
     // the Shortcuts extension instead.
     const appActions: [string, () => void][] = [
-      [DEFAULT_SHORTCUTS.save, handleSave],
-      [DEFAULT_SHORTCUTS.open, handleOpen],
+      [DEFAULT_SHORTCUTS.save, requestSave],
+      [DEFAULT_SHORTCUTS.open, embedded ? () => {} : handleOpen],
       [DEFAULT_SHORTCUTS.print, handlePrint],
       [DEFAULT_SHORTCUTS.find, () => openFind('find')],
       [DEFAULT_SHORTCUTS.replace, () => openFind('replace')],
@@ -1498,6 +1545,7 @@
     <Ribbon
       editor={activeEditor}
       tick={activeTick}
+      {embedded}
       bind:documentName
       {documentFormat}
       {dirty}
@@ -1536,12 +1584,12 @@
       {themeMode}
       onSelectTheme={selectTheme}
       {pdfBusy}
-      onNew={handleNew}
+      onNew={embedded ? undefined : handleNew}
       onNewFromTemplate={() => (templateGalleryOpen = true)}
-      onOpen={handleOpen}
-      onSave={handleSave}
-      onSaveAs={handleSaveAs}
-      onSaveTemplate={handleSaveTemplate}
+      onOpen={embedded ? undefined : handleOpen}
+      onSave={requestSave}
+      onSaveAs={embedded ? undefined : handleSaveAs}
+      onSaveTemplate={embedded ? undefined : handleSaveTemplate}
       recentFiles={recentFiles}
       onOpenRecent={(id) => { const f = recentFiles.find((r) => r.id === id); if (f) void handleOpenRecent(f); }}
       onForgetRecent={handleForgetRecent}
@@ -1848,6 +1896,7 @@
   <EditorComponent
     onDocumentLost={resetDocumentState}
     {documentEpoch}
+    {themeTarget}
     {pageRtl}
     bind:editor
     bind:tick
@@ -1978,6 +2027,7 @@
   <SettingsDialog
     bind:open={settingsOpen}
     {themeMode}
+    accentTarget={themeTarget}
     onSelectTheme={selectTheme}
     bind:showRuler
     bind:showFormattingMarks

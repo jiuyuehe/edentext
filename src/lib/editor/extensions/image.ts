@@ -355,7 +355,8 @@ export function sinkToOffset(d: HTMLElement, y: unknown): number | null {
 // from the :root vars the editor maintains (orientation/margins change them). A frame in
 // a header or footer may reach over the whole page.
 export function pageContentHeightPx(frame?: Element): number {
-  const cs = getComputedStyle(document.documentElement);
+  const root = frame?.closest('.edentext-vue-host') ?? document.documentElement;
+  const cs = getComputedStyle(root);
   if (frame?.closest('.hf-zone')) return parseFloat(cs.getPropertyValue('--user-page-height')) || 4000;
   const h =
     parseFloat(cs.getPropertyValue('--user-page-height')) -

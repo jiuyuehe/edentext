@@ -70,7 +70,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     headerFirstDoc = $bindable(null), footerFirstDoc = $bindable(null), differentFirstPage = false,
     headerEvenDoc = $bindable(null), footerEvenDoc = $bindable(null), differentOddEven = false,
     hfEditor = $bindable(null), hfActive = $bindable(null), hfTick = $bindable(0),
-    extraHfSections = $bindable([]),
+    extraHfSections = $bindable([]), themeTarget,
   }: {
     editor: Editor | null; tick: number; currentPage: number; numPages: number; zoom: number;
     onZoom?: (zoom: number) => void;
@@ -81,6 +81,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     splitView?: boolean;
     /** How many pages sit side by side (LibreOffice's View layout ▸ Columns); 1 = off. */
     pageColumns?: number;
+    /** Container whose CSS variables scope this editor instance. */
+    themeTarget?: HTMLElement;
     /** Bumped by App for each document it opens; re-arms the settle gate. */
     documentEpoch?: number;
     /** A right-to-left page: the body's base direction, so its columns fill from the right. */
@@ -169,10 +171,10 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   // Apply the page margins + orientation to the :root CSS vars (visual padding,
   // page dimensions, and pagination all read these). DOM-only, safe in effects.
   $effect(() => {
-    applyMarginVars(pageMargins);
+    applyMarginVars(pageMargins, themeTarget ?? document.documentElement);
   });
   $effect(() => {
-    applyPageSizeVars(pageFormat, orientation);
+    applyPageSizeVars(pageFormat, orientation, themeTarget ?? document.documentElement);
   });
 
   // A header/footer that reaches past the body's margin (its distance from the edge plus
@@ -365,7 +367,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   let leftPageAt = $derived((page: number) => isLeftPage(printedNumberAt(page)));
 
   $effect(() => {
-    const s = document.documentElement.style;
+    const s = (themeTarget ?? document.documentElement).style;
     s.setProperty('--pb-section-numstart', sectionNumStarts);
     s.setProperty('--pb-section-startson', sectionStartsOn);
     s.setProperty('--pb-section-inset', sectionInset);
@@ -469,7 +471,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   // notes, so a change to it has to re-measure — and the line is drawn from the same
   // custom properties.
   $effect(() => {
-    applyNoteVars(noteSettings());
+    applyNoteVars(noteSettings(), themeTarget ?? document.documentElement);
     const ed = editor;
     if (!ed) return;
     requestAnimationFrame(() => {
@@ -581,7 +583,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   // so read live from --user-page-height (set by applyPageSizeVars). Must match
   // pageBreaks.ts. Fallback = A4 portrait (1123 + 20).
   function getCycle(): number {
-    const ph = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--user-page-height'));
+    const ph = parseFloat(getComputedStyle(themeTarget ?? document.documentElement).getPropertyValue('--user-page-height'));
     return (Number.isFinite(ph) ? ph : 1123) + 20;
   }
 
@@ -823,7 +825,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
         const cursorPage = Math.floor(Math.max(0, cursorDoc) / cycle);
         if (cursorPage > tableStartPage) {
           const marginTopDoc =
-            parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--user-margin-top')) || 96;
+            parseFloat(getComputedStyle(themeTarget ?? document.documentElement).getPropertyValue('--user-margin-top')) || 96;
           const pageContentTopDoc = cursorPage * cycle + marginTopDoc;
           const tiptapTopInContainer = tiptapRect.top - cRect.top + container.scrollTop;
           top = tiptapTopInContainer + pageContentTopDoc * z;

@@ -30,6 +30,6 @@ export function saveTabInterval(cm: number): void {
 
 // Sets --tab-interval on the document root, where it inherits down to .tiptap and
 // becomes its `tab-size` (see editor.css).
-export function applyTabIntervalVar(cm: number): void {
-  document.documentElement.style.setProperty('--tab-interval', `${cm}cm`);
+export function applyTabIntervalVar(cm: number, target: HTMLElement = document.documentElement): void {
+  target.style.setProperty('--tab-interval', `${cm}cm`);
 }

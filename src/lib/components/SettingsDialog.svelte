@@ -22,6 +22,7 @@
     recentCount,
     onClearRecent,
     onAutoCorrect,
+    accentTarget,
   }: {
     open?: boolean;
     themeMode: ThemeMode;
@@ -33,6 +34,7 @@
     recentCount: number;
     onClearRecent: () => void;
     onAutoCorrect: () => void;
+    accentTarget?: HTMLElement;
   } = $props();
 
   type Section = 'general' | 'editing' | 'view' | 'privacy';
@@ -53,7 +55,7 @@
   function pickAccent(a: Accent) {
     accent = a;
     saveAccent(a);
-    applyAccent(a);
+    applyAccent(a, accentTarget ?? document.documentElement);
   }
   let wc = $derived(wordCompletion());
 

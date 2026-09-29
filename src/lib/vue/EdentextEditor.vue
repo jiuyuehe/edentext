@@ -4,6 +4,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import NativeEdenTextApp from '../../App.svelte';
 import '../../styles/global.css';
 import { startNativeApp } from '../native/bootstrap';
+import { setRuntimeAssetBaseUrl } from '../runtimeAssets';
 import type { NativeEdenTextApi } from '../native/types';
 import type { EdentextEditorApi, EdentextEditorProps } from './types';
 
@@ -11,6 +12,7 @@ const props = defineProps<EdentextEditorProps>();
 const emit = defineEmits<{
   ready: [api: EdentextEditorApi];
   error: [error: Error];
+  saveRequest: [];
 }>();
 
 const host = ref<HTMLElement | null>(null);
@@ -44,7 +46,8 @@ function requireApi(): NativeEdenTextApi {
 
 onMounted(() => {
   if (!host.value) return;
-  stopNativeApp = startNativeApp();
+  setRuntimeAssetBaseUrl(props.assetBaseUrl);
+  stopNativeApp = startNativeApp(host.value);
   try {
     nativeComponent = mount(NativeEdenTextApp, {
       target: host.value,
@@ -52,7 +55,11 @@ onMounted(() => {
         initialUiLocale: props.locale,
         initialDocumentLanguage: props.documentLanguage,
         initialNewDocument: props.initialNewDocument,
+        embedded: props.embedded,
+        author: props.author,
         assetBaseUrl: props.assetBaseUrl,
+        themeTarget: host.value,
+        onSaveRequest: () => emit('saveRequest'),
         onReady: onNativeReady,
       },
     });
@@ -69,19 +76,27 @@ watch(() => props.documentLanguage, (value, previous) => {
   if (value && value !== previous) nativeApi?.setDocumentLanguage(value);
 });
 
+watch(() => props.author, (value, previous) => {
+  if (value !== previous && value !== undefined) nativeApi?.setAuthor(value);
+});
+
 onBeforeUnmount(() => {
   destroy();
   stopNativeApp?.();
   stopNativeApp = null;
+  setRuntimeAssetBaseUrl(undefined);
 });
 
 defineExpose<EdentextEditorApi>({
   newDocument: () => requireApi().newDocument(),
   openFile: () => requireApi().openFile(),
   openDocument: (source, filename) => requireApi().openDocument(source, filename),
+  replaceDocument: (source, filename) => requireApi().replaceDocument(source, filename),
   save: () => requireApi().save(),
   saveAs: (format) => requireApi().saveAs(format),
   exportDocument: (format) => requireApi().exportDocument(format),
+  exportDocumentBytes: (format) => requireApi().exportDocumentBytes(format),
+  setAuthor: (name) => requireApi().setAuthor(name),
   setUiLocale: (locale) => requireApi().setUiLocale(locale),
   setDocumentLanguage: (language) => requireApi().setDocumentLanguage(language),
   focus: () => requireApi().focus(),

@@ -1,6 +1,7 @@
 import { NO_LANGUAGE, hasDictionary, type DocumentLanguage } from '../storage/documentLanguage';
 import { reportLoadFailure } from '../utils/loadFailure';
 import { t } from '../i18n/i18n.svelte';
+import { runtimeAssetUrl } from '../runtimeAssets';
 
 // Vendored assets: public/thesaurus/<code>/<code>.txt, one synonym group per
 // line, ';'-separated (scripts/make-thesaurus.mjs, from LibreOffice's MyThes data).
@@ -15,7 +16,7 @@ const MAX_GROUPS = 12;
 function fetchThesaurus(code: string): Promise<string | null> {
   // en-GB shares the US thesaurus: the senses are the same, only the spelling differs.
   const file = code === 'en-GB' ? 'en' : code;
-  const url = `${import.meta.env.BASE_URL}thesaurus/${file}/${file}.txt`;
+  const url = runtimeAssetUrl(`thesaurus/${file}/${file}.txt`);
   return fetch(url)
     .then((res) => (res.ok ? res.text() : Promise.reject(new Error(`${res.status} for ${url}`))))
     .catch((err) => {

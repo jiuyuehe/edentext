@@ -123,8 +123,8 @@ function resolveMode(mode: ThemeMode): 'light' | 'dark' | 'allBlack' {
   return mode;
 }
 
-export function applyTheme(mode: ThemeMode): void {
-  document.documentElement.setAttribute('data-theme', resolveMode(mode));
+export function applyTheme(mode: ThemeMode, target: HTMLElement = document.documentElement): void {
+  target.setAttribute('data-theme', resolveMode(mode));
 }
 
 // The chrome's accent colour; 'slate' is the logo's and stays the stored-nothing default.
@@ -141,7 +141,7 @@ export function saveAccent(accent: Accent): void {
   else localStorage.setItem(ACCENT_KEY, accent);
 }
 
-export function applyAccent(accent: Accent): void {
-  if (accent === 'slate') document.documentElement.removeAttribute('data-accent');
-  else document.documentElement.setAttribute('data-accent', accent);
+export function applyAccent(accent: Accent, target: HTMLElement = document.documentElement): void {
+  if (accent === 'slate') target.removeAttribute('data-accent');
+  else target.setAttribute('data-accent', accent);
 }

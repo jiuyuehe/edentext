@@ -2,6 +2,7 @@ import type { HunspellFactory } from 'hunspell-asm';
 import { NO_LANGUAGE, hasDictionary, findLanguage, type DocumentLanguage } from '../storage/documentLanguage';
 import { reportLoadFailure } from '../utils/loadFailure';
 import { t } from '../i18n/i18n.svelte';
+import { runtimeAssetUrl } from '../runtimeAssets';
 
 // Thin engine-agnostic view over a loaded dictionary, so the controller and
 // extension never touch hunspell-asm directly.
@@ -31,10 +32,8 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
 }
 
 async function build(code: string): Promise<Checker> {
-  // Vendored assets: public/dictionaries/<code>/<code>.{aff,dic.txt}. The word list is
-  // .txt so the host gzips it (GitHub Pages leaves a .dic's text/x-c uncompressed);
-  // BASE_URL keeps the path correct under a non-root deploy base.
-  const base = `${import.meta.env.BASE_URL}dictionaries/${code}/${code}`;
+  // The word list uses .txt so static hosts gzip it consistently.
+  const base = runtimeAssetUrl(`dictionaries/${code}/${code}`);
   const [factory, aff, dic] = await Promise.all([
     loadFactory(),
     fetchBytes(`${base}.aff`),

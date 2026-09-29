@@ -120,8 +120,8 @@ Built with Svelte 5, TypeScript, Vite and TipTap 3 (ProseMirror).
 ## Vue 3 package
 
 The repository also builds the browser-only Vue 3 integration package
-`edentext-vue`. It mounts the original EdenText `App.svelte` unchanged and
-exposes only a thin command bridge for new/open/save-as and language settings.
+`edentext-vue`. It mounts the original EdenText `App.svelte` and exposes a
+typed command bridge for opening, replacing, editing and exporting documents.
 The Vue layer does not rebuild the Ribbon or maintain a second document model.
 
 ```bash
@@ -140,13 +140,19 @@ import 'edentext-vue/style.css';
       locale="zh-Hans"
       document-language="zh-CN"
       initial-new-document
+      asset-base-url="/edentext-assets"
     />
   </div>
 </template>
 ```
 
-Build and inspect the publishable package with `npm run build:lib` and
-`npm pack ./packages/edentext-vue --dry-run`. See
+`asset-base-url` must point to a static folder containing the package's runtime
+`assets/` contents, including its dictionaries, thesauri, logo and icon. The
+Vue package scopes its CSS and theme to the editor host.
+
+Build and inspect the package with `npm run build:lib` and
+`npm pack ./packages/edentext-vue --dry-run`. Run `npm run demo:vue` for a
+cloud-drive-style dialog demo with local DOCX open and byte export. See
 [`docs/edentext-vue.md`](docs/edentext-vue.md) for the Vue API and npm release
 workflow.
 
