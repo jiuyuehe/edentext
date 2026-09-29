@@ -109,6 +109,7 @@ export function droppedFrameAttrs(wrap: WrapMode, inFront: boolean): Record<stri
     wrapOffset: null,
     wrapOffsetY: null,
     wrapFromPage: false,
+    wrapFromBody: false,
     anchorPage: null,
     inFront: wrap === 'through' && inFront,
   };
@@ -117,15 +118,33 @@ export function droppedFrameAttrs(wrap: WrapMode, inFront: boolean): Record<stri
 // Word's behind-text / in-front-of-text, ODF run-through: the text runs over or under
 // the frame, so it reserves nothing. Absolute with no offsets keeps the static position
 // it was anchored at; the file's own offsets ride as margins from there.
-export function applyRunThrough(el: HTMLElement, offsetCm: unknown, offsetYCm: unknown, inFront: boolean, fromPage = false): void {
+export function applyRunThrough(el: HTMLElement, offsetCm: unknown, offsetYCm: unknown, inFront: boolean, fromPage = false, fromBody = false): void {
   const px = (cm: unknown) => (typeof cm === 'number' ? Math.round(cmToPx(cm)) : 0);
   el.style.position = 'absolute';
   el.style.margin = `${px(offsetYCm)}px 0 0 ${px(offsetCm)}px`;
   el.style.zIndex = inFront ? '1' : '-1';
+  // Which side of the text it lands on, for the header/footer layer's stacking.
+  if (inFront) el.dataset.inFront = ''; else delete el.dataset.inFront;
+  clearPagePlace(el);
   // A page-placed frame states its corner instead: placeFromPage turns the pair into
-  // the margins that reach it, and pagination re-places it from these same numbers.
-  if (fromPage) { el.dataset.pageX = String(px(offsetCm)); el.dataset.pageY = String(px(offsetYCm)); }
-  else { delete el.dataset.pageX; delete el.dataset.pageY; }
+  // the margins that reach it, and pagination re-places it from these same numbers. A
+  // header/footer zone places it by CSS from the same pair (HeaderFooterLayer).
+  if (fromPage || fromBody) {
+    if (fromBody) el.dataset.fromBody = '';
+    el.dataset.pageX = String(px(offsetCm));
+    el.dataset.pageY = String(px(offsetYCm));
+    el.style.setProperty('--page-x', `${px(offsetCm)}px`);
+    el.style.setProperty('--page-y', `${px(offsetYCm)}px`);
+  }
+}
+
+// A frame leaving run-through, or its page, takes no page place along.
+export function clearPagePlace(el: HTMLElement): void {
+  delete el.dataset.fromBody;
+  delete el.dataset.pageX;
+  delete el.dataset.pageY;
+  el.style.removeProperty('--page-x');
+  el.style.removeProperty('--page-y');
 }
 
 // Drag a frame that is out of the flow. Its offsets count from a point the drag cannot
@@ -190,9 +209,11 @@ export function inlineVerticalAlign(vAlign: unknown, boxHeightPx: number, offset
 }
 
 // The page text height in px, capping how tall an image can be stretched. Read live
-// from the :root vars the editor maintains (orientation/margins change them).
-export function pageContentHeightPx(): number {
+// from the :root vars the editor maintains (orientation/margins change them). A frame in
+// a header or footer may reach over the whole page.
+export function pageContentHeightPx(frame?: Element): number {
   const cs = getComputedStyle(document.documentElement);
+  if (frame?.closest('.hf-zone')) return parseFloat(cs.getPropertyValue('--user-page-height')) || 4000;
   const h =
     parseFloat(cs.getPropertyValue('--user-page-height')) -
     parseFloat(cs.getPropertyValue('--user-margin-top')) -
@@ -297,6 +318,13 @@ export const Image = Node.create({
         parseHTML: el => (el as HTMLElement).hasAttribute('data-wrap-from-page'),
         renderHTML: () => ({}),
       },
+      // Whether wrapOffsetY counts from the top of the page's body text instead (Word's
+      // relativeFrom="margin", ODF's "page-content"): how a header reaches into the body.
+      wrapFromBody: {
+        default: false,
+        parseHTML: el => (el as HTMLElement).hasAttribute('data-wrap-from-body'),
+        renderHTML: () => ({}),
+      },
       // A page-anchored frame's stacking against text (ODF style:run-through): default
       // "background" sits behind; a title page's own cover graphic sets "foreground".
       inFront: {
@@ -340,6 +368,7 @@ export const Image = Node.create({
       ...(node.attrs.anchorPage ? { 'data-anchor-page': String(node.attrs.anchorPage) } : {}),
       ...(node.attrs.inFront ? { 'data-in-front': '' } : {}),
       ...(node.attrs.wrapFromPage ? { 'data-wrap-from-page': '' } : {}),
+      ...(node.attrs.wrapFromBody ? { 'data-wrap-from-body': '' } : {}),
     })];
   },
 
@@ -565,7 +594,14 @@ class ImageView {
   private offX(): unknown { const v = this.node.attrs.wrapOffset; return this.dragBy ? (typeof v === 'number' ? v : 0) + this.dragBy.x : v; }
   private offY(): unknown { const v = this.node.attrs.wrapOffsetY; return this.dragBy ? (typeof v === 'number' ? v : 0) + this.dragBy.y : v; }
   // A frame out of the flow is placed by those offsets alone, so it is dragged by them.
-  private isFree(): boolean { return this.attrWrap() === 'through' || typeof this.node.attrs.anchorPage === 'number'; }
+  private isFree(): boolean { return this.attrWrap() === 'through' || typeof this.node.attrs.anchorPage === 'number' || this.pastZone(); }
+  // A zone's frame set against the page or its body text is out of the zone's flow: the
+  // layer places it there and moves the body clear of it (HeaderFooterLayer).
+  private pastZone(): boolean {
+    const a = this.node.attrs;
+    return this.attrWrap() !== 'inline' && (a.wrapFromBody === true || a.wrapFromPage === true)
+      && !!(this.view.dom as HTMLElement).closest('.hf-zone');
+  }
 
   // Size the rotor to w×h, rotate it about its centre, and grow the axis-aligned
   // wrapper to the rotated bounding box so the line reserves the right space.
@@ -611,17 +647,22 @@ class ImageView {
     d.style.top = '';
     d.style.left = '';
     this.rotor.style.top = '';
+    clearPagePlace(d);
     const a = this.node.attrs;
     if (typeof a.anchorPage === 'number' && a.anchorPage > 0) {
       this.applyPageAnchor(a.anchorPage);
       return;
     }
     delete d.dataset.anchorPage;
+    if (wrap !== 'through' && this.pastZone()) {
+      applyRunThrough(d, this.offX(), this.offY(), true, a.wrapFromPage === true, a.wrapFromBody === true);
+      return;
+    }
     if (wrap === 'through') {
-      applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true);
+      applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true, a.wrapFromBody === true);
       // Deferred like sinkToOffset: the frame has to be laid out before its own page
       // can be read off the grid.
-      if (a.wrapFromPage) requestAnimationFrame(() => placeFromPage(this.view, d));
+      if (a.wrapFromPage || a.wrapFromBody) requestAnimationFrame(() => placeFromPage(this.view, d));
       return;
     }
     if (wrap === 'left' || wrap === 'right') {
@@ -816,7 +857,7 @@ class ImageView {
     // The wrapper is axis-aligned, so its scaled/unscaled width ratio is the zoom.
     const zoom = this.dom.getBoundingClientRect().width / this.dom.offsetWidth || 1;
     const maxW = this.boxMaxWidth();
-    const maxH = pageContentHeightPx();
+    const maxH = pageContentHeightPx(this.dom);
     const sx = event.clientX;
     const sy = event.clientY;
     const win = this.dom.ownerDocument.defaultView ?? window;

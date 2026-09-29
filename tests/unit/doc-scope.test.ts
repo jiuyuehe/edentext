@@ -11,8 +11,9 @@ describe('pickSlot', () => {
 
   it('mints a new document while every one is held', () => {
     const id = pickSlot({ '': NOW - 1000 }, NOW);
+    // Minted in the same millisecond, the next one still steers clear of it.
     expect(id).not.toBe('');
-    expect(pickSlot({ '': NOW - 1000, [id]: NOW }, NOW)).not.toBe(id);
+    for (let i = 0; i < 2e4; i++) expect(pickSlot({ '': NOW - 1000, [id]: NOW }, NOW)).not.toBe(id);
   });
 
   it('takes up the most recent document no tab holds', () => {

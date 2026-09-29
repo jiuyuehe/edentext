@@ -5,8 +5,7 @@ import { importDocx } from '../../src/lib/import/docx';
 const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
 // Word's page-number gallery anchors the number in a text box at the right margin, next
-// to the footer's own line. The zone holds one paragraph, so the box's text has to join
-// that line — dropping it with the box loses every page number in the document.
+// to the footer's own line. The zone keeps the box, and the box its live page number.
 const FOOTER_XML = `<?xml version="1.0"?>
 <w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
        xmlns:r="${REL}"
@@ -60,13 +59,13 @@ const bytes = zipSync({
 });
 
 describe('DOCX footer text box', () => {
-  it('keeps a boxed page-number field on the zone line, behind a tab', () => {
+  it('keeps the text box, with a live page number in it', () => {
     const res = importDocx(bytes);
     const inline = (res.footer as any)?.content?.[0]?.content ?? [];
-    expect(inline.map((n: any) => n.type === 'text' ? n.text : `<${n.type}>`).join('')).toBe('Annual report\t<pageNumber>');
-    // The zone's own text has no tab, so the file's stops would only catch the box's:
-    // its own right edge, at the right margin, is the one the line keeps.
-    expect((res.footer as any).content[0].attrs.tabStops).toBe('15.92r');
-    expect([...res.warnings]).toContain('Text boxes in headers or footers were flattened to text');
+    const box = inline.find((n: any) => n.type === 'textBox');
+    expect(inline.map((n: any) => n.type === 'text' ? n.text : `<${n.type}>`).join('')).toBe('<textBox>Annual report');
+    expect(box.content[0].content).toEqual([{ type: 'pageNumber' }]);
+    expect(box.content[0].attrs.textAlign).toBe('right');
+    expect([...res.warnings]).not.toContain('Text boxes in headers or footers were flattened to text');
   });
 });

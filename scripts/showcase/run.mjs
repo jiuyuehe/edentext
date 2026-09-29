@@ -88,7 +88,7 @@ try {
         const zoom = (parseFloat(localStorage.getItem('edentext-zoom')) || 100) / 100;
         const top = paper.getBoundingClientRect().top - editor.getBoundingClientRect().top + editor.scrollTop;
         if (at) {
-          const h = [...document.querySelectorAll('.tiptap :is(h1, h2, h3, p)')].find((e) => e.textContent.trim() === at);
+          const h = [...document.querySelectorAll('.tiptap-host .tiptap :is(h1, h2, h3, p)')].find((e) => e.textContent.trim() === at);
           n = Math.floor((h.getBoundingClientRect().top - paper.getBoundingClientRect().top) / (cycle * zoom)) + 1;
         }
         editor.scrollTop = top + (n - 1) * cycle * zoom - 12;
@@ -98,7 +98,7 @@ try {
         // contextual tabs, so the ribbon shows what the shot is about.
         const first = caret
           ? [...document.querySelectorAll(caret)].find((e) => e.getBoundingClientRect().top > limit)
-          : [...document.querySelectorAll('.tiptap > p')].find((p) => p.getBoundingClientRect().top > limit && p.textContent.trim() && plain(p));
+          : [...document.querySelectorAll('.tiptap-host .tiptap > p')].find((p) => p.getBoundingClientRect().top > limit && p.textContent.trim() && plain(p));
         const view = document.querySelector('.tiptap').editor;
         if (first) view.commands.focus(view.view.posAtDOM(first, 0) + 1, { scrollIntoView: false });
       }, { page: shot.page ?? 1, at: shot.at, caret: shot.caret });

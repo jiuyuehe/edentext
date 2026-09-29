@@ -218,10 +218,10 @@
 
   let hasSelection = $derived(tick >= 0 && !!editor && !editor.state.selection.empty);
   let isLink = $derived(tick >= 0 && !!editor?.isActive('link'));
-  let bmNames = $derived(tick >= 0 && editor && !hfActive ? bookmarkNames(editor.state.doc) : []);
+  let bmNames = $derived(tick >= 0 && editor ? bookmarkNames(editor.state.doc) : []);
 
   function openLink() {
-    if (!editor || hfActive) return; // body-only; the HF schema has no link mark
+    if (!editor) return;
     linkUrl = (editor.getAttributes('link').href as string) ?? '';
     linkOpen = true;
   }
@@ -247,13 +247,13 @@
   }
 
   function openBookmark() {
-    if (!editor || hfActive || !hasSelection) return;
+    if (!editor || !hasSelection) return;
     crossRefOpen = false;
     bookmarkOpen = true;
   }
 
   function openCrossRef() {
-    if (!editor || hfActive) return;
+    if (!editor) return;
     bookmarkOpen = false;
     crossRefOpen = true;
   }

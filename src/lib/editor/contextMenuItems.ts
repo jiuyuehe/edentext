@@ -122,12 +122,15 @@ export function buildContextMenu(editor: Editor, opts: { spell?: SpellSection; g
     disabled: !hasSelection,
     run: () => window.dispatchEvent(new CustomEvent(OPEN_BOOKMARK_DIALOG_EVENT)),
   });
-  entries.push({
-    kind: 'item',
-    label: m.newComment,
-    disabled: !hasSelection,
-    run: () => window.dispatchEvent(new CustomEvent(OPEN_COMMENT_EVENT)),
-  });
+  // A header or footer takes no comment (its schema has no such mark).
+  if (editor.schema.marks.comment) {
+    entries.push({
+      kind: 'item',
+      label: m.newComment,
+      disabled: !hasSelection,
+      run: () => window.dispatchEvent(new CustomEvent(OPEN_COMMENT_EVENT)),
+    });
+  }
   entries.push({
     kind: 'item',
     label: m.insertCrossRef,

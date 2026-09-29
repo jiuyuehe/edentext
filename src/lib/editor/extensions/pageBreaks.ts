@@ -360,13 +360,18 @@ export function leftInEditor(view: EditorView, el: HTMLElement): number {
 // page the anchor lands on. Both are written as margins off the frame's static position,
 // which is where the anchor character sits — so each is measured, not assumed.
 export function placeFromPage(view: EditorView, el: HTMLElement, grid?: PageGrid): void {
+  // A header/footer zone has no page grid of its own: its layer places the frame by CSS.
+  if ((view.dom as HTMLElement).closest('.hf-zone')) return;
   const g = grid ?? readVerticalMargins(view.dom as HTMLElement).grid;
   el.style.marginTop = '0px';
   el.style.marginLeft = '0px';
   const top = topInEditor(view, el);
   const left = leftInEditor(view, el);
   const column = parseFloat(getComputedStyle(view.dom as HTMLElement).paddingLeft) || 0;
-  el.style.marginTop = `${Math.round(g.topOf(g.pageAt(top)) + (Number(el.dataset.pageY) || 0) - top)}px`;
+  // One set against the body text counts from where that page's body begins.
+  const page = g.pageAt(top);
+  const from = el.dataset.fromBody != null ? g.contentTopOf(page) : g.topOf(page);
+  el.style.marginTop = `${Math.round(from + (Number(el.dataset.pageY) || 0) - top)}px`;
   el.style.marginLeft = `${Math.round(column + (Number(el.dataset.pageX) || 0) - left)}px`;
 }
 

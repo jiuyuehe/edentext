@@ -59,6 +59,14 @@ Automatic styles inherit from their named parent when direct formatting remains.
 margins when a direct override changes either side: LibreOffice otherwise resolves the omitted
 side from the default style instead of the parent chain.
 
+Header/footer zones ride the body path: `buildOdt` appends each zone's blocks behind the body
+between `HFZ` marker paragraphs, so every content pass covers them, and `cutZones` moves each
+region into its master page, copying the automatic styles it reaches into styles.xml under
+`Hz*` names (a zone may sit in several masters, so its `xml:id`s go). DOCX writes a zone through
+`blocksToDocx`; its sentinel passes run over header and footer parts with their own
+relationships, and a zone's list instances are registered before packing, since the package
+writes numbering.xml ahead of its header parts.
+
 ODF sections write their own page layout and master-page variants. Header/footer distances are
 part of page geometry, not body margins. Each master writes an explicit zone, including blank
 ones where needed, so a section cannot inherit an unintended prior zone. Mirrored margins,

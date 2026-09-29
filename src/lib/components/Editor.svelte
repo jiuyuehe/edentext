@@ -184,42 +184,53 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   let hfZoneHeights = $state<number[][]>([]);
   const zoneHeightPx = (section: number, key: HfZoneKey): number =>
     hfZoneHeights[section]?.[HF_ZONE_KEYS.indexOf(key)] ?? 0;
+  // How far a header's frames set against the body push its text down (HeaderFooterLayer).
+  let hfZoneIntrusions = $state<number[][]>([]);
+  const pushed = (top: number, section: number, key: HfZoneKey): number =>
+    top + (hfZoneIntrusions[section]?.[HF_ZONE_KEYS.indexOf(key)] ?? 0);
   function hfReachPx(doc: HfDoc, distPx: number, footer = false, measuredPx = 0): number {
     if (!doc || hfIsEmpty(doc)) return 0;
+    // The measured band wins where there is one: the estimate below cannot see a line
+    // that wraps, and it only ever grows a line past the 12pt default. It carries the
+    // paragraph's space above already (HeaderFooterLayer measures with it).
+    if (measuredPx > 0) return distPx + measuredPx;
     type Run = { type?: string; attrs?: { height?: number; wrap?: string }; marks?: { type?: string; attrs?: { fontSize?: string; fontFamily?: string } }[] };
-    const para = doc.content?.[0] as { content?: Run[]; attrs?: { spaceBefore?: number; spaceAfter?: number; fontSize?: string; fontFamily?: string } } | undefined;
-    const inline = para?.content ?? [];
+    type Block = { type?: string; content?: Run[]; attrs?: { spaceBefore?: number; fontSize?: string; fontFamily?: string } };
     // A line is its font's own natural height: the zone's biggest run sizes its lines and
     // LibreOffice grows the band to hold them where fo:min-height is smaller (probed).
     // The body default only stands in for a run that declares no size of its own.
     const line = (size?: string, family?: string) =>
       size ? (parseFloat(size) * 96) / 72 * singleLineHeight(family) : HF_LINE_PX;
-    // The paragraph mark is the strut every run that declares no size of its own takes.
-    const base = line(para?.attrs?.fontSize, para?.attrs?.fontFamily);
-    let linePx = base;
-    for (const n of inline) {
-      if (n.type === 'image') continue;
-      const ts = n.marks?.find((m) => m.type === 'textStyle')?.attrs;
-      linePx = Math.max(linePx, ts?.fontSize ? line(ts.fontSize, ts.fontFamily) : base);
-    }
-    // Per line, since an as-character image (a letterhead logo) makes its own line
-    // as tall as it is; the others are one text line each. A positioned frame is out
-    // of flow — a page-sized background would otherwise reserve the whole page.
-    let total = 0;
-    let image = 0;
-    for (const n of inline) {
-      if (n.type === 'hardBreak') { total += Math.max(linePx, image); image = 0; }
-      else if (n.type === 'image' && typeof n.attrs?.height === 'number' && (n.attrs.wrap ?? 'inline') === 'inline') image = Math.max(image, n.attrs.height);
-    }
+    const blockPx = (para: Block): number => {
+      // Anything but a text block (a table, a list) is estimated as one line.
+      if (para.type !== 'paragraph' && para.type !== 'heading') return HF_LINE_PX;
+      const inline = para.content ?? [];
+      // The paragraph mark is the strut every run that declares no size of its own takes.
+      const base = line(para.attrs?.fontSize, para.attrs?.fontFamily);
+      let linePx = base;
+      for (const n of inline) {
+        if (n.type === 'image') continue;
+        const ts = n.marks?.find((m) => m.type === 'textStyle')?.attrs;
+        linePx = Math.max(linePx, ts?.fontSize ? line(ts.fontSize, ts.fontFamily) : base);
+      }
+      // Per line, since an as-character image (a letterhead logo) makes its own line
+      // as tall as it is; the others are one text line each. A positioned frame is out
+      // of flow — a page-sized background would otherwise reserve the whole page.
+      let total = 0;
+      let image = 0;
+      for (const n of inline) {
+        if (n.type === 'hardBreak') { total += Math.max(linePx, image); image = 0; }
+        else if (n.type === 'image' && typeof n.attrs?.height === 'number' && (n.attrs.wrap ?? 'inline') === 'inline') image = Math.max(image, n.attrs.height);
+      }
+      return total + Math.max(linePx, image);
+    };
+    const blocks = (doc.content ?? []) as Block[];
     // A footer is laid out from the page edge up, so its space above rides the band too;
     // a header's space below is part of the band the body starts under.
-    const spacing = footer ? ((para?.attrs?.spaceBefore ?? 0) * 96) / 72 : 0;
-    // The measured band wins where there is one: the estimate below cannot see a line
-    // that wraps, and it only ever grows a line past the 12pt default. It carries the
-    // paragraph's space above already (HeaderFooterLayer measures with it).
-    if (measuredPx > 0) return distPx + measuredPx;
-    return distPx + spacing + total + Math.max(linePx, image);
+    const spacing = footer ? ((blocks[0]?.attrs?.spaceBefore ?? 0) * 96) / 72 : 0;
+    return distPx + spacing + blocks.reduce((sum, b) => sum + blockPx(b), 0);
   }
+
   // The Han font of an East Asian document, where text naming no asian font falls back to.
   let asianDefaultFont = $derived.by(() => {
     const font = cjkDocFont(tagForLanguage(documentLanguage) ?? '');
@@ -233,12 +244,13 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   // Effective top/bottom margins (px) pageBreaks reads to keep content clear of the
   // header/footer: "first" = page 1's own zone, "rest" = every page ≥ 2 with the even
   // variant folded in (max), since one --pb-content-*-rest covers all of them.
-  let evenTopReach = $derived(differentOddEven ? hfReachPx(headerEvenDoc ?? null, headerDistPx, false, zoneHeightPx(0, 'headerEven')) : 0);
+  let evenTopReach = $derived(differentOddEven
+    ? pushed(Math.max(mTopPx, hfReachPx(headerEvenDoc ?? null, headerDistPx, false, zoneHeightPx(0, 'headerEven'))), 0, 'headerEven') : 0);
   let evenBottomReach = $derived(differentOddEven ? hfReachPx(footerEvenDoc ?? null, footerDistPx, true, zoneHeightPx(0, 'footerEven')) : 0);
-  let effTopRest = $derived(Math.max(mTopPx, hfReachPx(headerDoc ?? null, headerDistPx, false, zoneHeightPx(0, 'header')), evenTopReach));
-  let effTopFirst = $derived(Math.max(mTopPx, differentFirstPage
-    ? hfReachPx(headerFirstDoc ?? null, headerDistPx, false, zoneHeightPx(0, 'headerFirst'))
-    : hfReachPx(headerDoc ?? null, headerDistPx, false, zoneHeightPx(0, 'header'))));
+  let effTopRest = $derived(Math.max(pushed(Math.max(mTopPx, hfReachPx(headerDoc ?? null, headerDistPx, false, zoneHeightPx(0, 'header'))), 0, 'header'), evenTopReach));
+  let effTopFirst = $derived(differentFirstPage
+    ? pushed(Math.max(mTopPx, hfReachPx(headerFirstDoc ?? null, headerDistPx, false, zoneHeightPx(0, 'headerFirst'))), 0, 'headerFirst')
+    : pushed(Math.max(mTopPx, hfReachPx(headerDoc ?? null, headerDistPx, false, zoneHeightPx(0, 'header'))), 0, 'header'));
   let effBottomRest = $derived(Math.max(mBottomPx, hfReachPx(footerDoc ?? null, footerDistPx, true, zoneHeightPx(0, 'footer')), evenBottomReach));
   let effBottomFirst = $derived(Math.max(mBottomPx, differentFirstPage
     ? hfReachPx(footerFirstDoc ?? null, footerDistPx, true, zoneHeightPx(0, 'footerFirst'))
@@ -260,9 +272,11 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       const fDist = (d: HfDistances | null) => (d ? cmToPx(d.footer) : footerDistPx);
       const reach = (key: HfZoneKey, dist: number, footer = false) =>
         hfReachPx(s[key] ?? null, dist, footer, zoneHeightPx(i + 1, key));
+      const firstKey = s.differentFirstPage ? 'headerFirst' : 'header';
       return [
-        Math.max(topOf(first), reach(s.differentFirstPage ? 'headerFirst' : 'header', hDist(firstD))),
-        Math.max(topOf(rest), reach('header', hDist(restD)), s.differentOddEven ? reach('headerEven', hDist(restD)) : 0),
+        pushed(Math.max(topOf(first), reach(firstKey, hDist(firstD))), i + 1, firstKey),
+        Math.max(pushed(Math.max(topOf(rest), reach('header', hDist(restD))), i + 1, 'header'),
+          s.differentOddEven ? pushed(Math.max(topOf(rest), reach('headerEven', hDist(restD))), i + 1, 'headerEven') : 0),
         Math.max(bottomOf(first), reach(s.differentFirstPage ? 'footerFirst' : 'footer', fDist(firstD), true)),
         Math.max(bottomOf(rest), reach('footer', fDist(restD), true), s.differentOddEven ? reach('footerEven', fDist(restD), true) : 0),
       ];
@@ -560,14 +574,13 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   let grammarTarget: { from: number; to: number; message: string; text: string; fixes: GrammarFix[] } | null = null;
 
   function openContextMenu(event: MouseEvent, pane: number) {
-    const ed = editor;
+    const ed = uiEditor;
     activePane = pane;
     const container = paneScroller();
     // Shift+right-click yields to the browser menu, whose Paste needs no clipboard
-    // permission (Firefox does this for page handlers by itself). Header/footer keeps
-    // the browser menu too — the schema has none of the entries below.
-    if (!ed || event.shiftKey || hfActive || !container) return;
-    const view = paneView();
+    // permission (Firefox does this for page handlers by itself).
+    if (!ed || event.shiftKey || !container) return;
+    const view = uiView();
     const target = event.target as HTMLElement | null;
     if (!view || !target || !view.dom.contains(target)) return;
     if (target.closest('.image-node, .textbox-node')) return; // own floating toolbars
@@ -683,6 +696,16 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     linkTip = null;
   }
 
+  // The floating chrome and the context menu describe the editor being worked in: an
+  // open header/footer zone's, else the body's.
+  let uiEditor = $derived(hfActive && hfEditor ? hfEditor : editor);
+  let uiTick = $derived(tick + hfTick);
+  const uiView = (): EditorView | null => (hfActive && hfEditor ? hfEditor.view : paneView());
+  $effect(() => {
+    void hfTick;
+    scheduleTableUi();
+  });
+
   // --- Floating table-editing toolbar ---
   // Shown when the selection is inside a table; positioned just above that table.
   let tableUi = $state<{ visible: boolean; top: number; left: number; bottom: number }>({ visible: false, top: 0, left: 0, bottom: 0 });
@@ -692,8 +715,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   // What the sort and formula popovers open on: the grid around the cursor's cell.
   const NO_TABLE = { columns: 1, column: 0, headerRow: false, cell: null as string | null, formula: '=SUM(ABOVE)', format: null as CellFormat | null };
   let tableGrid = $derived.by(() => {
-    const state = editor?.state;
-    if (tick < 0 || !state || !isInTable(state)) return NO_TABLE;
+    const state = uiEditor?.state;
+    if (uiTick < 0 || !state || !isInTable(state)) return NO_TABLE;
     const rect = selectedRect(state);
     return {
       columns: rect.map.width,
@@ -744,9 +767,9 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   }
 
   function recomputeTableUi() {
-    const ed = editor;
+    const ed = uiEditor;
     const container = paneScroller();
-    const view = paneView();
+    const view = uiView();
     if (!ed || !container || !view) {
       if (tableUi.visible) tableUi = { ...tableUi, visible: false };
       return;
@@ -797,9 +820,9 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   let imageUi = $state<{ visible: boolean; top: number; left: number; wrap: WrapMode; inFront: boolean }>({ visible: false, top: 0, left: 0, wrap: 'inline', inFront: false });
 
   function recomputeImageUi() {
-    const ed = editor;
+    const ed = uiEditor;
     const container = paneScroller();
-    const view = paneView();
+    const view = uiView();
     if (!ed || !container || !view) {
       if (imageUi.visible) imageUi = { ...imageUi, visible: false };
       return;
@@ -831,9 +854,9 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   }>({ visible: false, top: 0, left: 0, wrap: 'inline', inFront: false, wrapAlign: null, shapeKind: 'textbox', fillColor: '#FFFFFF', strokeColor: '#000000', strokeWidthPt: 1, textVertical: false });
 
   function recomputeTextBoxUi() {
-    const ed = editor;
+    const ed = uiEditor;
     const container = paneScroller();
-    const view = paneView();
+    const view = uiView();
     const found = ed && container && view && !imageUi.visible ? findTextBox(ed.state) : null;
     const dom = found ? view!.nodeDOM(found.pos) : null;
     if (!found || !(dom instanceof HTMLElement)) {
@@ -1802,6 +1825,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
         {chapterStarts}
         {pageNumbering}
         bind:zoneHeights={hfZoneHeights}
+        bind:zoneIntrusions={hfZoneIntrusions}
         interactive={i === 0}
       />
     </div>
@@ -1813,8 +1837,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   {#if i === activePane}
   {#if tableUi.visible && !tableDialog}
     <TableToolbar
-      {editor}
-      {tick}
+      editor={uiEditor}
+      tick={uiTick}
       top={tableUi.top}
       left={tableUi.left}
       onDialog={(which) => (tableDialog = which)}
@@ -1825,7 +1849,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       {#if tableDialog === 'split'}
         <TableSplitDialog
           onApply={(cols, rows) => {
-            editor?.chain().focus().splitCellInto(cols, rows).run();
+            uiEditor?.chain().focus().splitCellInto(cols, rows).run();
             tableDialog = null;
           }}
           onClose={() => (tableDialog = null)}
@@ -1836,7 +1860,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
           column={tableGrid.column}
           headerRow={tableGrid.headerRow}
           onApply={(options) => {
-            editor?.chain().focus().sortTable(options).run();
+            uiEditor?.chain().focus().sortTable(options).run();
             tableDialog = null;
           }}
           onClose={() => (tableDialog = null)}
@@ -1847,7 +1871,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
           initial={tableGrid.formula}
           initialFormat={tableGrid.format}
           onApply={(formula, format) => {
-            editor?.chain().focus().setCellFormula(formula, format).run();
+            uiEditor?.chain().focus().setCellFormula(formula, format).run();
             tableDialog = null;
           }}
           onClose={() => (tableDialog = null)}
@@ -1856,11 +1880,11 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     </div>
   {/if}
   {#if imageUi.visible}
-    <ImageToolbar {editor} top={imageUi.top} left={imageUi.left} wrap={imageUi.wrap} inFront={imageUi.inFront} />
+    <ImageToolbar editor={uiEditor} top={imageUi.top} left={imageUi.left} wrap={imageUi.wrap} inFront={imageUi.inFront} />
   {/if}
   {#if textBoxUi.visible}
     <TextBoxToolbar
-      {editor}
+      editor={uiEditor}
       top={textBoxUi.top}
       left={textBoxUi.left}
       wrap={textBoxUi.wrap}
@@ -1943,7 +1967,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   }
 
   /* While editing a header/footer, dim the body so focus is on the margin zone. */
-  .paper.hf-editing :global(.tiptap) {
+  .paper.hf-editing :global(.tiptap-host .tiptap) {
     opacity: 0.5;
     transition: opacity 0.15s;
   }

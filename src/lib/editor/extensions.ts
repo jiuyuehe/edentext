@@ -73,6 +73,7 @@ import { TableOfContents } from './extensions/tableOfContents';
 import { Outline } from './extensions/outline';
 import { Note, NoteRef, NoteSection, Notes } from './extensions/notes';
 import { Shortcuts } from './extensions/shortcuts';
+import { PageNumber, PageCount, ChapterField } from './extensions/pageField';
 import { AutoCorrect } from './extensions/autoCorrect';
 import { WordCompletion } from './extensions/wordCompletion';
 import { AutoText } from './extensions/autoText';
@@ -279,7 +280,27 @@ export const extensions = [
   // Named blocks of text kept beside the documents; F3 expands a typed shortcut.
   AutoText,
   SearchReplace.configure({ sheet: styleSheet }),
-  // Word/LibreOffice key bindings that aren't TipTap defaults; body:true adds the
-  // ones the header/footer schema has no commands for (headings, line spacing, fields).
-  Shortcuts.configure({ body: true }),
+  // Word/LibreOffice key bindings that aren't TipTap defaults.
+  Shortcuts,
 ];
+
+// What a header or footer has no use for: the page flow, notes, generated indexes,
+// review, and the typing aids that watch the body.
+const BODY_ONLY = new Set([
+  'doc', 'placeholder', 'noteRef', 'note', 'noteSection', 'notes', 'pageBreak', 'pageBreaks',
+  'columns', 'columnsFlow', 'tableOfContents', 'outline', 'comment', 'insertion', 'deletion',
+  'trackChanges', 'searchReplace', 'autoText', 'wordCompletion', 'autoCorrect', 'spellCheck', 'grammarCheck',
+]);
+
+// A header or footer is a text area like the body, with the page fields on top.
+export function zoneExtensions(placeholder = '') {
+  return [
+    Document.extend({ content: 'block+' }),
+    ...extensions.filter((e) => !BODY_ONLY.has(e.name)),
+    PageNumber,
+    PageCount,
+    // The running head's chapter name, resolved per page by HeaderFooterLayer.
+    ChapterField,
+    Placeholder.configure({ placeholder }),
+  ];
+}

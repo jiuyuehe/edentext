@@ -14,6 +14,7 @@ const ORDERED_DEFAULTS: Record<string, unknown> = {
   marginLeft: 0, marginRight: 0, marginTop: 0, marginBottom: 0, // a table's, once a command has touched them
   alt: '', inFront: false, paddingCm: 0.15, flipV: false, textVertical: false, textVAlign: 'top', // the editor's own picture and box defaults
   wrapFromPage: false,
+  wrapFromBody: false,
   // index attrs the DOCX TOC field has no switch for come back at their defaults
   maxLevel: MAX_HEADING_LEVEL, leader: '.', citationStyle: 'key',
 };
@@ -141,8 +142,8 @@ export function firstDiff(a: N, b: N, path = '$'): string | null {
 export function unhoist(node: any): any {
   const { fontSize, fontFamily } = node.attrs ?? {};
   if ((fontSize || fontFamily) && node.content) {
+    // Its page fields and other atoms too, which render in the block's font as well.
     for (const c of node.content) {
-      if (c.type !== 'text') continue;
       const ts = (c.marks ??= []).find((m: any) => m.type === 'textStyle')
         ?? (c.marks.push({ type: 'textStyle', attrs: {} }), c.marks[c.marks.length - 1]);
       ts.attrs = { ...(fontSize ? { fontSize } : {}), ...(fontFamily ? { fontFamily } : {}), ...ts.attrs };

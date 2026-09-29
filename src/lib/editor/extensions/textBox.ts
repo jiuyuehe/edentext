@@ -10,7 +10,7 @@ import type { EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import { placeFromPage } from './pageBreaks';
-import { HANDLES, MIN_SIZE_PX, clamp, parsePx, frameMargins, pageContentHeightPx, applyRunThrough, startFreeMove, droppedFrameAttrs, type WrapMode } from './image';
+import { HANDLES, MIN_SIZE_PX, clamp, parsePx, frameMargins, pageContentHeightPx, applyRunThrough, clearPagePlace, startFreeMove, droppedFrameAttrs, type WrapMode } from './image';
 import { SHAPES, shapePath, linePaths, arrowHeadPx, isShapeKind, isLineKind, type ShapeKind } from '../../utils/shapes';
 import { cmToPx } from '../../storage/pageMargins';
 import { normalizeColor } from '../../utils/color';
@@ -54,6 +54,7 @@ export interface TextBoxAttrs {
   wrapOffset: number | null;  // cm from the text column's left edge
   wrapOffsetY: number | null; // cm below the anchor paragraph
   wrapFromPage: boolean;      // …or below the top of the page the anchor lands on
+  wrapFromBody: boolean;      // …or below the top of that page's body text
   inFront: boolean;           // over the text rather than behind it (run-through only)
   wrapDist: number | null;    // cm of gap to the text beside it
   wrapAlign: string | null;   // 'center'/'right' = set against the middle/far end
@@ -217,6 +218,12 @@ export const TextBox = Node.create({
         parseHTML: el => (el as HTMLElement).hasAttribute('data-wrap-from-page'),
         renderHTML: () => ({}),
       },
+      // Whether it counts from the top of the page's body text instead — as on an image.
+      wrapFromBody: {
+        default: false,
+        parseHTML: el => (el as HTMLElement).hasAttribute('data-wrap-from-body'),
+        renderHTML: () => ({}),
+      },
       // The gap to the text beside it, in cm — as on an image.
       wrapDist: {
         default: null,
@@ -331,6 +338,7 @@ export const TextBox = Node.create({
       ...(a.wrap !== 'inline' ? { 'data-wrap': a.wrap } : {}),
       ...(a.inFront ? { 'data-in-front': '' } : {}),
       ...(a.wrapFromPage ? { 'data-wrap-from-page': '' } : {}),
+      ...(a.wrapFromBody ? { 'data-wrap-from-body': '' } : {}),
       ...(a.shapeKind !== 'textbox' ? { 'data-shape': a.shapeKind } : {}),
       ...(a.shapePath ? { 'data-shape-path': a.shapePath } : {}),
       ...(a.flipV ? { 'data-flip-v': 'true' } : {}),
@@ -588,6 +596,14 @@ class TextBoxView {
   private offX(): unknown { const v = this.attrs().wrapOffset; return this.dragBy ? (typeof v === 'number' ? v : 0) + this.dragBy.x : v; }
   private offY(): unknown { const v = this.attrs().wrapOffsetY; return this.dragBy ? (typeof v === 'number' ? v : 0) + this.dragBy.y : v; }
 
+  // Past its zone, as on an image (ImageView.pastZone).
+  private pastZone(): boolean {
+    const a = this.attrs();
+    // The mount, not editor.view: that is not there yet while a saved document builds.
+    const mount = this.editor.options.element as HTMLElement | null;
+    return a.wrap !== 'inline' && (a.wrapFromBody || a.wrapFromPage) && !!mount?.closest?.('.hf-zone');
+  }
+
   private applyAll(): void {
     const a = this.attrs();
     this.rotor.style.width = a.width ? `${a.width}px` : `${DEFAULT_WIDTH_PX}px`;
@@ -765,17 +781,20 @@ class TextBoxView {
     d.style.verticalAlign = '';
     d.style.margin = '';
     this.rotor.style.left = '';
-    if (a.wrap === 'left' || a.wrap === 'right') {
+    clearPagePlace(d);
+    if (a.wrap !== 'through' && this.pastZone()) {
+      applyRunThrough(d, this.offX(), this.offY(), true, a.wrapFromPage, a.wrapFromBody);
+    } else if (a.wrap === 'left' || a.wrap === 'right') {
       d.style.float = a.wrap;
       d.style.margin = frameMargins(a.wrap, a.wrapOffset, this.wrapperWidth(), null, a.wrapDist);
     } else if (a.wrap === 'through') {
       // Behind the text, which is what a shape with no run-through of its own exports as
       // — and under a picture behind the text too (-1), which is the order LibreOffice
       // paints a cover page in; a box the file puts in front of the text sits above both.
-      applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true);
+      applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true, a.wrapFromBody === true);
       if (a.inFront !== true) d.style.zIndex = '-2';
       // Deferred: the frame has to be laid out before its own page can be read.
-      if (a.wrapFromPage) requestAnimationFrame(() => placeFromPage(this.editor.view, d));
+      if (a.wrapFromPage || a.wrapFromBody) requestAnimationFrame(() => placeFromPage(this.editor.view, d));
     } else if (a.wrap === 'topBottom') {
       // A full-width float, as on an image: text may only flow above and below it, and
       // a block box on an inline node view splits the paragraph's inline content into
@@ -858,7 +877,7 @@ class TextBoxView {
       if (!already) { e.preventDefault(); view.focus(); }
       // Out of the flow there is no text position to re-anchor to, so the ring drag
       // moves the box by its own offsets instead of PM's native node move.
-      if (this.attrs().wrap === 'through') {
+      if (this.attrs().wrap === 'through' || this.pastZone()) {
         startFreeMove(e, this.dom, this.node.attrs, by => { this.dragBy = by; this.applyWrap(); },
           offsets => { if (offsets) this.commit(offsets); });
       }
@@ -912,7 +931,7 @@ class TextBoxView {
     const sinT = Math.sin(th);
     const zoom = this.dom.getBoundingClientRect().width / this.dom.offsetWidth || 1;
     const maxW = this.boxMaxWidth();
-    const maxH = pageContentHeightPx();
+    const maxH = pageContentHeightPx(this.dom);
     const sx = event.clientX;
     const sy = event.clientY;
     const win = this.dom.ownerDocument.defaultView ?? window;

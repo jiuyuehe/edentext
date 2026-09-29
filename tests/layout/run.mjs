@@ -166,7 +166,7 @@ function lintLayout() {
   // A heading stays with the block it introduces, across a page and a column alike,
   // unless that block asks for the break itself.
   const blocks = (parent) => [...parent.children].filter((e) => !e.hasAttribute('data-page-break-spacer'));
-  for (const h of paper.querySelectorAll('.tiptap :is(h1, h2, h3, h4, h5, h6)')) {
+  for (const h of paper.querySelectorAll('.tiptap-host .tiptap :is(h1, h2, h3, h4, h5, h6)')) {
     if (h.closest('td, th, li, .textbox-node, .hf-layer')) continue;
     const sib = blocks(h.parentElement);
     const next = sib[sib.indexOf(h) + 1];

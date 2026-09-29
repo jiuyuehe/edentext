@@ -331,14 +331,13 @@ type ZoneJob = {
   scale: number; originX: number; stops: TabStop[];
 };
 
-// An inactive header/footer zone is generateHTML output no ProseMirror plugin reaches,
+// An inactive header/footer zone is a cloned DOM no ProseMirror plugin reaches,
 // so its tabs are measured straight on the DOM — same rule, left to right, each advance
 // applied before the next is read. Zones go together: a round's reads before its writes.
 export function layOutZoneTabs(zones: HTMLElement[]): void {
   const jobs: ZoneJob[] = [];
-  for (const zone of zones) {
-    const para = zone.querySelector<HTMLElement>('[data-tab-stops]');
-    if (!para || !parseTabStops(para.getAttribute('data-tab-stops')).length) continue;
+  for (const para of zones.flatMap((z) => Array.from(z.querySelectorAll<HTMLElement>('[data-tab-stops]')))) {
+    if (!parseTabStops(para.getAttribute('data-tab-stops')).length) continue;
     const tabs = wrapZoneTabs(para);
     for (const t of tabs) {
       t.className = '';
@@ -515,7 +514,9 @@ export const TabStops = Extension.create({
           },
         },
         view(view) {
-          if (isSplitPane(view)) return {};
+          // A read-only zone source is cloned per page, and its clones lay out their own
+          // tabs (layOutZoneTabs) with the page's field values.
+          if (isSplitPane(view) || !view.editable) return {};
           const calculate = () => {
             rafId = null;
             let layout: TabLayout = { widths: [], breaks: [] };

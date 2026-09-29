@@ -1,5 +1,7 @@
 import { Fragment, type Node, type Schema } from '@tiptap/pm/model';
-import type { JSONContent } from '@tiptap/core';
+import { getSchema, type JSONContent } from '@tiptap/core';
+import { zoneExtensions } from '../editor/extensions';
+import { HF_ZONE_KEYS, type HfSet } from '../storage/headerFooter';
 
 // An importer that misreads a file must cost the reader one spot, not the document:
 // content the schema rejects is refitted child by child, and the first error is returned
@@ -40,4 +42,20 @@ function fix(node: Node): Node {
   node.content.forEach(c => place(fix(c)));
   const tail = match.fillBefore(Fragment.empty, true);
   return node.type.create(node.attrs, tail ? Fragment.fromArray(out).append(tail) : Fragment.fromArray(out), node.marks);
+}
+
+let zoneSchema: Schema | undefined;
+
+// A section's zones, each refitted to the zone schema; errors collects what was rejected.
+export function repairZones<T extends Partial<HfSet>>(set: T, errors: string[] = []): T {
+  zoneSchema ??= getSchema(zoneExtensions());
+  const out = { ...set };
+  for (const k of HF_ZONE_KEYS) {
+    const doc = set[k];
+    if (!doc) continue;
+    const r = repairContent(doc as JSONContent, zoneSchema);
+    if (r.error) errors.push(r.error);
+    out[k] = r.content as T[typeof k];
+  }
+  return out;
 }

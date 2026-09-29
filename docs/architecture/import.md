@@ -62,8 +62,12 @@ mirrored layout; distinguish it from a first-page hand-over.
 
 Header/footer body reach is the rendered zone height plus applicable gap, respecting dynamic
 spacing, wrapped content, and internal paragraph spacing. A trailing zone margin does not add
-to the reach. Import zone content into its restricted schema, dropping unknown marks and keeping
-recoverable text.
+to the reach. Both importers convert a zone with the body's block converter under a `'zone'`
+kind: its lists, tables, text boxes and frames keep their structure, page fields become live
+atoms anywhere in it (cells and boxes too), other fields keep their cached result, and notes,
+comments and revisions are left out. A zone paragraph carries no style name and bakes its
+Header/Footer style in, as a cell paragraph does. A frame's x measured from the page edge is
+kept against the text column, which is how both exporters write it back.
 
 ## DOCX compatibility
 

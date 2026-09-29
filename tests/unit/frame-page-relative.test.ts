@@ -6,6 +6,7 @@ import { buildOdt } from '../../src/lib/export/odt';
 import { importOdt } from '../../src/lib/import/odt';
 import { buildDocx } from '../../src/lib/export/docx';
 import { importDocx } from '../../src/lib/import/docx';
+import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
 type N = any;
 
@@ -37,5 +38,27 @@ describe('a frame placed against the page', () => {
     const back = importDocx(await buildDocx(doc)).content as N;
     expect(find(back, 'image').attrs).toMatchObject({ wrapFromPage: true, wrapOffsetY: 17.6 });
     expect(find(back, 'textBox').attrs).toMatchObject({ wrapFromPage: true, wrapOffsetY: 5.5 });
+  });
+});
+
+// LibreOffice lays a floating frame that only states fo:min-width at the width its anchor
+// leaves it; as a character it stays at its minimum.
+describe('a text box that grows with its text', () => {
+  const autoWidth = async (anchor: string) => {
+    const files = unzipSync(await buildOdt(doc));
+    const xml = strFromU8(files['content.xml'])
+      .replace(/(<draw:frame\b[^>]*?)\ssvg:width="[^"]*"([^>]*>\s*<draw:text-box)/, '$1$2 fo:min-width="0.5cm"')
+      .replace(/(<draw:frame\b[^>]*text:anchor-type=")[^"]*("[^>]*>\s*<draw:text-box)/, `$1${anchor}$2`);
+    expect(xml).toMatch(/fo:min-width="0.5cm"/);
+    files['content.xml'] = strToU8(xml);
+    return find(importOdt(zipSync(files)).content as N, 'textBox').attrs.width;
+  };
+
+  it('spans the column when floating', async () => {
+    expect(await autoWidth('paragraph')).toBeGreaterThan(600);
+  });
+
+  it('keeps its minimum as a character', async () => {
+    expect(await autoWidth('as-char')).toBeLessThan(30);
   });
 });

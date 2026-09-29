@@ -18,7 +18,7 @@ function docx(files: Record<string, string | Uint8Array>): Uint8Array {
 
 // Header with a floating full-page VML background ("Falzmarken"-style, position:absolute,
 // A4-sized) followed by a genuine inline (as-character) logo. Templates put backgrounds
-// and watermarks there; the one-paragraph zone can't position them, so they're dropped.
+// there; the zone keeps both, the background as the positioned frame it is.
 const HEADER_XML = `<?xml version="1.0"?>
 <w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
        xmlns:r="${REL}"
@@ -62,13 +62,16 @@ describe('DOCX header floating image', () => {
     'word/media/logo.png': PNG,
   });
 
-  it('drops the full-page floating background but keeps the inline logo', () => {
+  it('keeps the full-page background as a frame beside the inline logo', () => {
     const res = importDocx(bytes);
     const imgs = images(res.header);
-    // Only the inline logo (571500 EMU ≈ 60px), never the A4-sized page background (≈794px).
-    expect(imgs).toHaveLength(1);
-    expect(imgs[0].attrs.width).toBe(60);
-    expect(imgs.some((i) => i.attrs.width > 700)).toBe(false);
-    expect([...res.warnings]).toContain('Drawings were removed');
+    expect(imgs).toHaveLength(2);
+    const [bg, logo] = imgs;
+    expect(bg.attrs.wrap).not.toBe('inline');
+    expect(bg.attrs.width).toBeGreaterThan(700);
+    // 571500 EMU ≈ 60px.
+    expect(logo.attrs.width).toBe(60);
+    expect(logo.attrs.wrap ?? 'inline').toBe('inline');
+    expect([...res.warnings]).not.toContain('Drawings were removed');
   });
 });

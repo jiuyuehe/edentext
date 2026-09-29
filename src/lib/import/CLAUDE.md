@@ -41,10 +41,9 @@ unasked. The **language** is a pair the same way: `lang` from `fo:language`/`w:v
 run naming one inherits the other. The document's main language is the asian default where
 the body is mostly East Asian (`mainOfPair`, `mostlyAsian`), the other one `languageOther`.
 
-A header/footer zone is one paragraph, so a **text box** anchored in one has no block to
-live in: ODF makes its paragraphs lines of the zone, DOCX trails its text on the zone's
-own line behind a tab at the stop the box's anchor asks for. Dropping the box whole loses
-what Word's page-number gallery puts there — a PAGE field, on every page of the document.
+A header/footer zone converts through the body's block converter (`'zone'` kind, a
+`zone` ctx flag), so a **text box** anchored in one keeps its PAGE field — what Word's
+page-number gallery puts there, on every page of the document.
 
 The `sectionBreak` marker is **ordinal** — the editor counts the blocks carrying it to
 index the header/footer sets — and only a paragraph, a heading, a table or an index

@@ -38,7 +38,9 @@ export function pickSlot(marks: Record<string, number>, now: number): string {
     .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
   if (free) return free[0];
   if (!Object.keys(marks).length) return '';
-  return `d${now.toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+  let id: string;
+  do id = `d${now.toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`; while (id in marks);
+  return id;
 }
 
 function mark(id: string, at: number): void {

@@ -14,7 +14,7 @@
   import { loadRecentFiles, rememberRecentFile, readRecentFile, forgetRecentFile, forgetRecentFiles, pruneRecentFiles, type RecentFile } from './lib/storage/recentFiles';
   import { isProtected, decryptPackage, WRONG_PASSWORD } from './lib/crypto/protect';
   import { convertUnsupportedImages } from './lib/import/imageFormats';
-  import { repairContent } from './lib/import/repairContent';
+  import { repairContent, repairZones } from './lib/import/repairContent';
   import en from './lib/i18n/locales/en';
   import { getPageBreakDebug } from './lib/editor/extensions/pageBreaks';
   import { RECORDING } from './lib/editor/extensions/trackChanges';
@@ -129,20 +129,26 @@
 
   // Header/footer content + live-edit state. While a zone is being edited, the
   // top toolbars target hfEditor instead of the body editor (activeEditor below).
-  let headerDoc: HfDoc = $state(loadHfDoc('header'));
-  let footerDoc: HfDoc = $state(loadHfDoc('footer'));
+  // Stored zones pass the zone schema's check, as an import does.
+  const storedZones = repairZones({
+    header: loadHfDoc('header'), footer: loadHfDoc('footer'),
+    headerFirst: loadHfDoc('header', 'first'), footerFirst: loadHfDoc('footer', 'first'),
+    headerEven: loadHfDoc('header', 'even'), footerEven: loadHfDoc('footer', 'even'),
+  });
+  let headerDoc: HfDoc = $state(storedZones.header);
+  let footerDoc: HfDoc = $state(storedZones.footer);
   // First-page header/footer, shown on page 1 when the flag is on.
-  let headerFirstDoc: HfDoc = $state(loadHfDoc('header', 'first'));
-  let footerFirstDoc: HfDoc = $state(loadHfDoc('footer', 'first'));
+  let headerFirstDoc: HfDoc = $state(storedZones.headerFirst);
+  let footerFirstDoc: HfDoc = $state(storedZones.footerFirst);
   let differentFirstPage: boolean = $state(loadDifferentFirstPage());
   // Even-page header/footer, shown on even pages when the flag is on.
-  let headerEvenDoc: HfDoc = $state(loadHfDoc('header', 'even'));
-  let footerEvenDoc: HfDoc = $state(loadHfDoc('footer', 'even'));
+  let headerEvenDoc: HfDoc = $state(storedZones.headerEven);
+  let footerEvenDoc: HfDoc = $state(storedZones.footerEven);
   let differentOddEven: boolean = $state(loadDifferentOddEven());
   let hfDistances: HfDistances = $state(loadHfDistances());
   // Sections past the first; the layer edits them in place, section 1 stays the
   // per-zone state above.
-  let extraHfSections: HfSet[] = $state(loadExtraHfSections());
+  let extraHfSections: HfSet[] = $state(loadExtraHfSections().map((z) => repairZones(z)));
   let hfEditor: Editor | null = $state(null);
   let hfActive: HfZone | null = $state(null);
   let hfTick: number = $state(0);
@@ -861,7 +867,11 @@
           isDocx = !isDocx;
         } catch { throw err; }
       }
-      const { content, error: structureError } = repairContent(result.content, editor.schema);
+      const { content, error: bodyError } = repairContent(result.content, editor.schema);
+      const zoneErrors: string[] = [];
+      Object.assign(result, repairZones(result, zoneErrors));
+      result.hfSections = result.hfSections?.map((z) => repairZones(z, zoneErrors));
+      const structureError = bodyError ?? zoneErrors[0];
       if (structureError) {
         console.warn('[import] Repaired invalid structure:', structureError);
         result.warnings.push(en.importWarn.structureRepaired);

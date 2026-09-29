@@ -97,7 +97,18 @@ function zone(r: Rng): HfDoc {
   if (maybe(r, 0.5)) content.push({ type: 'text', text: '\t' }, { type: 'pageNumber' });
   if (maybe(r, 0.3)) content.push({ type: 'text', text: ' of ' }, { type: 'pageCount' });
   if (maybe(r, 0.2)) content.push({ type: 'hardBreak' }, { type: 'text', text: 'zweite Zeile' });
-  return { type: 'doc', content: [{ type: 'paragraph', ...(Object.keys(attrs).length ? { attrs } : {}), content }] };
+  // A zone holds blocks like the body: a second paragraph, a list, a table — the table
+  // with a paragraph after it, which is where both products end a zone.
+  const para = (text: string): N => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+  const blocks: N[] = [{ type: 'paragraph', ...(Object.keys(attrs).length ? { attrs } : {}), content }];
+  if (maybe(r, 0.25)) blocks.push(para('Zweiter Absatz'));
+  if (maybe(r, 0.15)) blocks.push({ type: 'bulletList', content: [{ type: 'listItem', content: [para('Punkt')] }] });
+  if (maybe(r, 0.15)) {
+    blocks.push({ type: 'table', content: [{ type: 'tableRow', content: [
+      { type: 'tableCell', content: [para('Links')] }, { type: 'tableCell', content: [para('Rechts')] },
+    ] }] }, para('Ende'));
+  }
+  return { type: 'doc', content: blocks };
 }
 
 // The zones of one set. The first-page and even-page flags need a running zone to
@@ -221,7 +232,14 @@ export function genCase(r: Rng): { doc: N; opts: FuzzOptions } {
 // --- the imported reading and the authored options, in one shape ---
 
 const compact = (o: N): N => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => v != null));
-const zoneDoc = (d: HfDoc | undefined): N => (d ? normalize(structuredClone(d)) : null);
+// A zone table's column widths are one format's own (DOCX always writes them), as the
+// body comparison has it.
+const noColwidth = (n: N): N => {
+  if (n.attrs?.colwidth) delete n.attrs.colwidth;
+  for (const c of n.content ?? []) noColwidth(c);
+  return n;
+};
+const zoneDoc = (d: HfDoc | undefined): N => (d ? normalize(noColwidth(structuredClone(d))) : null);
 const marginsOf = (m: PageMargins | null | undefined): N =>
   m ? { top: m.top, bottom: m.bottom, left: m.left, right: m.right, ...(m.mirrored ? { mirrored: true } : {}) } : null;
 

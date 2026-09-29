@@ -549,23 +549,30 @@ function cssStr(t: string): string {
   return '"' + t.replace(/\\/g, '\\5c ').replace(/"/g, '\\22 ') + '"';
 }
 
-// HfDoc (single paragraph) → a CSS `content` value + alignment, mapping page-field
-// atoms to counter(page)/counter(pages). Returns null for an empty zone.
+// HfDoc → a CSS `content` value + alignment, mapping page-field atoms to
+// counter(page)/counter(pages); its text blocks, lists and cells included, follow one
+// another as its line breaks do. Returns null for an empty zone.
+// ponytail: text only — pictures, tables and frames reach print through the raster path;
+// build them here once someone needs a letterhead in the vector PDF.
 function hfContent(doc: HfDoc): { content: string; align: 'left' | 'center' | 'right' } | null {
   if (hfIsEmpty(doc)) return null;
-  const para = (doc as Json).content?.[0] as Json;
-  const ta = para?.attrs?.textAlign;
+  const blocks = ((doc as Json).content ?? []) as Json[];
+  const ta = blocks.find((b) => b.type === 'paragraph' || b.type === 'heading')?.attrs?.textAlign;
   const align: 'left' | 'center' | 'right' = ta === 'center' || ta === 'right' ? ta : 'left';
   const parts: string[] = [];
-  for (const n of para?.content ?? []) {
-    if (n.type === 'text' && n.text) parts.push(cssStr(n.text));
+  const walk = (n: Json): void => {
+    if (n.type === 'paragraph' || n.type === 'heading') {
+      if (parts.length) parts.push('"\\A0 "');
+    } else if (n.type === 'text' && n.text) parts.push(cssStr(n.text));
     else if (n.type === 'pageNumber') parts.push('counter(page)');
     else if (n.type === 'pageCount') parts.push('counter(pages)');
     // Chrome's print engine has no named strings, so the chapter stays its cached name.
     else if (n.type === 'chapterField') parts.push(cssStr(String(n.attrs?.text ?? '')));
     else if (n.type === 'hardBreak') parts.push('"\\A0 "');
-  }
-  if (!parts.length) return null;
+    for (const c of (n.content ?? []) as Json[]) walk(c);
+  };
+  blocks.forEach(walk);
+  if (!parts.some((p) => p !== '"\\A0 "')) return null;
   return { content: parts.join(' '), align };
 }
 

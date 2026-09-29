@@ -26,9 +26,6 @@
   const pageCm = $derived(scale > 0 ? width / scale / PX_PER_CM : 0);
   // The block under the cursor; `tick` re-evaluates it on every transaction.
   const info = $derived(tick >= 0 && editor ? activeTabStops(editor.state) : null);
-  // The header/footer editor has no Indent extension — nothing to indent in one paragraph —
-  // so its ruler carries tab stops only.
-  const indents = $derived(!!editor && 'setIndent' in editor.commands);
 
   // cm from the left text margin → px within the strip, and back.
   const px = (cm: number) => (margins.left + cm) * PX_PER_CM * scale;
@@ -160,29 +157,27 @@
         </div>
       {/each}
 
-      {#if indents}
-        <div
-          class="indent top"
-          style="left: {px(at({ kind: 'first' }, info.indent + info.indentFirst))}px"
-          onpointerdown={(e) => start(e, { kind: 'first' })}
-          role="presentation"
-          title={t().ruler.firstLineIndent}
-        ></div>
-        <div
-          class="indent bottom"
-          style="left: {px(at({ kind: 'indent' }, info.indent))}px"
-          onpointerdown={(e) => start(e, { kind: 'indent' })}
-          role="presentation"
-          title={t().ruler.leftIndent}
-        ></div>
-        <div
-          class="indent bottom"
-          style="left: {px(at({ kind: 'indentRight' }, textCm - info.indentRight))}px"
-          onpointerdown={(e) => start(e, { kind: 'indentRight' })}
-          role="presentation"
-          title={t().ruler.rightIndent}
-        ></div>
-      {/if}
+      <div
+        class="indent top"
+        style="left: {px(at({ kind: 'first' }, info.indent + info.indentFirst))}px"
+        onpointerdown={(e) => start(e, { kind: 'first' })}
+        role="presentation"
+        title={t().ruler.firstLineIndent}
+      ></div>
+      <div
+        class="indent bottom"
+        style="left: {px(at({ kind: 'indent' }, info.indent))}px"
+        onpointerdown={(e) => start(e, { kind: 'indent' })}
+        role="presentation"
+        title={t().ruler.leftIndent}
+      ></div>
+      <div
+        class="indent bottom"
+        style="left: {px(at({ kind: 'indentRight' }, textCm - info.indentRight))}px"
+        onpointerdown={(e) => start(e, { kind: 'indentRight' })}
+        role="presentation"
+        title={t().ruler.rightIndent}
+      ></div>
     {/if}
   </div>
 </div>

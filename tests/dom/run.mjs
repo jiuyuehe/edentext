@@ -306,7 +306,7 @@ try {
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('.tiptap', { timeout: 15_000 });
   await settle(page, true);
-  const bands = await page.evaluate(() => Array.from(document.querySelectorAll('.tiptap > p'),
+  const bands = await page.evaluate(() => Array.from(document.querySelectorAll('.tiptap-host .tiptap > p'),
     (p) => `${p.getAttribute('data-wrap-band') ?? '-'}/${getComputedStyle(p).clear}`).join(' '));
   check(bands === '-/none true/none -/both anchored/none -/none true/none true/none -/both',
     `loaded from the autosave, the block after a band frame clears it, after an anchored one it does not (${bands})`);
@@ -328,7 +328,7 @@ try {
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('.tiptap', { timeout: 15_000 });
   await settle(page, true);
-  const flow = await page.evaluate(() => ({ passes: window.__passes, fragments: document.querySelectorAll('.tiptap > .columns-node').length }));
+  const flow = await page.evaluate(() => ({ passes: window.__passes, fragments: document.querySelectorAll('.tiptap-host .tiptap > .columns-node').length }));
   check(flow.fragments >= 3 && flow.passes <= 8,
     `a two-column section over ${flow.fragments} pages settles in ${flow.passes} passes`);
 
@@ -340,7 +340,7 @@ try {
     null, { timeout: 30_000 });
   await settle(page, true);
   // The block itself, by its text: the style change turns the h1 into an h3.
-  await page.evaluate(() => { window.__heading = () => Array.from(document.querySelectorAll('.tiptap > *'))
+  await page.evaluate(() => { window.__heading = () => Array.from(document.querySelectorAll('.tiptap-host .tiptap > *'))
     .find((e) => e.textContent.startsWith('Portrait first')); });
   const inset = await page.evaluate(() => {
     const el = window.__heading();
@@ -369,7 +369,7 @@ try {
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('.tiptap img', { timeout: 15_000 });
   await settle(page, true);
-  const paraHeight = () => page.evaluate(() => document.querySelector('.tiptap > p').getBoundingClientRect().height);
+  const paraHeight = () => page.evaluate(() => document.querySelector('.tiptap-host .tiptap > p').getBoundingClientRect().height);
   const frameBox = () => page.evaluate(() => {
     const el = document.querySelector('.image-node');
     const r = el.getBoundingClientRect();
@@ -545,7 +545,7 @@ try {
     ed.commands.setTextSelection(ed.state.doc.content.size - 2);
   });
   await page.selectOption('.statusbar .lang-picker select', 'sel:de');
-  const langs = await page.evaluate(() => [...document.querySelectorAll('.tiptap > p')].map((p) => p.getAttribute('lang')));
+  const langs = await page.evaluate(() => [...document.querySelectorAll('.tiptap-host .tiptap > p')].map((p) => p.getAttribute('lang')));
   check(JSON.stringify(langs) === '[null,"de-DE"]', `only the second paragraph takes a language (${JSON.stringify(langs)})`);
   const paragraphToggleOff = await page.waitForFunction(() => {
     const input = document.querySelector('.statusbar .gr-toggle input');
@@ -556,7 +556,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.tiptap .pm-grammar-error').length > 0,
     null, { timeout: 30_000 }).catch(() => {});
   const perPara = await page.evaluate(() =>
-    [...document.querySelectorAll('.tiptap > p')].map((p) => p.querySelectorAll('.pm-grammar-error').length));
+    [...document.querySelectorAll('.tiptap-host .tiptap > p')].map((p) => p.querySelectorAll('.pm-grammar-error').length));
   check(perPara[0] > 0 && perPara[1] === 0, `only the English paragraph is grammar-checked (${JSON.stringify(perPara)})`);
 
   // The default can be Portuguese while an English paragraph still gets grammar checks.
@@ -576,7 +576,7 @@ try {
     return !input?.disabled && input?.checked;
   }, null, { timeout: 5_000 }).then(() => true).catch(() => false);
   check(englishToggleOn, 'an English paragraph restores the grammar toggle');
-  await page.waitForFunction(() => document.querySelector('.tiptap > p .pm-grammar-error'), null, { timeout: 30_000 })
+  await page.waitForFunction(() => document.querySelector('.tiptap-host .tiptap > p .pm-grammar-error'), null, { timeout: 30_000 })
     .then(() => check(true, 'an English paragraph in a Portuguese document is grammar-checked'))
     .catch(() => check(false, 'an English paragraph in a Portuguese document is grammar-checked'));
 

@@ -914,7 +914,7 @@
   let linkInitialUrl = $state('');
 
   function openLinkDialog() {
-    if (!editor || hfActive) return; // body-only; HF has no link mark
+    if (!editor) return;
     linkInitialUrl = (editor.getAttributes('link').href as string) ?? '';
     linkDialogOpen = true;
   }
@@ -958,15 +958,15 @@
   // --- Bookmarks + cross-references (bookmark.ts / crossReference.ts) ---
   let bookmarkOpen = $state(false);
   let crossRefOpen = $state(false);
-  let bmNames = $derived(tick >= 0 && editor && !hfActive ? bookmarkNames(editor.state.doc) : []);
+  let bmNames = $derived(tick >= 0 && editor ? bookmarkNames(editor.state.doc) : []);
   // A reference can point at a heading, a caption or a numbered item too, so the button
   // no longer waits for someone to set a bookmark first.
-  let hasRefs = $derived(tick >= 0 && !!editor && !hfActive && hasRefTargets(editor.state.doc));
+  let hasRefs = $derived(tick >= 0 && !!editor && hasRefTargets(editor.state.doc));
   // A bookmark covers a range, so there has to be one selected.
   let hasSelection = $derived(tick >= 0 && !!editor && !editor.state.selection.empty);
 
   function openBookmarkDialog() {
-    if (!editor || hfActive || !hasSelection) return;
+    if (!editor || !hasSelection) return;
     bookmarkOpen = true;
     crossRefOpen = false;
   }
@@ -985,7 +985,7 @@
   }
 
   function openCrossRefDialog() {
-    if (!editor || hfActive || !hasRefs) return;
+    if (!editor || !hasRefs) return;
     crossRefOpen = true;
     bookmarkOpen = false;
   }
@@ -1667,8 +1667,7 @@
       />
       <button
         onclick={() => editor?.chain().focus().insertTextBox().run()}
-        disabled={!!hfActive}
-        title={hfActive ? t().toolbarExpanded.textBoxNotInHf : t().toolbarExpanded.insertTextBox}
+        title={t().toolbarExpanded.insertTextBox}
         aria-label={t().toolbarExpanded.insertTextBox}
       >
         <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -1818,8 +1817,7 @@
         <button
           class:active={isLink}
           onclick={openLinkDialog}
-          disabled={!!hfActive}
-          title={hfActive ? t().toolbarExpanded.linkNotInHf : `${t().toolbarExpanded.insertLink} (${shortcutHint('link')})`}
+          title={`${t().toolbarExpanded.insertLink} (${shortcutHint('link')})`}
           aria-label={t().toolbarExpanded.insertLink}
           aria-haspopup="dialog"
           aria-expanded={linkDialogOpen}
@@ -1842,8 +1840,8 @@
       <div class="link-wrap">
         <button
           onclick={openBookmarkDialog}
-          disabled={!!hfActive || !hasSelection}
-          title={hfActive ? t().toolbarExpanded.bookmarkNotInHf : hasSelection ? t().toolbarExpanded.insertBookmark : t().toolbarExpanded.bookmarkNeedsSelection}
+          disabled={!hasSelection}
+          title={hasSelection ? t().toolbarExpanded.insertBookmark : t().toolbarExpanded.bookmarkNeedsSelection}
           aria-label={t().toolbarExpanded.insertBookmark}
           aria-haspopup="dialog"
           aria-expanded={bookmarkOpen}
@@ -1863,8 +1861,8 @@
         />
         <button
           onclick={openCrossRefDialog}
-          disabled={!!hfActive || !hasRefs}
-          title={hfActive ? t().toolbarExpanded.bookmarkNotInHf : hasRefs ? t().toolbarExpanded.insertCrossRef : t().crossRef.none}
+          disabled={!hasRefs}
+          title={hasRefs ? t().toolbarExpanded.insertCrossRef : t().crossRef.none}
           aria-label={t().toolbarExpanded.insertCrossRef}
           aria-haspopup="dialog"
           aria-expanded={crossRefOpen}

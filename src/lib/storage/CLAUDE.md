@@ -77,7 +77,7 @@ view, user dictionary, number recognition) stay unscoped.
 - **Balanced spaces:** `edentext-balance-spaces` — `'true'`; absent = off.
 - **Recent fonts:** `edentext-recent-fonts` — JSON string array (ToolbarExpanded).
 - **Download hint shown:** `edentext-download-hint` — set by the first fallback download (`export/saveFile.ts`); the one-time "always ask where to save" hint.
-- **Header/footer:** `edentext-header` / `-footer` (HfDoc), `edentext-hf-distances`.
+- **Header/footer:** `edentext-header` / `-footer` (HfDoc, a zone-schema doc of any blocks; refitted to the schema on load), `edentext-hf-distances`.
 - **Styles:** `edentext-styles` — the style registry (`styles/sheet.svelte.ts`).
 - **Document properties:** `edentext-doc-properties` — title/subject/author/keywords/comments (`docProperties.ts`); the key is removed when every field is empty, so a fresh document writes nothing into `meta.xml`.
 - **AutoCorrect:** `edentext-autocorrect` — one flag per rule (`autoCorrect.ts`, reactive singleton in `autoCorrect.svelte.ts`), LibreOffice's defaults (all on).

@@ -47,8 +47,7 @@ export function stepFontSize(editor: Editor, dir: 1 | -1): boolean {
   return chain.run();
 }
 
-// Available in the body and in the header/footer editors.
-const SHARED: Partial<Record<ShortcutId, Binding>> = {
+const BINDINGS: Partial<Record<ShortcutId, Binding>> = {
   alignLeft: (e) => e.chain().focus().setTextAlign('left').run(),
   alignCenter: (e) => e.chain().focus().setTextAlign('center').run(),
   alignRight: (e) => e.chain().focus().setTextAlign('right').run(),
@@ -60,23 +59,6 @@ const SHARED: Partial<Record<ShortcutId, Binding>> = {
   // Escaped: both characters are invisible in source.
   nbsp: (e) => e.chain().focus().insertContent('\u00A0').run(),
   softHyphen: (e) => e.chain().focus().insertContent('\u00AD').run(),
-};
-
-// The zone has no Indent extension (nothing to indent in one paragraph), so its Tab
-// would leave the editor: bind it to the character its stops align on, and let
-// Shift-Tab take that character back instead of tabbing focus out.
-const ZONE_ONLY: Partial<Record<ShortcutId, Binding>> = {
-  indentMore: (e) => e.chain().focus().insertContent('\t').run(),
-  indentLess: (e) => {
-    const { empty, $from } = e.state.selection;
-    if (!empty || $from.parentOffset === 0) return true;
-    if (e.state.doc.textBetween($from.pos - 1, $from.pos) !== '\t') return true;
-    return e.chain().focus().deleteRange({ from: $from.pos - 1, to: $from.pos }).run();
-  },
-};
-
-// Commands the single-paragraph header/footer schema doesn't have.
-const BODY_ONLY: Partial<Record<ShortcutId, Binding>> = {
   clearFormattingAlt: (e) => e.commands.clearDirectFormatting(),
   lineHeight1: (e) => e.chain().focus().setLineHeight('1').run(),
   lineHeight2: (e) => e.chain().focus().setLineHeight('2').run(),
@@ -88,18 +70,13 @@ const BODY_ONLY: Partial<Record<ShortcutId, Binding>> = {
     e.chain().focus().insertDateTimeField({ kind: 'time', format: DEFAULT_TIME_FORMAT, fixed: false }).run(),
 };
 
-export const Shortcuts = Extension.create<{ body: boolean }>({
+export const Shortcuts = Extension.create({
   name: 'shortcuts',
   priority: 1000,
 
-  addOptions() {
-    return { body: false };
-  },
-
   addKeyboardShortcuts() {
-    const bindings = { ...SHARED, ...(this.options.body ? BODY_ONLY : ZONE_ONLY) };
     return Object.fromEntries(
-      Object.entries(bindings).map(([id, run]) => [
+      Object.entries(BINDINGS).map(([id, run]) => [
         DEFAULT_SHORTCUTS[id as ShortcutId],
         () => run(this.editor),
       ]),
@@ -107,7 +84,6 @@ export const Shortcuts = Extension.create<{ body: boolean }>({
   },
 
   addProseMirrorPlugins() {
-    if (!this.options.body) return [];
     const editor = this.editor;
     return [
       new Plugin({

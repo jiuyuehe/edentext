@@ -8,8 +8,8 @@ import { Node as PMNode } from '@tiptap/pm/model';
 import { buildOdt } from '../src/lib/export/odt';
 import { MAX_HEADING_LEVEL } from '../src/lib/styles/headings';
 import { importOdt } from '../src/lib/import/odt';
-import { normalize, firstDiff } from './normalize';
-import { hfExtensions } from '../src/lib/editor/extensions/headerFooter';
+import { normalize, firstDiff, unhoist, stripFontHoist } from './normalize';
+import { zoneExtensions } from '../src/lib/editor/extensions';
 import { HEADER_SHADE } from '../src/lib/editor/extensions/tableHeaderRow';
 import { builtinStyleSheet } from '../src/lib/styles/styleSheet';
 import { buildDocx } from '../src/lib/export/docx';
@@ -1012,7 +1012,7 @@ describe('Leg 3: header/footer → buildOdt → importOdt', () => {
       firstDiff(normalize(fixture), normalize(hfRes.content)));
 
     // Imported header/footer must be valid in the header/footer editor schema.
-    const hfSchema = getSchema(hfExtensions());
+    const hfSchema = getSchema(zoneExtensions());
     let hfSchemaOk = true;
     for (const z of [hfRes.header, hfRes.footer]) {
       if (!z) continue;
@@ -1045,22 +1045,25 @@ describe('Leg 3a: different first page header/footer → buildOdt → importOdt'
       { type: 'hardBreak' }, { type: 'hardBreak' },
     ] }] };
 
+    // A zone paragraph round-trips as a body one does: a run's font that is the block's
+    // own comes back on the block alone.
+    const zone = (d: N) => stripFontHoist(normalize(unhoist(structuredClone(d))));
     const bytes = await buildOdt(fixture, margins, 'portrait',
       { header, footer, headerFirst, footerFirst, differentFirstPage: true, pageCount: 3 });
     const res = importOdt(bytes);
 
     check('dfp: no warnings', res.warnings.length === 0, res.warnings);
     check('dfp: flag round-trips', res.differentFirstPage === true, res.differentFirstPage);
-    check('dfp: default header round-trips', firstDiff(normalize(header), normalize(res.header)) === null, firstDiff(normalize(header), normalize(res.header)));
-    check('dfp: default footer round-trips', firstDiff(normalize(footer), normalize(res.footer)) === null, firstDiff(normalize(footer), normalize(res.footer)));
-    check('dfp: first-page header round-trips (incl. marks)', firstDiff(normalize(headerFirst), normalize(res.headerFirst)) === null, firstDiff(normalize(headerFirst), normalize(res.headerFirst)));
+    check('dfp: default header round-trips', firstDiff(zone(header), zone(res.header)) === null, firstDiff(zone(header), zone(res.header)));
+    check('dfp: default footer round-trips', firstDiff(zone(footer), zone(res.footer)) === null, firstDiff(zone(footer), zone(res.footer)));
+    check('dfp: first-page header round-trips (incl. marks)', firstDiff(zone(headerFirst), zone(res.headerFirst)) === null, firstDiff(zone(headerFirst), zone(res.headerFirst)));
     check('dfp: first-page footer preserves spacing', res.footerFirst?.content?.[0]?.content?.[0]?.text === 'Stand:   x', res.footerFirst);
     const ffInline = res.footerFirst?.content?.[0]?.content ?? [];
     const ffBreaks = ffInline.filter((n: N) => n.type === 'hardBreak').length;
     check('dfp: first-page footer keeps trailing blank lines', ffBreaks === 2 && ffInline[ffInline.length - 1]?.type === 'hardBreak', ffInline);
 
     // Every variant must be valid in the header/footer editor schema.
-    const hfSchema = getSchema(hfExtensions());
+    const hfSchema = getSchema(zoneExtensions());
     let ok = true;
     for (const z of [res.header, res.footer, res.headerFirst, res.footerFirst]) {
       if (!z) continue;
@@ -1081,7 +1084,7 @@ describe('Leg 3a: different first page header/footer → buildOdt → importOdt'
     const blankRes = importOdt(blankFirst);
     check('dfp: flag survives an empty first-page zone', blankRes.differentFirstPage === true, blankRes.differentFirstPage);
     check('dfp: empty first-page footer stays blank', blankRes.footerFirst === null, blankRes.footerFirst);
-    check('dfp: default footer still present', firstDiff(normalize(footer), normalize(blankRes.footer)) === null, blankRes.footer);
+    check('dfp: default footer still present', firstDiff(zone(footer), zone(blankRes.footer)) === null, blankRes.footer);
   });
 });
 
@@ -1105,7 +1108,7 @@ describe('Leg 3b: inline images in header/footer → buildOdt → importOdt', ()
     check('hf image: first-page header keeps its image', imgs(res.headerFirst).length === 1, res.headerFirst);
 
     // Both zones must remain valid in the header/footer editor schema.
-    const hfSchema = getSchema(hfExtensions());
+    const hfSchema = getSchema(zoneExtensions());
     let ok = true;
     for (const z of [res.footer, res.headerFirst]) { if (!z) continue; try { PMNode.fromJSON(hfSchema, z).check(); } catch { ok = false; } }
     check('hf image: zones valid in hf schema', ok);
@@ -1131,7 +1134,7 @@ describe('Leg 3c: odd/even page header/footer → buildOdt → importOdt', () =>
     check('odd/even: default + first still round-trip',
       firstDiff(normalize(header), normalize(res.header)) === null && firstDiff(normalize(headerFirst), normalize(res.headerFirst)) === null, res.header);
 
-    const hfSchema = getSchema(hfExtensions());
+    const hfSchema = getSchema(zoneExtensions());
     let ok = true;
     for (const z of [res.headerEven, res.footerEven]) { if (!z) continue; try { PMNode.fromJSON(hfSchema, z).check(); } catch { ok = false; } }
     check('odd/even: even zones valid in hf schema', ok);

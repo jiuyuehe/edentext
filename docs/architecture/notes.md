@@ -24,7 +24,7 @@ way `editor.css` does for a page-anchored frame. It also makes **endnotes nearly
 they simply stay in the flow at the document end.
 
 A note holds one paragraph of inline content. An imported note of several paragraphs is
-flattened to hard breaks, exactly as `convertHfZone` does for a header/footer zone.
+flattened to hard breaks.
 
 **The note's own marker is a widget decoration, not generated content.** A CSS `::before`
 draws no text node, so it reaches neither the PDF, the clipboard nor a `Range`

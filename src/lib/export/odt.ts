@@ -5,7 +5,7 @@ import type { Orientation } from '../storage/pageOrientation';
 import type { SpacingModel } from '../storage/spacingModel';
 import { pageDimsCm, type PageFormat } from '../storage/pageFormat';
 import { DEFAULT_TAB_INTERVAL_CM } from '../storage/tabInterval';
-import { HF_DISTANCE_CM, HF_ZONE_KEYS, hfIsEmpty, type HfDoc, type HfSet } from '../storage/headerFooter';
+import { HF_DISTANCE_CM, HF_ZONE_KEYS, hfIsEmpty, type HfDoc, type HfSet, type HfZoneKey } from '../storage/headerFooter';
 import { DEFAULT_NOTE_SETTINGS, NOTE_FONT_SIZE_PT, NOTE_INDENT_CM, type NoteKind, type NoteNumFormat, type NoteSettings } from '../storage/noteSettings';
 import { EMPTY_DOC_PROPERTIES, keywordList, type DocProperties } from '../storage/docProperties';
 import { DEFAULT_PAGE_NUMBERING, type PageNumbering } from '../storage/pageNumbering';
@@ -62,7 +62,8 @@ const CUST_H = '__cust_h__';
 // build the table ourselves with an explicit border.
 const CUST_TABLE = '__cust_table__';
 // Synthetic first node: routes header/footer emission through unknownNodeHandler,
-// which is the only hook with access to the OdtDocument (setHeader/setFooter).
+// which is the only hook with access to the OdtDocument (setHeader/setFooter). The
+// zone written there is an HFZ sentinel paragraph, replaced by applyHfPostProcess.
 const CUST_HF = '__cust_hf__';
 
 // Table export styling. Values mirror the editor's table CSS (src/styles/editor.css)
@@ -90,8 +91,8 @@ const SEG = '';
 // swaps the char for <text:line-break/> in content.xml. U+E001 (SEG is U+E000).
 const LBR = '';
 
-// Sentinel wrapping page-count digits in header/footer runs; applyHfPostProcess
-// rewrites it to <text:page-count> in styles.xml. U+E002 (SEG/LBR are E000/E001).
+// Sentinel wrapping page-count digits (PGC<n>PGC), from replacePageFields;
+// applyInlineSentinels rewrites it to <text:page-count>. U+E002 (SEG/LBR are E000/E001).
 const PGC = '';
 
 // Sentinel for a space ODF would collapse — one opening a paragraph or following another
@@ -142,11 +143,6 @@ const COL = '';
 // rewrites it to <text:date>/<text:time> + a minted number style. U+E00A.
 const DTF = '';
 
-// Sentinel wrapping a header/footer image's index (HFIMG{i}HFIMG), emitted as plain
-// run text by replaceHfImages so it rides odf-kit's header/footer path (styles.xml);
-// applyHfPostProcess rewrites it to an as-char <draw:frame>. U+E00B.
-const HFIMG = '';
-
 // Sentinel wrapping the named paragraph style of a block whose style isn't the ODF
 // default for its node type (STY<name>STY), emitted as plain run text so it rides the
 // odf-kit path; applyParagraphStyles points the block at that style. U+E00D.
@@ -185,9 +181,20 @@ const BME = '\uE014';
 // (XRF{i}XRF<text>XRF); applyBookmarks rewrites it to <text:bookmark-ref>. U+E015.
 const XRF = '\uE015';
 
-// Sentinel wrapping a header/footer chapter field (CHP<level>CHP<name>CHP);
-// applyHfPostProcess rewrites it to <text:chapter> in styles.xml. U+E016.
+// Sentinel wrapping a chapter field (CHP<level>CHP<name>CHP), from replacePageFields;
+// applyInlineSentinels rewrites it to <text:chapter>. U+E016.
 const CHP = '\uE016';
+
+// Sentinel for a page-number field, from replacePageFields; applyInlineSentinels
+// rewrites it to <text:page-number>. U+E027.
+const PGN = '\uE027';
+
+// Sentinel bracketing a header/footer zone's blocks (marker paragraphs HFZ S{i} HFZ …
+// HFZ E{i} HFZ): appended behind the body, they ride every content.xml pass; cutZones
+// moves each region into styles.xml, where a master page keeps its zones. HFZ H/F HFZ
+// is the paragraph odf-kit writes for the running header/footer, which that XML
+// replaces. U+E026.
+const HFZ = '\uE026';
 
 // Sentinels bracketing a comment's text (CMS{i}CMS \u2026 CME{i}CME), spliced into the run
 // text like the bookmark pair; applyComments rewrites them to <office:annotation> and
@@ -461,7 +468,7 @@ function replaceSectionBreaks(doc: TiptapNode): TiptapNode {
 // bytes is ArrayBuffer-backed to match fflate's zip entry map. rotationDeg is CW;
 // wrap floats the frame at its anchor paragraph (left/right/top-bottom/run-through).
 type WrapMode = 'inline' | 'left' | 'right' | 'topBottom' | 'through';
-type ImageExport = { path: string; bytes: Uint8Array<ArrayBuffer>; mimeType: string; widthCm: number; heightCm: number; alt: string; rotationDeg: number; wrap: WrapMode; wrapOffsetCm: number | null; wrapOffsetYCm: number | null; wrapDistCm: number | null; wrapAlign: string | null; anchorPage: number | null; vAlign: string | null; inFront: boolean; wrapFromPage: boolean };
+type ImageExport = { path: string; bytes: Uint8Array<ArrayBuffer>; mimeType: string; widthCm: number; heightCm: number; alt: string; rotationDeg: number; wrap: WrapMode; wrapOffsetCm: number | null; wrapOffsetYCm: number | null; wrapDistCm: number | null; wrapAlign: string | null; anchorPage: number | null; vAlign: string | null; inFront: boolean; wrapFromPage: boolean; wrapFromBody: boolean };
 
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64);
@@ -508,6 +515,7 @@ function imageDescriptor(node: TiptapNode, index: number, namePrefix = 'image'):
     wrapAlign: node.attrs?.wrapAlign === 'left' || node.attrs?.wrapAlign === 'right' ? node.attrs.wrapAlign : null,
     anchorPage: typeof node.attrs?.anchorPage === 'number' && node.attrs.anchorPage > 0 ? node.attrs.anchorPage : null,
     wrapFromPage: node.attrs?.wrapFromPage === true,
+    wrapFromBody: node.attrs?.wrapFromBody === true,
     vAlign: typeof node.attrs?.vAlign === 'string' ? node.attrs.vAlign : null,
     inFront: node.attrs?.inFront === true,
   };
@@ -531,63 +539,6 @@ function replaceImages(node: TiptapNode, images: ImageExport[]): TiptapNode {
     content.push(replaceImages(child, images));
   }
   return { ...node, content };
-}
-
-// A header/footer paragraph's inline images → HFIMG-sentinel text runs (forced
-// as-character), collected into `images` under a distinct Pictures/hfImage* name so
-// applyHfRuns/hfFirstZoneXml carry the sentinel and applyHfPostProcess resolves it.
-function replaceHfImages(para: TiptapNode | null, images: ImageExport[]): TiptapNode | null {
-  if (!para?.content?.length) return para;
-  const content: TiptapNode[] = [];
-  for (const child of para.content) {
-    if (child.type === 'image') {
-      const desc = imageDescriptor(child, images.length, 'hfImage');
-      if (desc) {
-        images.push(desc);
-        content.push({ type: 'text', text: `${HFIMG}${images.length - 1}${HFIMG}` });
-      }
-      continue; // invalid image → dropped
-    }
-    content.push(child);
-  }
-  return { ...para, content };
-}
-
-// A header/footer paragraph's date/time fields → DTF-sentinel runs, collected into
-// `fields`. Every zone emitter (odf-kit's builder, hfVariantZoneXml, the section
-// master pages) then just carries the text, and applyHfDateFields resolves it in
-// styles.xml — the one part all of them write to.
-function replaceHfDateFields(para: TiptapNode | null, fields: DateTimeFieldExport[]): TiptapNode | null {
-  if (!para?.content?.length) return para;
-  const content: TiptapNode[] = [];
-  for (const child of para.content) {
-    if (child.type === 'dateTimeField') {
-      const a = child.attrs ?? {};
-      fields.push({
-        kind: a.kind === 'time' ? 'time' : 'date',
-        format: typeof a.format === 'string' ? a.format : '',
-        fixed: a.fixed === true,
-        value: typeof a.value === 'string' ? a.value : '',
-      });
-      content.push({ type: 'text', text: `${DTF}${fields.length - 1}${DTF}`, marks: child.marks });
-      continue;
-    }
-    content.push(child);
-  }
-  return { ...para, content };
-}
-
-// The same for every zone of a section past the first, whose docs go to
-// applySectionMasterPages untouched by the hoists above.
-function replaceHfSetDateFields(set: HfSet, fields: DateTimeFieldExport[]): HfSet {
-  const out = { ...set };
-  for (const key of HF_ZONE_KEYS) {
-    const doc = out[key];
-    const para = doc?.content?.[0] as TiptapNode | undefined;
-    if (!para) continue;
-    out[key] = { ...doc!, content: [replaceHfDateFields(para, fields)!] } as HfDoc;
-  }
-  return out;
 }
 
 // One formula, collected by replaceFormulas and emitted by applyFormulas as an
@@ -1073,6 +1024,7 @@ type TextBoxExport = {
   wrapDistCm: number | null;
   wrapAlign: string | null;
   wrapFromPage: boolean;
+  wrapFromBody: boolean;
   inFront: boolean;
   paddingCm: number;
   shapeKind: ShapeKind;
@@ -1103,6 +1055,7 @@ function textBoxDescriptor(node: TiptapNode): TextBoxExport {
     wrapDistCm: typeof a.wrapDist === 'number' ? round3(a.wrapDist) : null,
     wrapAlign: a.wrapAlign === 'center' || a.wrapAlign === 'right' ? a.wrapAlign : null,
     wrapFromPage: a.wrapFromPage === true,
+    wrapFromBody: a.wrapFromBody === true,
     inFront: a.inFront === true,
     paddingCm: typeof a.paddingCm === 'number' ? round3(a.paddingCm) : TEXTBOX_PADDING_CM,
     shapeKind: isShapeKind(a.shapeKind) ? a.shapeKind : 'textbox',
@@ -3304,16 +3257,18 @@ function injectIntoHeaderZones(styles: string, shapes: string): string {
   return out.replace(/<style:master-page\b[^>]*\/>|<style:master-page\b[^>]*>[\s\S]*?<\/style:master-page>/g, (master) => {
     if (!/<style:header[\s/>]/.test(master)) {
       return master.endsWith('/>')
-        ? master.replace(/\/>$/, `>${blank}</style:master-page>`)
-        : master.replace(/(<style:master-page\b[^>]*>)/, `$1${blank}`);
+        ? master.replace(/\/>$/, () => `>${blank}</style:master-page>`)
+        : master.replace(/(<style:master-page\b[^>]*>)/, (m) => `${m}${blank}`);
     }
-    return master.replace(/<style:header(-first|-left)?\s*\/>|<style:header(?:-first|-left)?>(\s*<text:p[^>]*>)?/g, (m) => {
-      const tag = /style:header(?:-first|-left)?/.exec(m)![0];
-      if (/^<style:header(?:-first|-left)?\s*\/>$/.test(m)) return `<${tag}><text:p text:style-name="Header">${shapes}</text:p></${tag}>`;
-      if (!m.includes('<text:p')) return `${m}<text:p text:style-name="Header">${shapes}</text:p>`;
-      // A blank zone's paragraph is self-closing; the shape needs it open.
-      return m.endsWith('/>') ? `${m.slice(0, -2)}>${shapes}</text:p>` : `${m}${shapes}`;
-    });
+    return master.replace(/<style:header(-first|-left)?\s*\/>|<style:header(-first|-left)?>([\s\S]*?)<\/style:header(?:-first|-left)?>/g,
+      (_m, selfSuffix: string | undefined, suffix: string | undefined, inner: string | undefined) => {
+        const tag = `style:header${selfSuffix ?? suffix ?? ''}`;
+        const para = inner == null ? null : /<text:p\b[^>]*?(\/?)>/.exec(inner);
+        if (inner == null || !para) return `<${tag}><text:p text:style-name="Header">${shapes}</text:p>${inner ?? ''}</${tag}>`;
+        // Into the zone's first paragraph, wherever it sits: one of its own would add a line.
+        const opened = para[1] ? `${para[0].slice(0, -2)}>${shapes}</text:p>` : `${para[0]}${shapes}`;
+        return `<${tag}>${inner.slice(0, para.index)}${opened}${inner.slice(para.index + para[0].length)}</${tag}>`;
+      });
   });
 }
 
@@ -3919,26 +3874,26 @@ function applyTextEffects(odtBytes: Uint8Array): Uint8Array {
   return rezipOdt(files);
 }
 
-// Emit the header/footer paragraph into odf-kit's HeaderFooterBuilder. hardBreak
-// and pageCount ride as sentinels (LBR / PGC-wrapped digits) and are rewritten to
-// <text:line-break/> / <text:page-count> in applyHfPostProcess (styles.xml).
-function applyHfRuns(b: HeaderFooterBuilder, para: TiptapNode, pageCount: number): void {
-  for (const node of para.content ?? []) {
-    const fmt = formattingFromMarks(node.marks);
-    const f = Object.keys(fmt).length ? fmt : undefined;
-    if (node.type === 'text' && node.text) b.addText(node.text, f);
-    else if (node.type === 'hardBreak')    b.addText(LBR);
-    else if (node.type === 'pageNumber')   b.addPageNumber(f);
-    else if (node.type === 'pageCount')    b.addText(`${PGC}${pageCount}${PGC}`, f);
-    else if (node.type === 'chapterField') b.addText(chapterSentinel(node), f);
-  }
-}
-
 // CHP<level>CHP<cached name>CHP — the cached name is what a reader shows before it
 // resolves the field itself, so it rides along like LibreOffice writes it.
 function chapterSentinel(node: TiptapNode): string {
   const level = Number(node.attrs?.level) || 1;
   return `${CHP}${level}${CHP}${String(node.attrs?.text ?? '')}${CHP}`;
+}
+
+// A header's page fields → sentinel runs carrying the atom's marks, so they ride every
+// odf-kit path — cells and text boxes included; applyInlineSentinels resolves them.
+function replacePageFields(node: TiptapNode, pageCount: number): TiptapNode {
+  if (!node.content?.length) return node;
+  return {
+    ...node,
+    content: node.content.map((child) => {
+      const text = child.type === 'pageNumber' ? PGN
+        : child.type === 'pageCount' ? `${PGC}${pageCount}${PGC}`
+        : child.type === 'chapterField' ? chapterSentinel(child) : null;
+      return text == null ? replacePageFields(child, pageCount) : { type: 'text', text, ...(child.marks ? { marks: child.marks } : {}) };
+    }),
+  };
 }
 
 // Emit a cell's inline content into odf-kit's run-based CellBuilder and, in lockstep,
@@ -4328,10 +4283,14 @@ function applyInlineSentinels(odtBytes: Uint8Array): Uint8Array {
   if (!contentBytes) return odtBytes;
 
   let content = strFromU8(contentBytes);
-  if (!content.includes(LBR) && !content.includes(TAB) && !content.includes(CHAR_TAB_STOP) && !content.includes(SPC)) return odtBytes;
+  if (![LBR, TAB, CHAR_TAB_STOP, SPC, PGN, PGC, CHP].some((c) => content.includes(c))) return odtBytes;
 
   content = content.split(LBR).join('<text:line-break/>').split(TAB).join('<text:tab/>')
-    .replace(new RegExp(`${SPC}+`, 'g'), (m) => (m.length > 1 ? `<text:s text:c="${m.length}"/>` : '<text:s/>'));
+    .replace(new RegExp(`${SPC}+`, 'g'), (m) => (m.length > 1 ? `<text:s text:c="${m.length}"/>` : '<text:s/>'))
+    .split(PGN).join('<text:page-number text:select-page="current">1</text:page-number>')
+    .replace(new RegExp(`${PGC}(\\d*)${PGC}`, 'g'), '<text:page-count>$1</text:page-count>')
+    .replace(new RegExp(`${CHP}(\\d)${CHP}([\\s\\S]*?)${CHP}`, 'g'),
+      (_m, level: string, name: string) => `<text:chapter text:display="name" text:outline-level="${level}">${name}</text:chapter>`);
   content = content.split(CHAR_TAB_STOP).join(`${CHAR_TAB_STOP} style:char="."`);
   files['content.xml'] = strToU8(content);
   return rezipOdt(files);
@@ -4383,6 +4342,11 @@ const INLINE_VALIGN_ODF: Record<string, string> = {
   offset: 'style:vertical-pos="from-top" style:vertical-rel="text"',
 };
 
+// What a floating frame's y counts from: its anchor paragraph, its page, or the top of
+// that page's body text.
+const verticalRel = (f: { wrapFromPage: boolean; wrapFromBody: boolean }) =>
+  f.wrapFromPage ? 'page' : f.wrapFromBody ? 'page-content' : 'paragraph';
+
 // Graphic style for a floating frame (wrap + side, anchored to the paragraph top).
 // Inline images need none. Injected into content.xml automatic-styles by applyImages.
 function imageGraphicStyle(img: ImageExport, index: number): string {
@@ -4401,7 +4365,7 @@ function imageGraphicStyle(img: ImageExport, index: number): string {
       ` style:horizontal-rel="paragraph-content" style:horizontal-pos="${img.wrapOffsetCm != null ? 'from-left' : 'left'}"` +
       // Against the page the anchor lands on, which is what the file the frame came from
       // said and what places a cover block; the anchor itself stays in the flow.
-      ` style:vertical-rel="${img.wrapFromPage ? 'page' : 'paragraph'}" style:vertical-pos="${img.wrapOffsetYCm != null ? 'from-top' : 'top'}"/></style:style>`
+      ` style:vertical-rel="${verticalRel(img)}" style:vertical-pos="${img.wrapOffsetYCm != null ? 'from-top' : 'top'}"/></style:style>`
     );
   }
   if (img.wrap === 'inline') {
@@ -4416,7 +4380,7 @@ function imageGraphicStyle(img: ImageExport, index: number): string {
     `<style:graphic-properties ${imageWrapProps(img.wrap, img.wrapOffsetCm, img.wrapAlign, img.wrapDistCm)}` +
     ` style:number-wrapped-paragraphs="no-limit"` +
     ` style:horizontal-rel="paragraph-content"` +
-    ` style:vertical-pos="${img.wrapOffsetYCm != null ? 'from-top' : 'top'}" style:vertical-rel="paragraph"/>` +
+    ` style:vertical-pos="${img.wrapOffsetYCm != null ? 'from-top' : 'top'}" style:vertical-rel="${verticalRel(img)}"/>` +
     `</style:style>`
   );
 }
@@ -4444,38 +4408,6 @@ function imageFrameXml(img: ImageExport, index: number): string {
   return (
     `<draw:frame draw:name="Image${index + 1}"${styleName}${anchor} draw:z-index="${index}"${dims}${x}${y}${imageTransform(img)}>` +
     `${inner}</draw:frame>`
-  );
-}
-
-// <draw:frame> for a header/footer image. As-character by default; a positioned frame
-// (a page-anchored background) instead rides the zone paragraph at its page corner
-// offset, run through behind the text. Distinct draw:name per frame.
-function hfImageFrameXml(img: ImageExport, index: number): string {
-  const dims =
-    (img.widthCm ? ` svg:width="${img.widthCm}cm"` : '') +
-    (img.heightCm ? ` svg:height="${img.heightCm}cm"` : '');
-  const title = img.alt ? `<svg:title>${escapeXml(img.alt)}</svg:title>` : '';
-  const anchor =
-    img.wrap === 'inline'
-      ? `text:anchor-type="as-char"`
-      : `text:anchor-type="paragraph" draw:style-name="${HF_BG_STYLE}${index + 1}"` +
-        ` svg:x="${img.wrapOffsetCm ?? 0}cm" svg:y="${img.wrapOffsetYCm ?? 0}cm"`;
-  return (
-    `<draw:frame draw:name="HfImage${index + 1}" ${anchor} draw:z-index="${index}"${dims}>` +
-    `<draw:image xlink:href="${img.path}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/>${title}</draw:frame>`
-  );
-}
-
-const HF_BG_STYLE = 'HfBg';
-
-// The graphic style a page-anchored zone frame points at: positioned from the page's
-// top-left corner and run through behind the text, as LibreOffice writes a watermark.
-function hfBackgroundStyleXml(index: number): string {
-  return (
-    `<style:style style:name="${HF_BG_STYLE}${index + 1}" style:family="graphic">` +
-    `<style:graphic-properties style:wrap="run-through" style:run-through="background"` +
-    ` style:horizontal-rel="page" style:horizontal-pos="from-left"` +
-    ` style:vertical-rel="page" style:vertical-pos="from-top"/></style:style>`
   );
 }
 
@@ -4734,37 +4666,6 @@ function applyDateTimeFields(odtBytes: Uint8Array, fields: DateTimeFieldExport[]
   return rezipOdt(files);
 }
 
-// The zone half of applyDateTimeFields: the same sentinels, resolved in styles.xml,
-// which is where every header/footer zone — the document's, a variant's, a section's —
-// ends up. Runs last, after the section master pages are written.
-function applyHfDateFields(odtBytes: Uint8Array, fields: DateTimeFieldExport[], lang: { language: string; country: string } | null): Uint8Array {
-  if (!fields.length) return odtBytes;
-  const files = unzipSync(odtBytes);
-  const stylesBytes = files['styles.xml'];
-  if (!stylesBytes) return odtBytes;
-
-  const tag = localeTag(lang ? `${lang.language}` : 'en');
-  const styleNames = new Map<string, string>();
-  const mintedStyles: string[] = [];
-  const styleFor = (fmt: DtFormat): string => {
-    const existing = styleNames.get(fmt.key);
-    if (existing) return existing;
-    const name = `HFNdt${styleNames.size + 1}`;
-    styleNames.set(fmt.key, name);
-    mintedStyles.push(odfNumberStyle(fmt, name, lang));
-    return name;
-  };
-
-  let styles = strFromU8(stylesBytes);
-  styles = styles.replace(new RegExp(`${DTF}(\\d+)${DTF}`, 'g'), (_m, idx: string) => {
-    const field = fields[Number(idx)];
-    return field ? odfDateTimeXml(field, styleFor, tag) : '';
-  });
-  styles = ensureNumberNamespace(styles);
-  files['styles.xml'] = strToU8(injectAutomaticStyles(styles, mintedStyles.join('')));
-  return rezipOdt(files);
-}
-
 // Rewrite each PLH sentinel to <text:placeholder>. The display text carries ASCII
 // angle brackets, which is what LibreOffice writes for its own placeholder fields.
 function applyPlaceholderFields(odtBytes: Uint8Array, labels: string[]): Uint8Array {
@@ -4812,7 +4713,7 @@ function textBoxGraphicStyle(box: TextBoxExport, index: number): string {
       + (box.wrap === 'through' && box.inFront ? ' style:run-through="foreground"' : '') +
       ` style:horizontal-rel="paragraph-content"` +
       ` style:vertical-pos="${box.wrapOffsetYCm != null ? 'from-top' : 'top'}"` +
-      ` style:vertical-rel="${box.wrapFromPage ? 'page' : 'paragraph'}"`;
+      ` style:vertical-rel="${verticalRel(box)}"`;
   // auto-grow only for plain text boxes; a custom-shape needs both explicitly
   // false, or LibreOffice's shape autofit shrinks it to its text.
   const grow = box.shapeKind === 'textbox' && !box.shapePath
@@ -5403,58 +5304,54 @@ export async function buildOdt(docJson: TiptapNode, margins: PageMargins = DEFAU
   const indexMarks: IndexEntryExport[] = [];
   const bibMarks: BibExport[] = [];
   const rubies: RubyExport[] = [];
-  const sentinels = replaceRuby(replaceBibEntries(replaceIndexEntries(replaceRevisions(replaceSequenceFields(replaceComments(replaceBookmarks(replaceFormulas(replacePlaceholderFields(replaceDateTimeFields(replaceImages(replaceTabs(replaceHardBreaks(replaceSectionBreaks(replaceNotes(replaceColumns(replaceTextBoxes(replacePageBreaks(replaceTableOfContents(docJson, tocs)), textBoxes), columns), notes)))), images), dateFields), placeholderLabels), formulas), crossRefs), commentList), seqFields, seqAnchors), revisionList), indexMarks), bibMarks), rubies);
+  // Header/footer zones ride the body: each goes out behind it between HFZ marker
+  // paragraphs, through every pass below, and cutZones moves it into its master page.
+  const zoneIds = new Map<object, number>();
+  const zoneBlocks: TiptapNode[] = [];
+  const marker = (text: string): TiptapNode => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+  for (const set of [hf ?? {}, ...(hf?.sections ?? [])] as Partial<HfSet>[]) {
+    for (const key of HF_ZONE_KEYS) {
+      const doc = set[key];
+      if (!doc || hfIsEmpty(doc) || zoneIds.has(doc)) continue;
+      const id = zoneIds.size;
+      zoneIds.set(doc, id);
+      zoneBlocks.push(marker(`${HFZ}S${id}${HFZ}`), ...((doc.content ?? []) as TiptapNode[]), marker(`${HFZ}E${id}${HFZ}`));
+    }
+  }
+  const withZones: TiptapNode = zoneBlocks.length ? { ...docJson, content: [...(docJson.content ?? []), ...zoneBlocks] } : docJson;
+  const sentinels = replaceRuby(replaceBibEntries(replaceIndexEntries(replaceRevisions(replaceSequenceFields(replaceComments(replaceBookmarks(replaceFormulas(replacePlaceholderFields(replaceDateTimeFields(replaceImages(replaceTabs(replaceHardBreaks(replaceSectionBreaks(replaceNotes(replaceColumns(replaceTextBoxes(replacePageBreaks(replaceTableOfContents(replacePageFields(withZones, hf?.pageCount ?? 1), tocs)), textBoxes), columns), notes)))), images), dateFields), placeholderLabels), formulas), crossRefs), commentList), seqFields, seqAnchors), revisionList), indexMarks), bibMarks), rubies);
   const unmerged = markTextEffects(bakeListCharStyles(sentinels, styles), DEFAULT_FONT_SIZE_PT, styles);
   const raw = mergeListItemBlocks(unmerged);
-  let headerPara = hf && !hfIsEmpty(hf.header) ? (hf.header!.content![0] as TiptapNode) : null;
-  let footerPara = hf && !hfIsEmpty(hf.footer) ? (hf.footer!.content![0] as TiptapNode) : null;
-  // Different first page (ODF header-first): page 1 gets its own zone content.
+  // Section 1's zones, as the Standard master page carries them. With a variant on, page 1
+  // (or an even page) is independent: whenever a side has a zone on either, both go out —
+  // an empty one blanks its side, as the editor shows it.
   const differentFirstPage = !!hf?.differentFirstPage;
-  let firstHeaderPara = differentFirstPage && hf && !hfIsEmpty(hf.headerFirst ?? null) ? (hf.headerFirst!.content![0] as TiptapNode) : null;
-  let firstFooterPara = differentFirstPage && hf && !hfIsEmpty(hf.footerFirst ?? null) ? (hf.footerFirst!.content![0] as TiptapNode) : null;
-  // Different odd & even pages (ODF header-left): even pages get their own zone.
   const differentOddEven = !!hf?.differentOddEven;
-  let evenHeaderPara = differentOddEven && hf && !hfIsEmpty(hf.headerEven ?? null) ? (hf.headerEven!.content![0] as TiptapNode) : null;
-  let evenFooterPara = differentOddEven && hf && !hfIsEmpty(hf.footerEven ?? null) ? (hf.footerEven!.content![0] as TiptapNode) : null;
-  // Hoist header/footer inline images out to HFIMG sentinels before odf-kit serializes
-  // the zones; applyHfPostProcess rewrites them to <draw:frame> in styles.xml.
-  const hfImages: ImageExport[] = [];
-  // Date/time fields ride a sentinel through every zone emitter; applyHfDateFields
-  // resolves them in styles.xml, after the section master pages are written.
-  const hfDateFields: DateTimeFieldExport[] = [];
-  headerPara = headerPara && markTextEffects(headerPara);
-  footerPara = footerPara && markTextEffects(footerPara);
-  headerPara = replaceHfImages(headerPara, hfImages);
-  footerPara = replaceHfImages(footerPara, hfImages);
-  firstHeaderPara = replaceHfImages(firstHeaderPara, hfImages);
-  firstFooterPara = replaceHfImages(firstFooterPara, hfImages);
-  evenHeaderPara = replaceHfImages(evenHeaderPara, hfImages);
-  evenFooterPara = replaceHfImages(evenFooterPara, hfImages);
-  headerPara = replaceHfDateFields(headerPara, hfDateFields);
-  footerPara = replaceHfDateFields(footerPara, hfDateFields);
-  firstHeaderPara = replaceHfDateFields(firstHeaderPara, hfDateFields);
-  firstFooterPara = replaceHfDateFields(firstFooterPara, hfDateFields);
-  evenHeaderPara = replaceHfDateFields(evenHeaderPara, hfDateFields);
-  evenFooterPara = replaceHfDateFields(evenFooterPara, hfDateFields);
-  // With the flag on, page 1 is independent: whenever a side has a zone on either
-  // variant, emit both — an empty one blanks its side, as the editor shows it.
-  if (differentFirstPage) {
-    const empty = (): TiptapNode => ({ type: 'paragraph', content: [] });
-    if (headerPara || firstHeaderPara) { headerPara ??= empty(); firstHeaderPara ??= empty(); }
-    if (footerPara || firstFooterPara) { footerPara ??= empty(); firstFooterPara ??= empty(); }
+  const shown = (doc: HfDoc | undefined, on = true) => on && !hfIsEmpty(doc ?? null);
+  const docZones: Record<HfZoneKey, boolean> = {
+    header: shown(hf?.header), footer: shown(hf?.footer),
+    headerFirst: shown(hf?.headerFirst, differentFirstPage), footerFirst: shown(hf?.footerFirst, differentFirstPage),
+    headerEven: shown(hf?.headerEven, differentOddEven), footerEven: shown(hf?.footerEven, differentOddEven),
+  };
+  for (const [on, variant] of [[differentFirstPage, 'First'], [differentOddEven, 'Even']] as const) {
+    if (!on) continue;
+    for (const kind of ['header', 'footer'] as const) {
+      const key = `${kind}${variant}` as HfZoneKey;
+      if (docZones[kind] || docZones[key]) docZones[kind] = docZones[key] = true;
+    }
   }
-  // Same for even pages: an empty even zone blanks it while the default fills odd pages.
-  if (differentOddEven) {
-    const empty = (): TiptapNode => ({ type: 'paragraph', content: [] });
-    if (headerPara || evenHeaderPara) { headerPara ??= empty(); evenHeaderPara ??= empty(); }
-    if (footerPara || evenFooterPara) { footerPara ??= empty(); evenFooterPara ??= empty(); }
-  }
+  // A zone's XML once cutZones has run; an empty one is a blank paragraph.
+  let zoneXml: string[] = [];
+  const zoneXmlOf = (doc: HfDoc | undefined, kind: 'header' | 'footer'): string => {
+    const id = doc ? zoneIds.get(doc) : undefined;
+    return id == null ? `<text:p text:style-name="${kind === 'header' ? 'Header' : 'Footer'}"/>` : zoneXml[id] ?? '';
+  };
   // Distance from the page edge to the header (top) / footer (bottom). Becomes the
   // ODF page margin; clamped below the body margin so the body still starts at it.
   const headerDist = Math.min(hf?.headerDistanceCm ?? HF_DISTANCE_CM, margins.top);
   const footerDist = Math.min(hf?.footerDistanceCm ?? HF_DISTANCE_CM, margins.bottom);
   let json = injectCustomTypes(raw);
-  if (headerPara || footerPara) {
+  if (docZones.header || docZones.footer) {
     json = { ...json, content: [{ type: CUST_HF }, ...(json.content ?? [])] };
   }
 
@@ -5483,14 +5380,14 @@ export async function buildOdt(docJson: TiptapNode, margins: PageMargins = DEFAU
     // Margins (cm) from the Layout panel, matching the editor's padding so line
     // wrapping / page flow is identical. With a header/footer the vertical margin is
     // the edge→zone distance; applyHfPostProcess keeps the body starting at the margin.
-    marginTop: `${headerPara ? headerDist : margins.top}cm`,
-    marginBottom: `${footerPara ? footerDist : margins.bottom}cm`,
+    marginTop: `${docZones.header ? headerDist : margins.top}cm`,
+    marginBottom: `${docZones.footer ? footerDist : margins.bottom}cm`,
     marginLeft: `${margins.left}cm`,
     marginRight: `${margins.right}cm`,
     unknownNodeHandler(node: TiptapNode, doc: OdtDocument) {
       if (node.type === CUST_HF) {
-        if (headerPara) doc.setHeader((b: HeaderFooterBuilder) => applyHfRuns(b, headerPara, hf!.pageCount));
-        if (footerPara) doc.setFooter((b: HeaderFooterBuilder) => applyHfRuns(b, footerPara, hf!.pageCount));
+        if (docZones.header) doc.setHeader((b: HeaderFooterBuilder) => b.addText(`${HFZ}H${HFZ}`));
+        if (docZones.footer) doc.setFooter((b: HeaderFooterBuilder) => b.addText(`${HFZ}F${HFZ}`));
         return;
       }
       if (node.type === CUST_TABLE) {
@@ -5656,16 +5553,19 @@ export async function buildOdt(docJson: TiptapNode, margins: PageMargins = DEFAU
   // Effects first: applyCharacterStyles then clones the style that already carries them.
   const withNamedStyles = applyCharacterStyles(applyTextEffects(applyParagraphStyles(withParaBoxes)));
   const usedTables = new Set(tableStyleNames.filter((t): t is TableStyleRef => !!t).map(t => t.name));
-  const withStyles = rewriteStylesXml(withNamedStyles, language ?? null, pageFormat, orientation, styles, usedStyleNames(docJson, styles), usedTables, new Set(listStyleRepoints.filter((n): n is string => !!n)), tabIntervalCm, margins.mirrored === true, rtl, notesSettings, hyphenate, pageNumbering, decor, lineNumbering, lineGrid);
+  const withStyles = rewriteStylesXml(withNamedStyles, language ?? null, pageFormat, orientation, styles, usedStyleNames(withZones, styles), usedTables, new Set(listStyleRepoints.filter((n): n is string => !!n)), tabIntervalCm, margins.mirrored === true, rtl, notesSettings, hyphenate, pageNumbering, decor, lineNumbering, lineGrid);
   const withBib = applyBibliographyConfig(withStyles, tocs.some((t) => t.kind === 'bibliography' && t.citationStyle === 'numbered'));
-  const withHf = applyHfPostProcess(withBib, margins, headerPara, footerPara, headerDist, footerDist, firstHeaderPara, firstFooterPara, hf?.pageCount ?? 1, hfImages, evenHeaderPara, evenFooterPara);
+  const cut = cutZones(withBib, zoneIds.size);
+  zoneXml = cut.xml;
+  const docZoneXml = Object.fromEntries(HF_ZONE_KEYS.map((key) =>
+    [key, docZones[key] ? zoneXmlOf(hf?.[key], key.startsWith('header') ? 'header' : 'footer') : null])) as Record<HfZoneKey, string | null>;
+  const withHf = applyHfPostProcess(cut.bytes, margins, docZoneXml, headerDist, footerDist);
   // Sections past the first get their own master page, which is where ODF keeps a
   // section's header/footer; the SEC-marked block points at it. The page decor goes
   // into every master's header after that, so the section pages show it too.
-  const withSections = applySectionMasterPages(withHf, (hf?.sections ?? []).map((set) => replaceHfSetDateFields(set, hfDateFields)), hf?.pageCount ?? 1, margins, pageFormat, orientation,
-    { header: !!headerPara, footer: !!footerPara }, { header: headerDist, footer: footerDist }, borderInsetCm(decor), tableMargins);
-  const withHfDates = applyHfDateFields(withSections, hfDateFields, language ?? null);
-  const withWatermark = applyFoldMarksOdf(applyWatermarkOdf(withHfDates, decor.watermark), foldMarks);
+  const withSections = applySectionMasterPages(withHf, hf?.sections ?? [], zoneXmlOf, margins, pageFormat, orientation,
+    { header: docZones.header, footer: docZones.footer }, { header: headerDist, footer: footerDist }, borderInsetCm(decor), tableMargins);
+  const withWatermark = applyFoldMarksOdf(applyWatermarkOdf(withSections, decor.watermark), foldMarks);
   const withFonts = applyEmbeddedFontsOdf(declareReferencedFonts(withWatermark), fonts);
   return zipFinal(declareLoext(applyOdfVersion(applyDocProperties(applyPageNumberStart(applySpacingModel(withFonts, spacingModel, spacingAtPageStart, balanceSpaces), pageNumbering.start), props))));
 }
@@ -5782,76 +5682,18 @@ function applySpacingModel(odtBytes: Uint8Array, model: SpacingModel, atPageStar
   return rezipOdt(files);
 }
 
-function hfAlign(para: TiptapNode): AlignValue | null {
-  const ta = para.attrs?.textAlign;
-  return ta === 'center' || ta === 'right' || ta === 'justify' ? ta : null;
-}
-
-// <style:tab-stops> for a zone paragraph: odf-kit builds the body's, but a header/footer
-// style is written by hand here.
-function tabStopsXml(attrs: TiptapNode['attrs']): string {
-  const stops = parseTabStops(attrs?.tabStops);
-  if (!stops.length) return '';
-  const inner = stops.map((st) => {
-    const leader = normalizeLeader(st.leader);
-    return `<style:tab-stop style:position="${st.pos}cm" style:type="${st.align === 'decimal' ? 'char' : st.align}"`
-      + (st.align === 'decimal' ? ' style:char="."' : '')
-      + (leader ? ` style:leader-style="${ODF_LEADER_STYLE[leader]}" style:leader-text="${leader}"` : '')
-      + '/>';
-  }).join('');
-  return `<style:tab-stops>${inner}</style:tab-stops>`;
-}
-
-// The whole <style:paragraph-properties> of a zone paragraph, or '' when it needs none:
-// alignment plus the paragraph background ("colored field") and per-side borders.
-function hfParaPropsXml(para: TiptapNode): string {
-  const props: string[] = [];
-  const align = hfAlign(para);
-  if (align) props.push(`fo:text-align="${align}"`);
-  const s = paraStyleFromAttrs(para.attrs);
-  if (s.background) props.push(`fo:background-color="${s.background}"`);
-  // The zone's own margins, which grow the band on the way back in (import/CLAUDE.md).
-  for (const [attr, side] of [['spaceBefore', 'top'], ['spaceAfter', 'bottom']] as const) {
-    const v = para.attrs?.[attr];
-    if (typeof v === 'number' && v) props.push(`fo:margin-${side}="${v}pt"`);
-  }
-  for (const [attr, side] of [
-    ['borderTop', 'top'], ['borderRight', 'right'], ['borderBottom', 'bottom'], ['borderLeft', 'left'],
-  ] as const) {
-    if (s[attr]) props.push(`fo:border-${side}="${s[attr]}"`);
-  }
-  const tabs = tabStopsXml(para.attrs);
-  if (!props.length && !tabs) return '';
-  const open = `<style:paragraph-properties${props.length ? ` ${props.join(' ')}` : ''}`;
-  return tabs ? `${open}>${tabs}</style:paragraph-properties>` : `${open}/>`;
-}
-
-// Header/footer post-processing on styles.xml: resolve LBR/PGC sentinels, apply the
-// paragraph alignment to the Header/Footer styles, and rewrite the geometry to the
-// ODF's own mapping (page margin = HF distance, min-height fills up to the body margin).
-function applyHfPostProcess(odtBytes: Uint8Array, margins: PageMargins, headerPara: TiptapNode | null, footerPara: TiptapNode | null, headerDist: number, footerDist: number, firstHeaderPara: TiptapNode | null = null, firstFooterPara: TiptapNode | null = null, pageCount = 1, hfImages: ImageExport[] = [], evenHeaderPara: TiptapNode | null = null, evenFooterPara: TiptapNode | null = null): Uint8Array {
-  if (!headerPara && !footerPara && !firstHeaderPara && !firstFooterPara && !evenHeaderPara && !evenFooterPara) return odtBytes;
-
+// Header/footer post-processing on styles.xml: section 1's zones replace the sentinel
+// paragraphs odf-kit wrote (variants go in beside them), and the geometry is rewritten
+// to ODF's own mapping (page margin = HF distance, min-height fills up to the body margin).
+function applyHfPostProcess(odtBytes: Uint8Array, margins: PageMargins, zones: Record<HfZoneKey, string | null>, headerDist: number, footerDist: number): Uint8Array {
+  if (!Object.values(zones).some((z) => z != null)) return odtBytes;
   const files = unzipSync(odtBytes);
   const stylesBytes = files['styles.xml'];
   if (!stylesBytes) return odtBytes;
   let styles = strFromU8(stylesBytes);
 
-  // Same fix as collapseRunWhitespace: odf-kit joins runs with "\n", which would collapse
-  // into spurious spaces, and writes a tab bare, which LibreOffice reads as a space.
-  // styles.xml only has text:p inside header/footer.
-  styles = styles.replace(/<text:p\b[^>]*>[\s\S]*?<\/text:p>/g, (block) => block.replace(/\n/g, '').replace(/\t/g, '<text:tab/>'));
-  styles = styles.split(LBR).join('<text:line-break/>');
-  styles = styles.replace(new RegExp(`${PGC}(\\d*)${PGC}`, 'g'), '<text:page-count>$1</text:page-count>');
-  styles = styles.replace(new RegExp(`${CHP}(\\d)${CHP}([\\s\\S]*?)${CHP}`, 'g'),
-    (_m, level: string, name: string) => `<text:chapter text:display="name" text:outline-level="${level}">${name}</text:chapter>`);
-
-  const mintedStyles: string[] = [];
-  const mint = (n: string) => { mintedStyles.push(n); };
-  styles = resolveTextEffects(styles, mint, 'HFTE');
-
   const round3 = (v: number) => Math.round(v * 1000) / 1000;
-  const zone = (kind: 'header' | 'footer', para: TiptapNode, bodyMarginCm: number, distCm: number) => {
+  const band = (kind: 'header' | 'footer', bodyMarginCm: number, distCm: number) => {
     // min-height fills the gap between the edge→zone distance and the body margin,
     // so the body still starts at bodyMarginCm (page margin was set to distCm).
     const minH = round3(Math.max(0.2, bodyMarginCm - distCm));
@@ -5861,67 +5703,27 @@ function applyHfPostProcess(odtBytes: Uint8Array, margins: PageMargins, headerPa
       new RegExp(`<style:${kind}-style>[\\s\\S]*?</style:${kind}-style>`),
       `<style:${kind}-style><style:header-footer-properties fo:min-height="${minH}cm" ${spacingAttr}="0cm" style:dynamic-spacing="false"/></style:${kind}-style>`,
     );
-    // On the zone's own paragraph, not the shared Header/Footer style: the first-page
-    // and even-page variants inherit that style and have alignments of their own.
-    const props = hfParaPropsXml(para);
-    if (props) {
-      const parent = kind === 'header' ? 'Header' : 'Footer';
-      const name = `HFD${kind[0].toUpperCase()}P`;
-      mint(`<style:style style:name="${name}" style:family="paragraph" style:parent-style-name="${parent}">${props}</style:style>`);
-      styles = styles.replace(
-        new RegExp(`(<style:${kind}>\\s*<text:p )text:style-name="${parent}"`),
-        `$1text:style-name="${name}"`,
-      );
-    }
   };
-  if (headerPara) zone('header', headerPara, margins.top, headerDist);
-  if (footerPara) zone('footer', footerPara, margins.bottom, footerDist);
-
-  // Different first page / odd-even: inject <style:{header,footer}-{first,left}> content
-  // into the master page (ODF 1.3; LibreOffice reads them). The page-layout header/footer
-  // geometry above is shared across variants, so only the content differs here.
-  if (firstHeaderPara || firstFooterPara || evenHeaderPara || evenFooterPara) {
-    const injectVariant = (kind: 'header' | 'footer', suffix: 'first' | 'left', para: TiptapNode | null) => {
-      if (!para) return;
-      const xml = hfVariantZoneXml(kind, suffix, para, pageCount, mint);
-      // Insert after the matching default zone (always present when a variant exists,
-      // since buildOdt emits an empty default alongside it), else at the master-page bounds.
-      const closeTag = `</style:${kind}>`;
-      if (styles.includes(closeTag)) styles = styles.replace(closeTag, `${closeTag}${xml}`);
-      else if (kind === 'header') styles = styles.replace(/(<style:master-page\b[^>]*>)/, `$1${xml}`);
-      else styles = styles.replace('</style:master-page>', `${xml}</style:master-page>`);
-    };
-    injectVariant('header', 'first', firstHeaderPara);
-    injectVariant('header', 'left', evenHeaderPara);
-    injectVariant('footer', 'first', firstFooterPara);
-    injectVariant('footer', 'left', evenFooterPara);
+  if (zones.header != null) band('header', margins.top, headerDist);
+  if (zones.footer != null) band('footer', margins.bottom, footerDist);
+  for (const [kind, tag] of [['header', 'H'], ['footer', 'F']] as const) {
+    const xml = zones[kind];
+    if (xml != null) styles = styles.replace(new RegExp(`<text:p\\b[^>]*>(?:(?!</?text:p\\b)[\\s\\S])*?${HFZ}${tag}${HFZ}[\\s\\S]*?</text:p>`), () => xml);
   }
-  if (mintedStyles.length) {
-    const defs = mintedStyles.join('');
-    styles = injectAutomaticStyles(styles, defs);
-  }
-
-  // Resolve HFIMG sentinels (default + first-page zones) to as-char <draw:frame>s, then
-  // add the picture binaries and their manifest entries (mirrors the body applyImages).
-  if (hfImages.length) {
-    styles = ensureDrawNamespaces(styles);
-    styles = styles.replace(new RegExp(`${HFIMG}(\\d+)${HFIMG}`, 'g'), (_m, idx: string) => {
-      const img = hfImages[Number(idx)];
-      return img ? hfImageFrameXml(img, Number(idx)) : '';
-    });
-    const bgStyles = hfImages.map((img, i) => (img.wrap === 'inline' ? '' : hfBackgroundStyleXml(i))).join('');
-    if (bgStyles) {
-      styles = injectAutomaticStyles(styles, bgStyles);
-    }
-    for (const img of hfImages) files[img.path] = img.bytes;
-    const manifestBytes = files['META-INF/manifest.xml'];
-    if (manifestBytes) {
-      const entries = hfImages
-        .map((img) => `<manifest:file-entry manifest:full-path="${img.path}" manifest:media-type="${img.mimeType}"/>`)
-        .join('');
-      files['META-INF/manifest.xml'] = strToU8(strFromU8(manifestBytes).replace('</manifest:manifest>', `${entries}</manifest:manifest>`));
-    }
-  }
+  // Different first page / odd-even: <style:{header,footer}-{first,left}> in the master
+  // page (ODF 1.3; LibreOffice reads them), after the running zone of their kind.
+  const injectVariant = (kind: 'header' | 'footer', suffix: 'first' | 'left', xml: string | null) => {
+    if (xml == null) return;
+    const zone = `<style:${kind}-${suffix}>${xml}</style:${kind}-${suffix}>`;
+    const closeTag = `</style:${kind}>`;
+    if (styles.includes(closeTag)) styles = styles.replace(closeTag, () => `${closeTag}${zone}`);
+    else if (kind === 'header') styles = styles.replace(/(<style:master-page\b[^>]*>)/, (m) => `${m}${zone}`);
+    else styles = styles.replace('</style:master-page>', () => `${zone}</style:master-page>`);
+  };
+  injectVariant('header', 'first', zones.headerFirst);
+  injectVariant('header', 'left', zones.headerEven);
+  injectVariant('footer', 'first', zones.footerFirst);
+  injectVariant('footer', 'left', zones.footerEven);
 
   files['styles.xml'] = strToU8(styles);
   return rezipOdt(files);
@@ -5939,54 +5741,76 @@ function ensureDrawNamespaces(styles: string): string {
   return missing.length ? styles.replace(/<office:document-styles\b/, `<office:document-styles ${missing.join(' ')}`) : styles;
 }
 
-// A variant zone paragraph → <style:{header,footer}-{first,left}> XML (suffix null = the
-// section's own zone). Runs and page fields become <text:span>s referencing minted
-// automatic text styles (pushed via `mint`); hardBreak → line-break.
-function hfVariantZoneXml(kind: 'header' | 'footer', suffix: 'first' | 'left' | null, para: TiptapNode, pageCount: number, mint: (styleXml: string) => void, prefix = ''): string {
-  let styleSeq = 0;
-  // Distinct minted-style prefix per variant so first + even styles never collide.
-  const pfx = `${prefix}HF${suffix === 'first' ? 'F' : suffix === 'left' ? 'L' : 'D'}${kind[0].toUpperCase()}`;
-  // Wrap inline XML in a minted text style span when the run carries formatting.
-  const styled = (innerXml: string, marks: TiptapNode['marks']): string => {
-    const props = odfTextPropsFromMarks(marks);
-    if (!props) return innerXml;
-    const name = `${pfx}T${++styleSeq}`;
-    mint(`<style:style style:name="${name}" style:family="text"><style:text-properties ${props}/></style:style>`);
-    return `<text:span text:style-name="${name}">${innerXml}</text:span>`;
+// Cut each zone's blocks out of content.xml, between its HFZ marker paragraphs, and bring
+// the automatic styles they use (renamed Hz*, clear of styles.xml's own names) and the
+// namespaces they need over to styles.xml, where a master page keeps its zones. A zone
+// may go into several master pages, so its xml:ids (and what continues them) are dropped.
+function cutZones(odtBytes: Uint8Array, count: number): { bytes: Uint8Array; xml: string[] } {
+  if (!count) return { bytes: odtBytes, xml: [] };
+  const files = unzipSync(odtBytes);
+  if (!files['content.xml'] || !files['styles.xml']) return { bytes: odtBytes, xml: [] };
+  let content = strFromU8(files['content.xml']);
+  let styles = strFromU8(files['styles.xml']);
+  const markerAt = (tag: string) => {
+    const at = content.indexOf(`${HFZ}${tag}${HFZ}`);
+    if (at < 0) return null;
+    return { start: content.lastIndexOf('<text:p', at), end: content.indexOf('</text:p>', at) + '</text:p>'.length };
   };
-
-  let inner = '';
-  for (const node of para.content ?? []) {
-    if (node.type === 'text' && node.text) inner += styled(odfEncodeInline(node.text), node.marks);
-    else if (node.type === 'hardBreak') inner += '<text:line-break/>';
-    else if (node.type === 'pageNumber') inner += styled('<text:page-number text:select-page="current">1</text:page-number>', node.marks);
-    else if (node.type === 'pageCount') inner += styled(`<text:page-count>${pageCount}</text:page-count>`, node.marks);
-    else if (node.type === 'chapterField') inner += styled(
-      `<text:chapter text:display="name" text:outline-level="${Number(node.attrs?.level) || 1}">${odfEncodeInline(String(node.attrs?.text ?? ''))}</text:chapter>`, node.marks);
+  const xml: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const open = markerAt(`S${i}`);
+    const close = markerAt(`E${i}`);
+    if (!open || !close) { xml.push(''); continue; }
+    xml.push(content.slice(open.end, close.start).replace(/\s(?:xml:id|text:continue-list)="[^"]*"/g, ''));
+    content = content.slice(0, open.start) + content.slice(close.end);
   }
+  content = content.split(HFZ).join('');
 
-  const parent = kind === 'header' ? 'Header' : 'Footer';
-  const props = hfParaPropsXml(para);
-  let paraStyle = parent;
-  if (props) {
-    paraStyle = `${pfx}P`;
-    mint(`<style:style style:name="${paraStyle}" style:family="paragraph" style:parent-style-name="${parent}">${props}</style:style>`);
-  }
-  const tag = suffix ? `${kind}-${suffix}` : kind;
-  return `<style:${tag}><text:p text:style-name="${paraStyle}">${inner}</text:p></style:${tag}>`;
+  // The automatic styles of content.xml by name, and those the zones reach, transitively.
+  const autos = /<office:automatic-styles>([\s\S]*?)<\/office:automatic-styles>/.exec(content)?.[1] ?? '';
+  const defs = new Map<string, string>();
+  for (const m of autos.matchAll(/<([\w-]+:[\w-]+)\b[^>]*?\bstyle:name="([^"]*)"[^>]*?(?:\/>|>[\s\S]*?<\/\1>)/g)) defs.set(m[2], m[0]);
+  const ref = /(\b[\w-]+:[\w-]*style-name)="([^"]*)"/g;
+  const need = new Set<string>();
+  const reach = (x: string): void => {
+    for (const m of x.matchAll(ref)) {
+      if (!defs.has(m[2]) || need.has(m[2])) continue;
+      need.add(m[2]);
+      reach(defs.get(m[2])!);
+    }
+  };
+  xml.forEach(reach);
+  const renamed = (x: string) => x.replace(ref, (m, attr: string, name: string) => (need.has(name) ? `${attr}="Hz${name}"` : m));
+  const copied = [...need].map((name) => renamed(defs.get(name)!).replace(/\bstyle:name="[^"]*"/, `style:name="Hz${name}"`)).join('');
+  const out = xml.map(renamed);
+
+  // The namespaces the moved XML uses, declared as content.xml declares them.
+  const contentRoot = /<office:document-content\b[^>]*>/.exec(content)?.[0] ?? '';
+  const stylesRoot = /<office:document-styles\b[^>]*>/.exec(styles)?.[0] ?? '';
+  const used = new Set([...(out.join('') + copied).matchAll(/<\/?([\w-]+):|\s([\w-]+):[\w-]+=/g)].map((m) => m[1] ?? m[2]));
+  const decls = [...used]
+    .filter((pfx) => pfx !== 'xml' && pfx !== 'xmlns' && !stylesRoot.includes(`xmlns:${pfx}=`))
+    .map((pfx) => new RegExp(`\\sxmlns:${pfx}="[^"]*"`).exec(contentRoot)?.[0] ?? '')
+    .join('');
+  if (decls) styles = styles.replace(stylesRoot, stylesRoot.replace(/<office:document-styles\b/, (m) => `${m}${decls}`));
+  styles = injectAutomaticStyles(styles, copied);
+
+  files['content.xml'] = strToU8(content);
+  files['styles.xml'] = strToU8(styles);
+  return { bytes: rezipOdt(files), xml: out };
 }
 
 // A section's own master page: the Standard one cloned under its own name, carrying that
 // section's zones. ODF has no per-section header/footer other than this.
 // `part`: the whole section, the one right/left page it opens on, or the pages after it.
-function masterPageXml(name: string, layoutName: string, set: HfSet, pageCount: number, mint: (styleXml: string) => void, pfx: string, part: 'all' | 'right' | 'left' | 'rest' = 'all', next?: string): string {
+function masterPageXml(name: string, layoutName: string, set: HfSet, zoneXmlOf: (doc: HfDoc, kind: 'header' | 'footer') => string, part: 'all' | 'right' | 'left' | 'rest' = 'all', next?: string): string {
   // A variant and its running zone travel as a pair: ODF allows a first/left zone only
   // under a running one, and an absent left zone repeats the running one. Where either
   // is set both are written, the blank one as an empty paragraph, which blanks its side.
   const zone = (kind: 'header' | 'footer', suffix: 'first' | 'left' | null, doc: HfDoc, force = false): string => {
     if (!force && hfIsEmpty(doc)) return '';
-    const para = hfIsEmpty(doc) ? { type: 'paragraph', content: [] } : doc!.content![0];
-    return hfVariantZoneXml(kind, suffix, para as TiptapNode, pageCount, mint, pfx);
+    const tag = suffix ? `${kind}-${suffix}` : kind;
+    return `<style:${tag}>${zoneXmlOf(doc, kind)}</style:${tag}>`;
   };
   const on = (flag: boolean, running: HfDoc, variant: HfDoc) => flag && (!hfIsEmpty(running) || !hfIsEmpty(variant));
   // The layout takes the band off the page margin for a section that has a zone of this
@@ -6028,7 +5852,7 @@ function borderInsetCm(decor: PageDecor): number {
 // Point each SEC-marked block at its section's master page (ODF's only per-section
 // header/footer), minting the master pages beside the Standard one odf-kit wrote.
 // `docZones`/`dists` are the document's own running zones and edge→zone distances.
-function applySectionMasterPages(odtBytes: Uint8Array, sets: HfSet[], pageCount: number, margins: PageMargins, format: PageFormat, orientation: Orientation, docZones: { header: boolean; footer: boolean }, dists: { header: number; footer: number }, insetCm: number, tables: (TableProps | null)[]): Uint8Array {
+function applySectionMasterPages(odtBytes: Uint8Array, sets: HfSet[], zoneXmlOf: (doc: HfDoc, kind: 'header' | 'footer') => string, margins: PageMargins, format: PageFormat, orientation: Orientation, docZones: { header: boolean; footer: boolean }, dists: { header: number; footer: number }, insetCm: number, tables: (TableProps | null)[]): Uint8Array {
   const files = unzipSync(odtBytes);
   const contentBytes = files['content.xml'];
   const stylesBytes = files['styles.xml'];
@@ -6140,81 +5964,27 @@ function applySectionMasterPages(odtBytes: Uint8Array, sets: HfSet[], pageCount:
     layouts.push(xml);
     return name;
   };
-  const hfStyles: string[] = [];
   const pages: string[] = [];
   for (const index of [...used].sort((a, b) => a - b)) {
     const set = sets[index];
     if (!set) continue;
-    const mint = (x: string) => hfStyles.push(x);
     const name = `Section${index + 1}`;
     // The side a section opens on (page one is a right page whatever it says): a master
     // for that page alone, handing over to one for the rest — every page of a right-only
     // master is a right page in LibreOffice, with a blank one between any two.
     const side = index > 0 && set.startsOn ? (set.startsOn === 'odd' ? 'right' : 'left') : null;
     if (side) {
-      pages.push(masterPageXml(name, layoutFor(index, set, side), set, pageCount, mint, `MS${index}`, side, `${name}c`));
-      pages.push(masterPageXml(`${name}c`, layoutFor(index, set, null), set, pageCount, mint, `MS${index}c`, 'rest'));
+      pages.push(masterPageXml(name, layoutFor(index, set, side), set, zoneXmlOf, side, `${name}c`));
+      pages.push(masterPageXml(`${name}c`, layoutFor(index, set, null), set, zoneXmlOf, 'rest'));
     } else {
-      pages.push(masterPageXml(name, layoutFor(index, set, null), set, pageCount, mint, `MS${index}`));
+      pages.push(masterPageXml(name, layoutFor(index, set, null), set, zoneXmlOf));
     }
   }
   if (layouts.length) styles = styles.replace('</office:automatic-styles>', `${layouts.join('')}</office:automatic-styles>`);
-  if (pages.length) styles = styles.replace('</office:master-styles>', `${pages.join('')}</office:master-styles>`);
-  if (hfStyles.length) {
-    const defs = hfStyles.join('');
-    styles = injectAutomaticStyles(styles, defs);
-  }
+  if (pages.length) styles = styles.replace('</office:master-styles>', () => `${pages.join('')}</office:master-styles>`);
 
   files['content.xml'] = strToU8(content);
   files['styles.xml'] = strToU8(styles);
   return rezipOdt(files);
 }
 
-// A text run's ODF <style:text-properties> attribute string from TipTap marks (mirrors
-// formattingFromMarks). Empty string → no styling needed (returned as null).
-function odfTextPropsFromMarks(marks: TiptapNode['marks']): string | null {
-  const fmt = formattingFromMarks(marks);
-  const a: string[] = [];
-  // The effects below name the underline's own shape and colour where the run has them.
-  const extra = odfExtraTextProps(marks);
-  if (fmt.fontWeight != null) a.push(`fo:font-weight="${fmt.fontWeight}"`);
-  else if (fmt.bold) a.push('fo:font-weight="bold"');
-  if (fmt.italic) a.push('fo:font-style="italic"');
-  if (fmt.underline) {
-    a.push('style:text-underline-width="auto"');
-    if (!/style:text-underline-style=/.test(extra)) a.push('style:text-underline-style="solid"');
-    if (!/style:text-underline-color=/.test(extra)) a.push('style:text-underline-color="font-color"');
-  }
-  if (fmt.strikethrough) a.push('style:text-line-through-style="solid"');
-  if (extra) a.push(extra);
-  if (fmt.superscript) a.push('style:text-position="super 58%"');
-  else if (fmt.subscript) a.push('style:text-position="sub 58%"');
-  if (fmt.fontFamily) {
-    const q = /\s/.test(fmt.fontFamily) ? `'${fmt.fontFamily}'` : fmt.fontFamily;
-    a.push(`style:font-name="${fmt.fontFamily}" fo:font-family="${q}"`);
-  }
-  if (fmt.fontSize) a.push(`fo:font-size="${fmt.fontSize}"`);
-  if (fmt.color) a.push(`fo:color="${fmt.color}"`);
-  if (fmt.highlightColor) a.push(`fo:background-color="${fmt.highlightColor}"`);
-  return a.length ? a.join(' ') : null;
-}
-
-// Encode inline text as ODF: runs of ≥2 spaces → <text:s text:c>, tabs → <text:tab/>,
-// the rest XML-escaped (so LibreOffice preserves significant whitespace).
-function odfEncodeInline(s: string): string {
-  let out = '';
-  for (let i = 0; i < s.length; ) {
-    const ch = s[i];
-    if (ch === '\t') { out += '<text:tab/>'; i++; continue; }
-    if (ch === ' ') {
-      let n = 1;
-      while (s[i + n] === ' ') n++;
-      out += n === 1 ? ' ' : `<text:s text:c="${n}"/>`;
-      i += n;
-      continue;
-    }
-    out += ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch;
-    i++;
-  }
-  return out;
-}

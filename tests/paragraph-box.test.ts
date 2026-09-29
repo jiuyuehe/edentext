@@ -97,15 +97,16 @@ describe('paragraph background + borders round trip', () => {
 });
 
 // Real LibreOffice letterhead: two header paragraphs (name = shading, address = shading +
-// bottom rule) collapse to one paragraph with shading + the bottom rule; the footer is a
-// single empty paragraph carrying only a top rule. Local-only fixture — skips in CI.
+// bottom rule) stay two; the footer is a single empty paragraph carrying only a top rule.
+// Local-only fixture — skips in CI.
 const FIXTURE = 'debug/bewerbung.net_anschreibenvorlage-openoffice.odt';
 describe.skipIf(!existsSync(FIXTURE))('colored header/footer from a real ODT', () => {
-  it('merges the header band + rule and keeps the footer rule line', () => {
+  it('keeps the header band + rule and the footer rule line', () => {
     const res: any = importOdt(new Uint8Array(readFileSync(FIXTURE)));
-    const hp = res.header.content[0];
-    expect(hp.attrs.backgroundColor?.toUpperCase()).toBe('#CCFFFF');
-    expect(hp.attrs.borderBottom).toMatch(/pt solid #0066CC/i);
+    const [name, address] = res.header.content;
+    expect(name.attrs.backgroundColor?.toUpperCase()).toBe('#CCFFFF');
+    expect(address.attrs.backgroundColor?.toUpperCase()).toBe('#CCFFFF');
+    expect(address.attrs.borderBottom).toMatch(/pt solid #0066CC/i);
     const fp = res.footer.content[0];
     expect(fp.attrs.borderTop).toMatch(/pt solid #0066CC/i);
   });

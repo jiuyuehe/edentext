@@ -1,4 +1,4 @@
-// Header/footer content: one single-paragraph TipTap doc per zone (hfExtensions schema).
+// Header/footer content: one TipTap doc per zone (zoneExtensions schema).
 // 'default' repeats on every page (odd pages when odd/even is on), 'first' overrides
 // page 1, 'even' overrides even pages — also their precedence. null = empty zone.
 
@@ -174,22 +174,27 @@ export function saveHfDoc(zone: HfZone, doc: HfDoc, variant: HfVariant = 'defaul
   else localStorage.setItem(KEYS[zone][variant], JSON.stringify(doc));
 }
 
+type ZoneNode = { type?: string; content?: ZoneNode[]; attrs?: Record<string, unknown> };
+
 // Whether any zone shows a chapter field — only then does the layer need the
 // heading→page map, which costs a DOM read per heading.
 export function hfUsesChapterField(sets: HfSet[]): boolean {
-  const inZone = (doc: HfDoc) =>
-    ((doc?.content?.[0] as { content?: { type?: string }[] } | undefined)?.content ?? [])
-      .some((n) => n.type === 'chapterField');
+  const has = (n: ZoneNode): boolean => n.type === 'chapterField' || !!n.content?.some(has);
+  const inZone = (doc: HfDoc) => !!doc && has(doc as ZoneNode);
   return sets.some((s) => inZone(s.header) || inZone(s.footer) || inZone(s.headerFirst)
     || inZone(s.footerFirst) || inZone(s.headerEven) || inZone(s.footerEven));
 }
 
-// Empty = null or a single paragraph without inline content AND without a visible box
+// Empty = null or one text block without inline content AND without a visible box
 // (a footer that is just a colored rule line has no text but must still render/export).
+// Several blank lines are content: both word processors reserve each of them.
 export function hfIsEmpty(doc: HfDoc): boolean {
-  if (!doc?.content?.length) return true;
-  const para = doc.content[0] as { content?: unknown[]; attrs?: Record<string, unknown> } | undefined;
-  if (para?.content?.length) return false;
-  const a = para?.attrs ?? {};
-  return !a.backgroundColor && !a.borderTop && !a.borderRight && !a.borderBottom && !a.borderLeft;
+  const blocks = doc?.content as ZoneNode[] | undefined;
+  if ((blocks?.length ?? 0) > 1) return false;
+  return !blocks?.some((b) => {
+    if (b.type !== 'paragraph' && b.type !== 'heading') return true;
+    if (b.content?.length) return true;
+    const a = b.attrs ?? {};
+    return !!(a.backgroundColor || a.borderTop || a.borderRight || a.borderBottom || a.borderLeft);
+  });
 }

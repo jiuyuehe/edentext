@@ -157,6 +157,8 @@ function loOptions(canon: N, fmt: Fmt, opts: FuzzOptions, authored: boolean): N 
   // Via DOCX a zone's runs come back in the look LibreOffice gives fields and headings,
   // so there a zone compares by its text and fields alone.
   const zoneFix = (zone: N): void => {
+    // A zone's lists and tables read back as the body's do.
+    if (zone?.content) zone.content = zone.content.map((b: N) => loNoise(b, fmt));
     for (const p of zone?.content ?? []) {
       if (fmt === 'docx') p.content = p.content?.filter((c: N) => c.type !== 'chapterField').map((c: N) => (c.type === 'text' ? { type: 'text', text: c.text } : { type: c.type }));
       for (const c of p.content ?? []) if (c.type === 'chapterField') delete c.attrs.text;
@@ -170,6 +172,15 @@ function loOptions(canon: N, fmt: Fmt, opts: FuzzOptions, authored: boolean): N 
     for (const [k, v] of Object.entries(st.para ?? {})) if (k.startsWith('border') && typeof v === 'string') st.para[k] = (v as string).replace(/^([\d.]+)pt/, (_m, w) => `${Math.round(Number(w) * 4) / 4}pt`);
   }
   for (const s of canon.sections) {
+    // Via DOCX the fold marks lose their name and come back as the plain lines they are
+    // drawn with, in the header: a header holding nothing else is none.
+    if (fmt === 'docx' && !authored && opts.foldMarks) {
+      for (const k of ['header', 'headerFirst', 'headerEven']) {
+        const kept = (s[k]?.content ?? []).filter((p: N) => !(p.content ?? []).every((c: N) => c.type === 'textBox'));
+        if (s[k] && !kept.length) s[k] = null;
+      }
+      if (!s.header && !s.headerFirst && !s.headerEven) s.headerDist = null;
+    }
     for (const k of ['header', 'footer', 'headerFirst', 'footerFirst', 'headerEven', 'footerEven']) zoneFix(s[k]);
     if (authored && fmt === 'odt' && (opts.decor.watermark || opts.foldMarks) && !s.header && !s.headerFirst && !s.headerEven && s.margins) {
       s.margins.top = Math.round((s.margins.top + 0.499) * 1000) / 1000;
