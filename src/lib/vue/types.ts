@@ -11,7 +11,11 @@ export interface EdentextEditorProps {
   documentLanguage?: DocumentLanguage;
   /** Run the native New command once the original editor has mounted. */
   initialNewDocument?: boolean;
-  /** Base URL containing EdenText.png and favicon.svg, if assets are hosted separately. */
+  /** Hide native file commands and forward the Save shortcut to the host. */
+  embedded?: boolean;
+  /** Active author for comments, revisions and exported metadata. */
+  author?: string;
+  /** Base URL containing the package's runtime assets when hosted separately. */
   assetBaseUrl?: string;
 }
 

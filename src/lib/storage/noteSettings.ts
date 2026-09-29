@@ -139,8 +139,8 @@ export function saveNoteSettings(s: NoteSettings): void {
 // The separator's geometry on :root, where editor.css draws the line from it and
 // pageBreaks.ts reads back the band it has to reserve. The three lengths are
 // registered (@property), so they resolve to px there.
-export function applyNoteVars(s: NoteSettings): void {
-  const root = document.documentElement.style;
+export function applyNoteVars(s: NoteSettings, target: HTMLElement = document.documentElement): void {
+  const root = target.style;
   root.setProperty('--note-sep-above', `${s.separator.spaceAboveCm}cm`);
   root.setProperty('--note-sep-below', `${s.separator.spaceBelowCm}cm`);
   root.setProperty('--note-sep-weight', `${s.separator.weightPt}pt`);
@@ -150,5 +150,5 @@ export function applyNoteVars(s: NoteSettings): void {
   // "Collect at end of document": the footnotes leave the page foot and flow with the
   // endnote list. editor.css takes them out of `position: absolute` from this, which is
   // also how pageBreaks.ts reads the setting.
-  document.documentElement.toggleAttribute('data-collect-footnotes', s.footnote.position === 'document');
+  target.toggleAttribute('data-collect-footnotes', s.footnote.position === 'document');
 }

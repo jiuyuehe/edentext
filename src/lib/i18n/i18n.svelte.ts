@@ -18,6 +18,7 @@ import type { Locale } from './config';
 const catalogs: Record<Locale, Messages> = { en, de, es, fr, pt, el, ru, uk, ja, 'zh-Hans': zhHans, 'zh-Hant': zhHant };
 
 let current = $state<Locale>(loadAppLanguage());
+let languageTarget: HTMLElement | null = null;
 
 // The active catalog. Reading this tracks `current`, so callers stay reactive.
 export function t(): Messages {
@@ -33,9 +34,14 @@ export function locale(): Locale {
   return current;
 }
 
+export function setLanguageTarget(target: HTMLElement | null): void {
+  languageTarget = target;
+  if (target) target.lang = current;
+}
+
 export function setLocale(next: Locale): void {
   current = next;
   saveAppLanguage(next);
   // <html lang> = UI locale (chrome a11y); document content language is separate.
-  document.documentElement.lang = next;
+  (languageTarget ?? document.documentElement).lang = next;
 }

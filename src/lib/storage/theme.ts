@@ -133,8 +133,8 @@ function resolveMode(mode: ThemeMode): 'light' | 'dark' | 'allBlack' {
   return mode;
 }
 
-export function applyTheme(mode: ThemeMode): void {
-  document.documentElement.setAttribute('data-theme', resolveMode(mode));
+export function applyTheme(mode: ThemeMode, target: HTMLElement = document.documentElement): void {
+  target.setAttribute('data-theme', resolveMode(mode));
 }
 
 // The chrome's accent colour; 'slate' is the logo's and stays the stored-nothing default.
@@ -166,11 +166,10 @@ export function saveAccent(accent: Accent): void {
   else localStorage.setItem(ACCENT_KEY, accent);
 }
 
-// A custom accent goes on <html> inline, where it outranks every theme's own slate.
-export function applyAccent(accent: Accent): void {
-  const root = document.documentElement;
-  if (isCustomAccent(accent)) root.style.setProperty('--brand-slate', accent);
-  else root.style.removeProperty('--brand-slate');
-  if (accent === 'slate') root.removeAttribute('data-accent');
-  else root.setAttribute('data-accent', isCustomAccent(accent) ? 'custom' : accent);
+// A custom accent is inline on this target, so it overrides the theme's slate.
+export function applyAccent(accent: Accent, target: HTMLElement = document.documentElement): void {
+  if (isCustomAccent(accent)) target.style.setProperty('--brand-slate', accent);
+  else target.style.removeProperty('--brand-slate');
+  if (accent === 'slate') target.removeAttribute('data-accent');
+  else target.setAttribute('data-accent', isCustomAccent(accent) ? 'custom' : accent);
 }

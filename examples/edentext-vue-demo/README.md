@@ -1,19 +1,17 @@
 # EdenText Vue Demo
 
-This is a standalone Vue 3 demo that consumes the local `edentext-vue` package
-through the same package entry used by npm consumers.
+This is a Vue 3 host demo that consumes the local `edentext-vue` package through
+the same package entry used by npm consumers. It includes a dialog modeled on the
+cloud-drive flow: open a local DOCX, create an empty document, export DOCX bytes,
+and hand the result to a simulated host save.
 
 ```bash
-npm install --no-package-lock
-npm run dev
-```
-
-From the repository root, the equivalent command is:
-
-```bash
+# From the repository root
+npm run build:lib
 npm run demo:vue
 ```
 
-Open the printed Vite URL. The demo renders only the Vue host and the native
-EdenText application. Its original Ribbon, editor, pagination and status bar
-are visible, and `initial-new-document` starts with an empty document.
+The demo's predev/prebuild hooks copy the package dictionaries and thesauri into
+its `public/assets` directory. Open the printed Vite URL and choose an existing DOCX
+or create a new one. Saving downloads the edited file to stand in for the host's
+upload-version and upload-new-file API calls.

@@ -34,6 +34,7 @@
     onAutoCorrect,
     documentLanguage,
     onLanguage,
+    accentTarget,
   }: {
     open?: boolean;
     /** The side-bar entry shown; the AI pane opens the dialog on 'ai'. */
@@ -50,6 +51,7 @@
     onAutoCorrect: () => void;
     documentLanguage: DocumentLanguage;
     onLanguage: (code: DocumentLanguage) => void;
+    accentTarget?: HTMLElement;
   } = $props();
 
   const SECTIONS: { id: Section; icon: 'settings' | 'autoCorrect' | 'ruler' | 'sparkle' | 'lock' }[] = [
@@ -69,7 +71,7 @@
   function pickAccent(a: Accent) {
     accent = a;
     saveAccent(a);
-    applyAccent(a);
+    applyAccent(a, accentTarget ?? document.documentElement);
   }
   // The colour input starts from the accent on screen, so a preset can be fine-tuned.
   const shownAccent = () => parseAccentHex(getComputedStyle(document.documentElement).getPropertyValue('--brand-slate')) ?? '#4c6c8a';
