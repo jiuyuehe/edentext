@@ -1,5 +1,5 @@
 import { t, locale } from '../i18n/i18n.svelte';
-import { stashImages, putImages, restoreImages } from './imageStore';
+import { stashImages, putImages, restoreImages, isStored } from './imageStore';
 import { keepSnapshot, listSnapshots, readSnapshot } from './snapshots';
 import { docKey } from './docScope';
 
@@ -53,20 +53,26 @@ async function write(): Promise<void> {
 // Timer and pending stay, so a page revived from the back/forward cache writes again.
 export function flushDocument(): void {
   if (!pending) return;
-  const { json: slim, blobs } = stashImages(pending());
+  const json = pending();
+  const { json: slim, blobs } = stashImages(json);
   void putImages(blobs);
-  store(slim);
+  // A picture the store has not confirmed may never land before the tab dies (one just
+  // imported), so it stays inline — unless that overflows the quota.
+  if (!store(stashImages(json, isStored).json, false)) store(slim);
 }
 
-function store(json: object): void {
+function store(json: object, warn = true): boolean {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(json));
+    return true;
   } catch (err) {
+    if (!warn) return false;
     console.error('[autosave] Could not save the document:', err);
     if (!quotaWarned) {
       quotaWarned = true;
       alert(t().dialogs.autosaveQuota);
     }
+    return false;
   }
 }
 
@@ -88,7 +94,9 @@ async function offerSnapshot(): Promise<object | null> {
   return null;
 }
 
-export async function loadDocument(): Promise<object | null> {
+// `onLost`: the stored document was given up or unreadable, so the app starts empty and
+// must drop that document's page setup, headers and styles along with it.
+export async function loadDocument(onLost?: () => void): Promise<object | null> {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (localStorage.getItem(BOOT_KEY)) {
     localStorage.removeItem(BOOT_KEY);
@@ -101,7 +109,10 @@ export async function loadDocument(): Promise<object | null> {
         localStorage.removeItem(STORAGE_KEY);
       }
       const rescued = await offerSnapshot();
-      if (!rescued) return null;
+      if (!rescued) {
+        onLost?.();
+        return null;
+      }
       // Under the same flag as any other document: one that freezes the editor again
       // brings this question back instead of repeating the freeze.
       localStorage.setItem(BOOT_KEY, '1');
@@ -113,6 +124,7 @@ export async function loadDocument(): Promise<object | null> {
   try {
     doc = JSON.parse(raw);
   } catch {
+    onLost?.();
     return null;
   }
   localStorage.setItem(BOOT_KEY, '1');

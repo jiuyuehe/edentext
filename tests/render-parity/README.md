@@ -45,6 +45,7 @@ console line then reads `PDF 2p` in place of `LO 2p`.
 |---|---|---|
 | render | `soffice --convert-to pdf` | Playwright Chromium, real app, real file input |
 | read | `pdftotext -bbox-layout` (word boxes, pt) | `Range.getClientRects()` (word boxes, px) |
+| pictures | `pdftohtml -xml` (image boxes, pt) | each `img`'s bounding rect (px) |
 
 The PDF is exported with `IsSkipEmptyPages=false`: LibreOffice drops its own
 auto-inserted blank pages by default — a chapter forced onto a right page — and the
@@ -74,7 +75,16 @@ Reported differences are `pageCount`, `pageShift` (from here on the editor runs 
 off), `lineCount`, `lineBreak` (same place, different words) and `position` / `lineEnd`
 (same words, off by more than `POS_TOL_MM`). Consecutive lines off by the *same* amount
 are one report with a `×n` count, since that is one cause — a strut, a spacing, a band
-height — and not n of them. Counts recorded before 2026-09-03 came from the index-wise
+height — and not n of them.
+
+Pictures are compared apart from the text: each reference picture pairs with the
+editor's nearest one, page first, where one of about its size counts two pages nearer.
+A pair off by more than `POS_TOL_MM`, sized differently by more than 1.5mm or on another
+page is an `image` report; a picture left unpaired is an `imageCount` one. A picture that
+moves with drifting text is reported beside that text. pdftohtml sees only raster images:
+a vector drawing is a picture only on the editor's side. A cropped picture counts on both
+sides with its uncropped box, the one its clip cuts from. Counts recorded before
+2026-09-28 leave pictures out. Counts recorded before 2026-09-03 came from the index-wise
 comparison, which stopped at the first divergence per page: they are not comparable to
 what a run prints now.
 

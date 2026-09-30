@@ -23,3 +23,5 @@ I/O, list styles, character styles, the style manager, or chapter numbering.
 `FONT_PROFILES` (`styleSheet.ts`) holds what a family's substitute does differently, one row
 per family: its CSS names, generic tail, single line height, Word's stroked bold for a face
 without one (`fauxBold`) and full-width quotes from `EdenText Quotes` for a Chinese face.
+A family without a line height there takes Chromium's `line-height: normal` where installed
+(`singleLineHeight`), which matches Word's win-metric line for faces whose hhea agrees.

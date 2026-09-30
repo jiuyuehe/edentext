@@ -122,3 +122,16 @@ export function uniformLanguage(state: EditorState, doc: { west: string | null; 
   });
   return langs.size > 1 ? '' : langs.size ? [...langs][0] : doc.west;
 }
+
+// Whether an East Asian language is set anywhere in the selection, on a run or its block.
+export function hasAsianLanguage(state: EditorState): boolean {
+  const asian = (attrs?: Record<string, unknown>) => !!(attrs?.langAsian || asianLang(attrs?.lang));
+  const { from, to, empty, $head } = state.selection;
+  if (empty) return asian((state.storedMarks ?? $head.marks()).find((m) => m.type.name === 'textStyle')?.attrs) || asian($head.parent.attrs);
+  let found = false;
+  state.doc.nodesBetween(from, to, (node) => {
+    if (found) return false;
+    found = asian(node.attrs) || node.marks.some((m) => m.type.name === 'textStyle' && asian(m.attrs));
+  });
+  return found;
+}

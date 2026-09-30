@@ -56,6 +56,7 @@ so the split is invisible there.
 Ribbon.svelte
 ├─ .ribbon-tabs     File pill · quick access (save, undo, redo) · tabs · contextual tabs
 │                   · spacer · document name · appearance · UI language
+│                   one row that scrolls sideways; its menus are pinned fixed
 └─ .ribbon-body     the active tab's groups, a fixed --w-ribbon-h (84px) band
 ```
 

@@ -29,6 +29,8 @@ Zoom is `transform: scale()` on `.paper`; pagination always measures unscaled ge
 `.paper-scaler` reserves the transformed footprint for centering and scrollbars. `App.svelte`'s
 `setZoom` is the sole writer and persists the clamped range. Pointer zoom preserves the point
 under the cursor; keyboard, buttons, and slider preserve the viewport anchor.
+A two-finger pinch over `.editor` is the same zoom, anchored between the fingers;
+`touch-action: pan-x pan-y` keeps the browser from scaling the whole app there.
 
 Keep `pageBreaks.ts`, `Editor.svelte`, and `editor.css` page constants aligned. Section paper
 dimensions remain unrounded: pagination uses the published value directly and cumulative

@@ -1,6 +1,7 @@
 // Named list styles, the fourth family — LibreOffice's Listenformatvorlagen / Word's
 // numbering styles. A style defines up to MAX_LIST_LEVELS levels; a list node's own
-// attrs (bulletChar, listStyleType, indent, markerAlign) still override its level.
+// attrs (bulletChar, listStyleType, indent, markerAlign, hanging, markerSuffix) still
+// override its level.
 
 import { defaultBulletChar } from '../utils/bulletListTypes';
 import type { OrderedListType } from '../utils/orderedListTypes';
@@ -44,6 +45,9 @@ export type EffectiveListLevel = {
   listStyleType: OrderedListType | null; // set only for kind 'number'; null = cycle
   indent: number;
   markerAlign: 'right' | null;
+  // The node's own label geometry (cm, signed) and suffix; null = the tab past 0.635cm.
+  hanging: number | null;
+  markerSuffix: 'space' | 'nothing' | null;
   startAt: number | null;
 };
 
@@ -75,6 +79,8 @@ export function effectiveListLevel(
     listStyleType,
     indent: typeof a.indent === 'number' ? a.indent : (level?.indentCm ?? 0),
     markerAlign: (a.markerAlign as 'right' | null) ?? (level?.markerAlign ?? null),
+    hanging: typeof a.hanging === 'number' ? a.hanging : null,
+    markerSuffix: a.markerSuffix === 'space' || a.markerSuffix === 'nothing' ? a.markerSuffix : null,
     startAt: kind === 'number' && styled ? level?.startAt ?? null : null,
   };
 }
@@ -98,7 +104,7 @@ type JsonNode = { type?: string; attrs?: Record<string, unknown> | null; content
 export function listStyleOverridden(list: JsonNode): boolean {
   if (list.type === 'bulletList' || list.type === 'orderedList') {
     const a = list.attrs ?? {};
-    if (a.bulletChar || a.listStyleType || a.markerAlign || (typeof a.indent === 'number' && a.indent !== 0)) return true;
+    if (a.bulletChar || a.listStyleType || a.markerAlign || a.markerSuffix || typeof a.hanging === 'number' || (typeof a.indent === 'number' && a.indent !== 0)) return true;
   }
   return (list.content ?? []).some(listStyleOverridden);
 }

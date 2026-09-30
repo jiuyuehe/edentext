@@ -22,6 +22,11 @@ export function t(): Messages {
   return catalogs[current];
 }
 
+// A built-in style's translated name; any other style shows its own.
+export function styleLabel(name: string): string {
+  return t().styleNames[name] ?? t().table.styleNames[name] ?? name;
+}
+
 export function locale(): Locale {
   return current;
 }

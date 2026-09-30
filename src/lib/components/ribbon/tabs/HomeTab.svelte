@@ -9,7 +9,7 @@
   import ColorPicker from '../../ColorPicker.svelte';
   import ParagraphBorderPicker from '../../ParagraphBorderPicker.svelte';
   import { anchored, clickOutside, isMenuOpen, toggleMenu, closeMenu } from '../menu.svelte';
-  import { uniformMarkColor, uniformBlockAttr } from '../../../utils/selectionFormat';
+  import { uniformMarkColor, uniformBlockAttr, hasAsianLanguage } from '../../../utils/selectionFormat';
   import { stepFontSize } from '../../../editor/extensions/shortcuts';
 
   import { clipboardCommand, readClipboard } from '../../../editor/contextMenuItems';
@@ -23,13 +23,14 @@
   import { styleSheet } from '../../../styles/sheet.svelte';
   import { emphasisCss, type CapsMode, type Emphasis, type LineStyle } from '../../../editor/extensions/textEffects';
   import type { StyleFamily } from '../../../styles/styleSheet';
-  import { t } from '../../../i18n/i18n.svelte';
+  import { styleLabel, t } from '../../../i18n/i18n.svelte';
   import { withShortcut } from '../../../i18n/shortcut';
   import { shortcutHint, type ShortcutId } from '../../../editor/shortcuts';
 
-  let { editor, tick, showFormattingMarks = $bindable(false), onManageStyles, onFind, onParagraphDialog }: {
+  let { editor, tick, showFormattingMarks = $bindable(false), onManageStyles, onFind, onParagraphDialog, asianDocument = false }: {
     editor: Editor | null;
     tick: number;
+    asianDocument?: boolean;
     showFormattingMarks?: boolean;
     onManageStyles?: (family: StyleFamily) => void;
     onFind?: (mode: 'find' | 'replace') => void;
@@ -59,6 +60,7 @@
   let isItalic = $derived(tick >= 0 && !!editor?.isActive('italic'));
   let isUnderline = $derived(tick >= 0 && !!editor?.isActive('underline'));
   let isStrike = $derived(tick >= 0 && !!editor?.isActive('strike'));
+  let asianSelection = $derived(tick >= 0 && !!editor && hasAsianLanguage(editor.state));
   let emphasis = $derived(tick >= 0 ? editor?.getAttributes('textStyle').emphasis ?? null : null);
   let isSuper = $derived(tick >= 0 && !!editor?.isActive('superscript'));
   let isSub = $derived(tick >= 0 && !!editor?.isActive('subscript'));
@@ -282,6 +284,8 @@
           </div>
         {/if}
       </div>
+      <!-- East Asian typography only (document, UI or selected text language); a mark already in the text keeps the button to clear it. -->
+      {#if asianDocument || asianSelection || emphasis}
       <div class="rb-menu-wrap" use:clickOutside={'emphasis'}>
         <RibbonButton content={emphasisIcon} title={t().ribbon.emphasis.title} active={!!emphasis} caret caretActive={isMenuOpen('emphasis')} onclick={() => editor?.chain().focus().setMark('textStyle', { emphasis: emphasis ? null : 'dot below' }).run()} onCaret={() => toggleMenu('emphasis')} />
         {#if isMenuOpen('emphasis')}
@@ -294,6 +298,7 @@
           </div>
         {/if}
       </div>
+      {/if}
       <RibbonButton content={subIcon} title={`${t().toolbarExpanded.subscript} (${shortcutHint('subscript')})`} active={isSub} onclick={toggleSub} />
       <RibbonButton content={superIcon} title={`${t().toolbarExpanded.superscript} (${shortcutHint('superscript')})`} active={isSuper} onclick={toggleSuper} />
       <span class="rb-mini-sep"></span>
@@ -345,7 +350,7 @@
               <div class="rb-menu-label">{t().styles.listStyles}</div>
               {#each bulletListStyles as s (s.name)}
                 <button class:selected={currentListStyle === s.name} onclick={() => applyListStyle(s, 'bulletList')}>
-                  <span class="marker">{listStylePreview(s)}</span>{s.name}
+                  <span class="marker">{listStylePreview(s)}</span>{styleLabel(s.name)}
                 </button>
               {/each}
             {/if}
@@ -367,7 +372,7 @@
               <div class="rb-menu-label">{t().styles.listStyles}</div>
               {#each orderedListStyles as s (s.name)}
                 <button class:selected={currentListStyle === s.name} onclick={() => applyListStyle(s, 'orderedList')}>
-                  <span class="marker">{listStylePreview(s)}</span>{s.name}
+                  <span class="marker">{listStylePreview(s)}</span>{styleLabel(s.name)}
                 </button>
               {/each}
             {/if}
@@ -435,11 +440,11 @@
   </div>
 </RibbonGroup>
 
-{#snippet boldIcon()}<span class="glyph" style="font-weight: 800">B</span>{/snippet}
-{#snippet italicIcon()}<span class="glyph" style="font-style: italic; font-family: serif">I</span>{/snippet}
-{#snippet underlineIcon()}<span class="glyph" style="text-decoration: underline">U</span>{/snippet}
+{#snippet boldIcon()}<span class="glyph" style="font-weight: 800">{t().toolbar.glyphs.bold}</span>{/snippet}
+{#snippet italicIcon()}<span class="glyph" style="font-style: italic; font-family: serif">{t().toolbar.glyphs.italic}</span>{/snippet}
+{#snippet underlineIcon()}<span class="glyph" style="text-decoration: underline">{t().toolbar.glyphs.underline}</span>{/snippet}
 {#snippet emphasisIcon()}<span class="glyph" style="text-emphasis: filled dot; text-emphasis-position: under right">文</span>{/snippet}
-{#snippet strikeIcon()}<span class="glyph" style="text-decoration: line-through">S</span>{/snippet}
+{#snippet strikeIcon()}<span class="glyph" style="text-decoration: line-through">ab</span>{/snippet}
 {#snippet subIcon()}<span class="glyph">X<span class="glyph-script down">2</span></span>{/snippet}
 {#snippet superIcon()}<span class="glyph">X<span class="glyph-script up">2</span></span>{/snippet}
 {#snippet growIcon()}<span class="glyph">A<span class="glyph-sup">▲</span></span>{/snippet}

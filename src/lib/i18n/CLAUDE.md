@@ -30,3 +30,6 @@ cannot express.
 **Terminology** — a catalog uses the terms word processors already use in that language
 (Microsoft Terminology, LibreOffice's translation) rather than a literal rendering of `en.ts`;
 a regional variant follows the catalog's region (`pt.ts` is European Portuguese).
+
+**Style names** — `styleLabel` shows a built-in style's name from `styleNames` (tables:
+`table.styleNames`); the sheet, comparisons and files always keep the stored English name.

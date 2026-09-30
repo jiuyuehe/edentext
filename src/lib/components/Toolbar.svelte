@@ -15,7 +15,7 @@
   import { DEFAULT_STYLE, headingStyleName, resolveStyle, visibleStyles, type StyleFamily } from '../styles/styleSheet';
   import { MAX_HEADING_LEVEL } from '../styles/headings';
   import { showAllStyles, styleSheet, toggleAllStyles } from '../styles/sheet.svelte';
-  import { t } from '../i18n/i18n.svelte';
+  import { styleLabel, t } from '../i18n/i18n.svelte';
   import { withShortcut } from '../i18n/shortcut';
   import { shortcutHint, type ShortcutId } from '../editor/shortcuts';
 
@@ -49,16 +49,6 @@
     else editor.chain().focus().setCharacterStyle(name).run();
   }
 
-  // Built-in names are translated; user styles show their own name.
-  function styleLabel(name: string): string {
-    const s = t().toolbar.styles;
-    return ({
-      Standard: s.default, Title: s.docTitle, Subtitle: s.subtitle, Quotations: s.quote,
-      'Heading 1': t().toolbar.heading1, 'Heading 2': t().toolbar.heading2,
-      'Heading 3': t().toolbar.heading3, 'Heading 4': t().toolbar.heading4,
-      'Heading 5': t().toolbar.heading5, 'Heading 6': t().toolbar.heading6,
-    } as Record<string, string>)[name] ?? name;
-  }
 
   // Menu entries preview their own style, clamped so the list stays compact.
   function previewSize(name: string): string {
@@ -229,28 +219,28 @@
         }}
         title={`${t().toolbar.bold} (${withShortcut('Ctrl+B')})`}
       >
-        <strong>B</strong>
+        <strong>{t().toolbar.glyphs.bold}</strong>
       </button>
       <button
         class:active={isItalic}
         onclick={() => editor?.chain().focus().toggleItalic().run()}
         title={`${t().toolbar.italic} (${withShortcut('Ctrl+I')})`}
       >
-        <em>I</em>
+        <em>{t().toolbar.glyphs.italic}</em>
       </button>
       <button
         class:active={isUnderline}
         onclick={() => editor?.chain().focus().toggleUnderline().run()}
         title={`${t().toolbar.underline} (${withShortcut('Ctrl+U')})`}
       >
-        <u>U</u>
+        <u>{t().toolbar.glyphs.underline}</u>
       </button>
       <button
         class:active={isStrike}
         onclick={() => editor?.chain().focus().toggleStrike().run()}
         title={`${t().toolbar.strikethrough} (${withShortcut('Ctrl+Shift+S')})`}
       >
-        <s>S</s>
+        <s>ab</s>
       </button>
     </div>
 
@@ -308,7 +298,7 @@
                     aria-checked={currentCharStyle === c.name}
                     style="font-weight: {preview.text.bold ? 600 : 400}; font-style: {preview.text.italic ? 'italic' : 'normal'}; font-family: {preview.text.fontFamily ?? 'inherit'}"
                   >
-                    {c.name}
+                    {styleLabel(c.name)}
                   </button>
                 {/each}
               {/if}
@@ -396,7 +386,7 @@
                   aria-checked={currentListStyle === s.name}
                 >
                   <span class="ol-option-preview">{listStylePreview(s)}</span>
-                  <span class="ol-option-label">{s.name}</span>
+                  <span class="ol-option-label">{styleLabel(s.name)}</span>
                 </button>
               {/each}
             {/if}
@@ -463,7 +453,7 @@
                   aria-checked={currentListStyle === s.name}
                 >
                   <span class="ol-option-preview">{listStylePreview(s)}</span>
-                  <span class="ol-option-label">{s.name}</span>
+                  <span class="ol-option-label">{styleLabel(s.name)}</span>
                 </button>
               {/each}
             {/if}

@@ -3,7 +3,8 @@ import { Plugin } from '@tiptap/pm/state';
 import { DEFAULT_SHORTCUTS } from '../shortcuts';
 
 // The text-flow attrs of a paragraph/heading, null = default: breakBefore 'page', widow
-// control, keepNext (a heading has it anyway, so the attr marks the other blocks),
+// control, keepNext (a heading has it anyway, so true marks the other blocks and false
+// the heading whose file style drops it),
 // keepLines, and sectionBreak — which opens a section (storage/headerFooter.ts).
 // A table carries the last two as well: a section may open with one.
 
@@ -63,11 +64,9 @@ export const PageBreak = Extension.create({
           keepNext: {
             default: null,
             parseHTML: (element: HTMLElement) =>
-              element.getAttribute('data-keep-next') === 'true' ? true : null,
-            renderHTML: (attributes: Record<string, unknown>) => {
-              if (attributes.keepNext !== true) return {};
-              return { 'data-keep-next': 'true' };
-            },
+              ({ true: true, false: false } as Record<string, boolean>)[element.getAttribute('data-keep-next') ?? ''] ?? null,
+            renderHTML: (attributes: Record<string, unknown>) =>
+              typeof attributes.keepNext === 'boolean' ? { 'data-keep-next': String(attributes.keepNext) } : {},
           },
           keepLines: {
             default: null,

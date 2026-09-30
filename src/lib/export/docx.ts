@@ -19,6 +19,7 @@ import type {
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { isSvgDataUrl, svgToPngDataUrl } from '../import/imageFormats';
 import { TEXTBOX_PADDING_CM, type TextVAlign } from '../editor/extensions/textBox';
+import { cropOf, type Crop } from '../editor/extensions/image';
 import { SHAPES, isShapeKind, isLineKind, drawingMlPath, type ShapeKind } from '../utils/shapes';
 import { cellFormatCode, isCellFormat } from '../utils/cellFormat';
 import { cjkDocFont, isAsianTag, type ExportLanguage } from '../storage/documentLanguage';
@@ -139,6 +140,11 @@ function subtreeHasStart(node: TiptapNode): boolean {
 // List geometry: 0.5in left step per level, 0.25in hanging for the marker (Word defaults).
 const LIST_LEFT_STEP_CM = 1.27;
 const LIST_HANGING_CM = 0.635;
+// A list's hang as Word splits it by sign: a negative one is a first-line indent.
+function listHangIndent(hangingCm: number | null): { hanging?: number; firstLine?: number } {
+  const cm = hangingCm ?? LIST_HANGING_CM;
+  return cm < 0 ? { firstLine: cmToTwip(-cm) } : { hanging: cmToTwip(cm) };
+}
 
 // ODF num-format char → Word numbering format.
 const ORDERED_FORMAT: Record<string, (typeof LevelFormat)[keyof typeof LevelFormat]> = {
@@ -287,6 +293,14 @@ const NOSNAP = '\uE023';
 // Wraps the w:ind character attributes the docx package lacks (leftChars, rightChars, …),
 // which the same pass adds to the paragraph's w:ind.
 const INDC = '\uE025';
+
+// Wraps a picture's crop in its name (docPr); the docx package writes an empty
+// <a:srcRect/>, which a post-pack pass fills from it.
+const CROP = '\uE030';
+let docCrops = false;
+const srcRectXml = (c: Crop | null) => c
+  ? `<a:srcRect l="${Math.round(c.l * 100000)}" t="${Math.round(c.t * 100000)}" r="${Math.round(c.r * 100000)}" b="${Math.round(c.b * 100000)}"/>`
+  : '<a:srcRect/>';
 
 const WP_NS = 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"';
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
@@ -464,13 +478,14 @@ class Numbering {
     if (depth === 0 && effOrderedKey(node, style, 0) === 'multilevel') this.mlRefs.add(reference);
     const levels = this.map.get(reference)!;
     if (levels.some((l) => l.level === depth)) return;
-    const indent: IIndentAttributesProperties = {
-      left: cmToTwip((depth + 1) * LIST_LEFT_STEP_CM + extraIndentCm),
-      hanging: cmToTwip(LIST_HANGING_CM),
-    };
     // w:lvlJc: which end of the hanging indent the label is set against.
     const eff = effectiveListLevel(node.attrs ?? {}, node.type === 'orderedList', style, depth + 1);
     const alignment = eff.markerAlign === 'right' ? AlignmentType.RIGHT : AlignmentType.LEFT;
+    const indent: IIndentAttributesProperties = {
+      left: cmToTwip((depth + 1) * LIST_LEFT_STEP_CM + extraIndentCm),
+      ...listHangIndent(eff.hanging),
+    };
+    const suffix = eff.markerSuffix === 'space' ? LevelSuffix.SPACE : eff.markerSuffix === 'nothing' ? LevelSuffix.NOTHING : undefined;
     if (eff.kind === 'number') {
       const attr = eff.listStyleType;
       const chained = this.mlRefs.has(reference) && (depth === 0 || !attr || attr === 'multilevel');
@@ -484,6 +499,7 @@ class Numbering {
         alignment,
         start: typeof node.attrs?.start === 'number' ? node.attrs.start : eff.startAt ?? 1,
         style: { paragraph: { indent }, run: markerRunProps(node) },
+        ...(suffix ? { suffix } : {}),
       });
     } else {
       levels.push({
@@ -494,6 +510,7 @@ class Numbering {
         text: bulletCharOf(node, depth, style),
         alignment,
         style: { paragraph: { indent }, run: markerRunProps(node) },
+        ...(suffix ? { suffix } : {}),
       });
     }
   }
@@ -972,13 +989,15 @@ function floatingFor(wrap: string, offsetCm: number | null, offsetYCm: number | 
     // Word's in-front-of / behind-text: no wrap at all, and behindDoc names which side
     // of the text the frame lands on. It overlaps by definition, so allowOverlap holds.
     // Where it sits across the text column is its own, as it is for a wrapped frame:
-    // a full-width figure behind the text is centred, not flush left.
+    // a full-width figure behind the text is centred, not flush left. One with neither
+    // sits at its anchor character.
     const through = alignH === 'right' ? HorizontalPositionAlign.RIGHT
-      : alignH === 'center' ? HorizontalPositionAlign.CENTER : HorizontalPositionAlign.LEFT;
+      : alignH === 'center' ? HorizontalPositionAlign.CENTER : alignH === 'left' ? HorizontalPositionAlign.LEFT : null;
     return {
       horizontalPosition: offsetCm != null
         ? { relative: HorizontalPositionRelativeFrom.MARGIN, offset: Math.round(offsetCm * 360000) }
-        : { relative: HorizontalPositionRelativeFrom.MARGIN, align: through },
+        : through ? { relative: HorizontalPositionRelativeFrom.MARGIN, align: through }
+          : { relative: HorizontalPositionRelativeFrom.CHARACTER, offset: 0 },
       verticalPosition,
       wrap: { type: TextWrappingType.NONE },
       behindDocument: !inFront,
@@ -1046,10 +1065,14 @@ function imageRun(node: TiptapNode): ImageRun | null {
   const offsetCm = typeof node.attrs?.wrapOffset === 'number' ? node.attrs.wrapOffset : null;
   const offsetYCm = typeof node.attrs?.wrapOffsetY === 'number' ? node.attrs.wrapOffsetY : null;
   const distCm = typeof node.attrs?.wrapDist === 'number' ? node.attrs.wrapDist : null;
+  const alt = typeof node.attrs?.alt === 'string' ? node.attrs.alt : '';
+  const crop = cropOf(node.attrs?.crop);
+  docCrops ||= !!crop;
+  const mark = crop ? `${CROP}${[crop.l, crop.t, crop.r, crop.b].join(',')}${CROP}` : '';
   return new ImageRun({
     type: decoded.type,
     data: decoded.bytes,
-    altText: typeof node.attrs?.alt === 'string' && node.attrs.alt ? { name: node.attrs.alt, title: node.attrs.alt, description: node.attrs.alt } : undefined,
+    altText: alt ? { name: alt + mark, title: alt, description: alt } : mark ? { name: mark } : undefined,
     transformation: { width, height, rotation: rotation || undefined },
     floating: floatingFor(wrap, offsetCm, offsetYCm, node.attrs?.wrapAlign as string | null, distCm, node.attrs?.inFront === true, node.attrs?.wrapFromPage === true, node.attrs?.wrapFromBody === true),
   });
@@ -1212,7 +1235,7 @@ function txbxImageXml(node: TiptapNode, parts: TxbxParts): string {
     `<wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${9000 + n}" name="Picture ${n}" descr="${alt}"/>` +
     `<a:graphic xmlns:a="${A_NS}"><a:graphicData uri="${PIC_NS}">` +
     `<pic:pic xmlns:pic="${PIC_NS}"><pic:nvPicPr><pic:cNvPr id="${9000 + n}" name="Picture ${n}"/><pic:cNvPicPr/></pic:nvPicPr>` +
-    `<pic:blipFill><a:blip r:embed="${rid}" xmlns:r="${R_NS}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:blipFill><a:blip r:embed="${rid}" xmlns:r="${R_NS}"/>${srcRectXml(cropOf(node.attrs?.crop))}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
     `<pic:spPr><a:xfrm${typeof node.attrs?.rotation === 'number' && node.attrs.rotation ? ` rot="${Math.round(node.attrs.rotation * 60000)}"` : ''}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
     `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>` +
     `</a:graphicData></a:graphic></wp:inline></w:drawing>`
@@ -1407,11 +1430,13 @@ function txbxLevelXml(node: TiptapNode, depth: number, chained: boolean, cycle: 
       : `%${depth + 1}${def.numSuffix}`;
   const start = ordered && typeof node.attrs?.start === 'number' ? node.attrs.start : 1;
   const jc = node.attrs?.markerAlign === 'right' ? 'right' : 'left';
+  const suff = node.attrs?.markerSuffix === 'space' || node.attrs?.markerSuffix === 'nothing' ? `<w:suff w:val="${node.attrs.markerSuffix}"/>` : '';
+  const hang = listHangIndent(typeof node.attrs?.hanging === 'number' ? node.attrs.hanging : null);
+  const hangXml = hang.firstLine != null ? ` w:firstLine="${hang.firstLine}"` : ` w:hanging="${hang.hanging}"`;
   return (
-    `<w:lvl w:ilvl="${depth}"><w:start w:val="${start}"/><w:numFmt w:val="${fmt}"/>` +
+    `<w:lvl w:ilvl="${depth}"><w:start w:val="${start}"/><w:numFmt w:val="${fmt}"/>${suff}` +
     `<w:lvlText w:val="${escapeXml(text)}"/><w:lvlJc w:val="${jc}"/>` +
-    `<w:pPr><w:ind w:left="${cmToTwip((depth + 1) * LIST_LEFT_STEP_CM)}"` +
-    ` w:hanging="${cmToTwip(LIST_HANGING_CM)}"/></w:pPr></w:lvl>`
+    `<w:pPr><w:ind w:left="${cmToTwip((depth + 1) * LIST_LEFT_STEP_CM)}"${hangXml}/></w:pPr></w:lvl>`
   );
 }
 
@@ -1544,6 +1569,30 @@ const textParts = (files: Record<string, Uint8Array>): string[] =>
   Object.keys(files).filter((p) => /^word\/(document|footnotes|endnotes|header\d*|footer\d*)\.xml$/.test(p));
 const relsOf = (part: string) => part.replace(/^word\/(.*)$/, 'word/_rels/$1.rels');
 const EMPTY_RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+
+// Post-pack pass: a picture whose name carries a crop gets it as its a:srcRect, and
+// the name loses the mark.
+function applyCropsDocx(bytes: Uint8Array): Uint8Array {
+  const files = unzipSync(bytes);
+  let hit = false;
+  const mark = new RegExp(`${CROP}([\\d.,e-]+)${CROP}`);
+  for (const part of textParts(files)) {
+    const xml = strFromU8(files[part]);
+    if (!xml.includes(CROP)) continue;
+    hit = true;
+    files[part] = strToU8(xml.replace(/<w:drawing>[\s\S]*?<\/w:drawing>/g, (d) => {
+      const m = mark.exec(d);
+      if (!m) return d;
+      const [l, t, r, b] = m[1].split(',').map(Number);
+      return d.replace('<a:srcRect/>', srcRectXml(cropOf({ l, t, r, b })))
+        .replace(new RegExp(`${CROP}[\\d.,e-]+${CROP}`, 'g'), '');
+    }));
+  }
+  if (!hit) return bytes;
+  const out: Record<string, [Uint8Array, { level: 6 }]> = {};
+  for (const [path, data] of Object.entries(files)) out[path] = [data, { level: 6 }];
+  return zipSync(out);
+}
 
 // Post-pack pass: swap each marker paragraph in a text part for its drawing.
 // The tempered pattern keeps the match inside one paragraph. A box's pictures and
@@ -2439,7 +2488,8 @@ function paragraphToDocx(node: TiptapNode, opts: ParaOpts = {}): Paragraph {
   const indChars = opts.numbering ? '' : indentCharsPayload(attrs);
   if (!opts.numbering) {
     const left = leftCm(attrs, pt);
-    if (left > 0) indent.left = cmToTwip(left);
+    // An explicit 0 is kept: it overrides the named style's indent.
+    if (left > 0 || attrs.indent === 0) indent.left = cmToTwip(left);
     else if (opts.indentLeftTwip) indent.left = opts.indentLeftTwip;
     const right = rightCm(attrs, pt);
     if (right > 0) indent.right = cmToTwip(right);
@@ -2471,7 +2521,7 @@ function paragraphToDocx(node: TiptapNode, opts: ParaOpts = {}): Paragraph {
     // a style of its own ("Appendix 1") has nothing else that says what level it is.
     outlineLevel: node.type === 'heading' ? ((attrs.level as number) ?? 1) - 1 : undefined,
     widowControl: attrs.widowControl === false ? false : undefined,
-    keepNext: attrs.keepNext === true || undefined,
+    keepNext: typeof attrs.keepNext === 'boolean' ? attrs.keepNext : undefined,
     keepLines: attrs.keepLines === true || undefined,
     // w:bidi — the block's own base direction (textDirection.ts).
     bidirectional: attrs.dir === 'rtl' ? true : attrs.dir === 'ltr' ? false : undefined,
@@ -3184,6 +3234,7 @@ export async function buildDocx(
   nextBookmarkId = 0;
   docxBookmarkNames = new Map();
   docRubies = [];
+  docCrops = false;
   docPlaceholders = [];
   docSources = [];
   const num = new Numbering();
@@ -3425,7 +3476,8 @@ export async function buildDocx(
     ...num.styleLinks().map((l) => numberingStyleXml(l.name)),
   ]);
   const linked = applyOutlineNumberingDocx(applyListStylesDocx(styled, num.styleLinks()), outlineIndex);
-  const packed = applyFormulasDocx(applyTextBoxesDocx(linked, docTextBoxes), docFormulas);
+  const formulas = applyFormulasDocx(applyTextBoxesDocx(linked, docTextBoxes), docFormulas);
+  const packed = docCrops ? applyCropsDocx(formulas) : formulas;
   const cited = applyBibliographyDocx(applyPlaceholdersDocx(applyRubyDocx(packed, docRubies), docPlaceholders), docSources, docCitationStyle(docJson));
   // The note configuration goes out whether or not a note exists yet, as Word keeps its
   // own in settings.xml — a document numbering its first footnote from 3 must still say so.

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error — the parity harness is plain .mjs, deliberately untyped
-import { compare } from '../render-parity/compare.mjs';
+import { compare, compareImages } from '../render-parity/compare.mjs';
 
 // The comparison aligns the two documents as a whole, so one dropped or displaced
 // line costs one report instead of every line after it.
@@ -52,5 +52,15 @@ describe('render-parity comparison', () => {
     const issues = compare(ref, ed);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({ kind: 'position', dyMm: 2, lines: 3 });
+  });
+
+  it('pairs alike pictures by place and follows one pushed to the next page', () => {
+    const icon = (page: number, y: number) => ({ page, x: 20, y, w: 15, h: 15 });
+    const ref = [icon(0, 30), icon(0, 60), { page: 1, x: 0, y: 0, w: 210, h: 297 }];
+    const ed = [icon(0, 60), icon(0, 30.5), { page: 2, x: 0, y: 0, w: 210, h: 297 }, icon(1, 10)];
+    expect(compareImages(ref, ed)).toEqual([
+      { kind: 'image', page: 2, wMm: 210, hMm: 297, edPage: 3, dxMm: 0, dyMm: 0, dwMm: 0, dhMm: 0 },
+      { kind: 'imageCount', side: 'editor', page: 2, wMm: 15, hMm: 15 },
+    ]);
   });
 });

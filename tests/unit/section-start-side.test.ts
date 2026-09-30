@@ -2,7 +2,7 @@
 // page layout, Word's w:type oddPage/evenPage): where the flow would open it on the
 // other one, both word processors insert a blank page.
 import { describe, it, expect } from 'vitest';
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 import { buildOdt } from '../../src/lib/export/odt';
 import { buildDocx } from '../../src/lib/export/docx';
 import { importOdt } from '../../src/lib/import/odt';
@@ -57,5 +57,17 @@ describe('the side a section opens on', () => {
     const docx = await buildDocx(doc, margins, 'portrait', plain as never);
     expect(strFromU8(unzipSync(docx)['word/document.xml'])).not.toContain('w:val="oddPage"');
     expect(sides(importDocx(docx))).toEqual([null, null]);
+  });
+
+  // Naming the section's master again restarts it: the chapter opens a section of its
+  // own and demands its side again, as LibreOffice reopens its Chapter Intro master.
+  it('reopens a master that demands a side when a later block names it again', async () => {
+    const files = unzipSync(await buildOdt(doc, margins, 'portrait', hf as never));
+    const xml = strFromU8(files['content.xml']);
+    const style = /<text:p text:style-name="([^"]*)">chapter/.exec(xml)![1];
+    files['content.xml'] = strToU8(xml.replace('</office:text>', `<text:p text:style-name="${style}">again</text:p></office:text>`));
+    const back = importOdt(zipSync(files));
+    expect(sides(back)).toEqual([null, 'odd', 'odd']);
+    expect((back.content as N).content.at(-1).attrs.sectionBreak).toBe(true);
   });
 });

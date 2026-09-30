@@ -31,9 +31,13 @@ EdenText is a web-based, powerful word processor for everything from quick notes
 > the way. It is tested — the full suite plus LibreOffice round-trip checks run
 > on every commit — but expect occasional bugs, and keep backups of documents
 > you care about. The browser copy also keeps the last three versions of the open
-> document, and offers them if it ever fails to load one. What is still missing is
-> listed under [Not yet implemented](CHANGELOG.md#not-yet-implemented) and
-> [Known limitations](CHANGELOG.md#known-limitations).
+> document, and offers them if it ever fails to load one.
+>
+> **Found a bug, or a document that doesn't look right?** Please
+> [open an issue](https://github.com/stffnb/edentext/issues) — every report helps.
+> Documents that EdenText displays differently from Word, LibreOffice or WPS Office are
+> especially welcome: attach the file (or a stripped-down copy) and it becomes a
+> test case.
 
 <a href="https://edentext.app"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/showcase/thesis-dark.png">
@@ -63,6 +67,9 @@ EdenText is a web-based, powerful word processor for everything from quick notes
 - **Any current browser** — in Chrome and Edge, Save writes back to the opened
   file; other browsers receive each save as a download, so turn on "Always ask
   where to save" in their settings to pick the location
+
+Where the browser keeps EdenText from matching Word or LibreOffice exactly is
+described under [Known limitations](CHANGELOG.md#known-limitations).
 
 ## Gallery
 
@@ -180,7 +187,7 @@ and feedback:
 
 ## License
 
-Copyright © 2026 Steffen Becker.
+Copyright © 2026 Steffen Becker · Made in Germany
 
 [AGPL-3.0](LICENSE). A [commercial license](LICENSE.commercial.md) is available
 for use cases the AGPL does not fit. Bundled fonts and language data keep their

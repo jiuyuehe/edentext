@@ -58,7 +58,9 @@ page breaks apply to list paragraphs but not table-cell paragraphs.
 Master-page changes open document sections. Read page setup, headers, footers, edge distances,
 first-page and left/right variants from the governing master, and calculate content width per
 section. An explicit empty master-page name means no change. A left/right master pair represents
-mirrored layout; distinguish it from a first-page hand-over.
+mirrored layout; distinguish it from a first-page hand-over. Naming the current master again
+opens a new section only where that restarts something — a hand-over to a successor, or a
+`page-usage` side demand — which is how a book reopens Chapter Intro for every chapter.
 
 Header/footer body reach is the rendered zone height plus applicable gap, respecting dynamic
 spacing, wrapped content, and internal paragraph spacing. A trailing zone margin does not add
@@ -78,6 +80,15 @@ numbering's `w:numPr` on every heading paragraph; that stays chapter numbering, 
 heading style carries none, the first heading of a level supplies it. Chapter numbering takes
 every list format, the CJK ones included.
 
+A nonzero `w:beforeLines`/`w:afterLines` wins over `w:before`/`w:after`, as in Word, at 12pt a
+line. LibreOffice keeps the twips when both are written, which WPS does (`w:after="0"
+w:afterLines="100"`), so there the editor follows Word, not LibreOffice.
+A `wrapNone` picture aligned in the column (`wp:align` against `margin`/`column`), or an ODF
+`run-through` one by `style:horizontal-pos` against its paragraph or `page-content`, becomes
+the x that alignment gives, since nothing floats a run-through frame to a side.
+An ODF frame aligned `left`/`top` against the `page` is offset 0 from the page's corner
+(`wrapFromPage`), how a header carries a cover picture filling the first sheet.
+
 Resolve table borders and conditional table-style areas before baking them into cells, because
 the editor registry does not retain file table styles. Honor compatibility mode when interpreting
 table indentation. A floating table becomes the text-box representation the schema supports.
@@ -91,7 +102,9 @@ link-to-previous behavior, while a present empty part deliberately clears the zo
 ## Feature mapping
 
 Map paragraphs, headings, lists, tables, inline content, fields, and frames to their semantic
-editor nodes. Keep fields' cached values where the editor cannot recalculate them. Text boxes,
+editor nodes. Keep fields' cached values where the editor cannot recalculate them. An index
+keeps its cached rows (text, level from the row's entry style, page numbers after the last
+tab) as its entries: both word processors show those until the reader updates it. Text boxes,
 shapes, charts, formulas, bookmarks, cross-references, ruby, bibliography, revisions, notes,
 and placeholders have focused mappings in their architecture documents.
 

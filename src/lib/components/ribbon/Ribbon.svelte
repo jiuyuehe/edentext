@@ -21,7 +21,7 @@
   import CrossRefDialog from '../CrossRefDialog.svelte';
   import FormulaDialog from '../FormulaDialog.svelte';
   import { clickOutside, isMenuOpen, pinPanels, toggleMenu, closeMenu } from './menu.svelte';
-  import { t } from '../../i18n/i18n.svelte';
+  import { locale, t } from '../../i18n/i18n.svelte';
   import { withShortcut } from '../../i18n/shortcut';
   import { shortcutHint } from '../../editor/shortcuts';
   import { findTextBox } from '../../editor/extensions/textBox';
@@ -35,7 +35,7 @@
   import type { Orientation } from '../../storage/pageOrientation';
   import type { PageFormat } from '../../storage/pageFormat';
   import { DEFAULT_HF_DISTANCES, type HfDistances, type HfSet, type HfZone } from '../../storage/headerFooter';
-  import type { DocumentLanguage } from '../../storage/documentLanguage';
+  import { isAsianTag, tagForLanguage, type DocumentLanguage } from '../../storage/documentLanguage';
   import { DEFAULT_TAB_INTERVAL_CM } from '../../storage/tabInterval';
   import { DEFAULT_PAGE_NUMBERING, type PageNumbering } from '../../storage/pageNumbering';
   import { EMPTY_PAGE_DECOR, type PageDecor } from '../../storage/pageDecor';
@@ -312,7 +312,7 @@
 </script>
 
 <div class="ribbon">
-  <div class="ribbon-tabs" class:strip-only={collapsed}>
+  <div class="ribbon-tabs" class:strip-only={collapsed} use:pinPanels>
     <div class="file-tab-wrap" use:clickOutside={'file'}>
       <button
         class="ribbon-tab-file"
@@ -424,8 +424,8 @@
       />
       <span class="doc-name-ext">.{documentFormat}</span>
     </div>
-    <!-- Beside the name, not inside it: the name box is capped at 30% of the strip,
-         and the label would take that width off the name itself. -->
+    <!-- Beside the name, not inside it: the name box is capped at 16rem, and the
+         label would take that width off the name itself. -->
     {#if dirty}<span class="doc-dirty">• {t().app.unsavedChanges}</span>{/if}
 
     <!-- Word puts this chevron in the band's corner. It rides the strip so the band
@@ -484,7 +484,7 @@
   {#if !collapsed}
   <div class="ribbon-body" use:pinPanels>
     {#if tab === 'home'}
-      <HomeTab {editor} {tick} bind:showFormattingMarks {onManageStyles} {onFind} onParagraphDialog={() => (paragraphDialogOpen = true)} />
+      <HomeTab {editor} {tick} asianDocument={isAsianTag(tagForLanguage(documentLanguage) ?? '') || isAsianTag(locale())} bind:showFormattingMarks {onManageStyles} {onFind} onParagraphDialog={() => (paragraphDialogOpen = true)} />
     {:else if tab === 'insert'}
       <InsertTab {editor} {tick} {hfActive} {pageMargins} {pageOrientation} {pageFormat} bind:hfDistances bind:differentFirstPage bind:differentOddEven {onEditZone} {onManageTableStyles} {onAutoText} />
     {:else if tab === 'layout'}
@@ -584,20 +584,24 @@
 
   .ribbon :global(.bp-trigger) { height: 30px; }
 
-  /* Wraps once the tabs, the name and the chrome buttons stop fitting. It cannot
-     scroll like the band does: the File and appearance menus drop from inside it,
-     and a scroll container would clip them. */
+  /* Scrolls sideways once the tabs, the name and the chrome buttons stop fitting.
+     Its menus are pinned `position: fixed` (`anchored`, `pinPanels`), so the scroll
+     container does not clip them. */
   .ribbon-tabs {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 2px;
-    padding: 3px 10px 0;
+    padding: 3px 10px 2.5px;
+    margin-bottom: -2.5px;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .ribbon-tabs > :global(*) { flex-shrink: 0; }
 
-  /* The active tab's underline hangs below its box, onto the band. Collapsed there
-     is no band, so the strip lends it the room instead of the bottom border. */
-  .ribbon-tabs.strip-only { padding-bottom: 5px; }
+  /* The active tab's underline hangs below its box, onto the band: the padding keeps
+     it inside the scroller, the negative margin lays it over the band's top edge.
+     Collapsed there is no band, so the strip keeps the room. */
+  .ribbon-tabs.strip-only { padding-bottom: 5px; margin-bottom: 0; }
 
   .ribbon-tab {
     position: relative;
@@ -708,10 +712,12 @@
 
   /* The name field grows with its text: the sizer mirrors the value and lends the
      input its width. */
+  /* Anchors the hidden sizer here: placed against the page, it widened a phone's
+     layout viewport and pushed centred dialogs off screen. */
   .doc-name {
+    position: relative;
     display: inline-flex;
     align-items: center;
-    max-width: 30%;
     color: var(--w-text-dim);
     font-size: 12px;
   }
@@ -735,6 +741,7 @@
     font: inherit;
     font-size: 12px;
     text-align: right;
+    text-overflow: ellipsis;
   }
 
   .doc-name-input:hover { border-color: var(--w-border-strong); }

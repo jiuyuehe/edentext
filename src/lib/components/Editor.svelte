@@ -41,7 +41,6 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   import Ruler from './Ruler.svelte';
   import { saveDocument, loadDocument, markDocumentLoaded } from '../storage/autosave';
   import { IDB_SRC } from '../storage/imageStore';
-  import { fitInlineImage } from '../editor/extensions/image';
   import { applyMarginVars, cmToPx, PX_PER_CM, DEFAULT_MARGINS, type PageMargins } from '../storage/pageMargins';
   import { DEFAULT_TAB_INTERVAL_CM } from '../storage/tabInterval';
   import { type Orientation } from '../storage/pageOrientation';
@@ -67,7 +66,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
 
   let {
     editor = $bindable(), tick = $bindable(0), currentPage = $bindable(1), numPages = $bindable(1),
-    zoom = 100, onZoom, showFormattingMarks = false, showFieldShading = true, showRuler = true, splitView = false, pageColumns = 1, pageMargins = DEFAULT_MARGINS, orientation = 'portrait',
+    zoom = 100, onZoom, onDocumentLost, showFormattingMarks = false, showFieldShading = true, showRuler = true, splitView = false, pageColumns = 1, pageMargins = DEFAULT_MARGINS, orientation = 'portrait',
     pageFormat = 'A4', tabIntervalCm = DEFAULT_TAB_INTERVAL_CM, spacingModel = 'add', spacingAtPageStart = true, documentEpoch = 0, pageRtl = false, hyphenate = false, documentLanguage = 'en', pageNumbering = DEFAULT_PAGE_NUMBERING, pageDecor = EMPTY_PAGE_DECOR, lineNumbering = DEFAULT_LINE_NUMBERING, lineGrid = DEFAULT_LINE_GRID, balanceSpaces = false, foldMarks = false, commentAuthor = '',
     headerDoc = $bindable(null), footerDoc = $bindable(null), hfDistances = DEFAULT_HF_DISTANCES,
     headerFirstDoc = $bindable(null), footerFirstDoc = $bindable(null), differentFirstPage = false,
@@ -77,6 +76,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   }: {
     editor: Editor | null; tick: number; currentPage: number; numPages: number; zoom: number;
     onZoom?: (zoom: number) => void;
+    /** The stored document was given up at startup; the editor starts empty. */
+    onDocumentLost?: () => void;
     showFormattingMarks?: boolean; showFieldShading?: boolean; showRuler?: boolean; pageMargins?: PageMargins; orientation?: Orientation; pageFormat?: PageFormat; tabIntervalCm?: number; spacingModel?: SpacingModel; spacingAtPageStart?: boolean;
     /** Two panes onto this document, scrolled on their own (Word's View ▸ Split). */
     splitView?: boolean;
@@ -974,6 +975,25 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     onZoom(zoom * wheelZoomFactor(e.deltaY, e.deltaMode));
   }
 
+  // A two-finger pinch over the document zooms the document, not the whole app:
+  // `touch-action` on `.editor` keeps the browser's own pinch-zoom off this area.
+  // Scaled from the gesture's start, so rounding in clampZoom never accumulates.
+  let pinchStart: { dist: number; zoom: number } | null = null;
+  function onPinch(e: TouchEvent, pane: number) {
+    if (e.touches.length !== 2 || !onZoom) {
+      pinchStart = null;
+      return;
+    }
+    const [a, b] = [e.touches[0], e.touches[1]];
+    const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    if (!pinchStart || e.type === 'touchstart') {
+      pinchStart = { dist, zoom };
+      return;
+    }
+    pendingAnchor = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2, pane };
+    onZoom(pinchStart.zoom * dist / pinchStart.dist);
+  }
+
   // The point held fixed across a zoom change: the pointer for a wheel zoom, else
   // (slider, buttons, keyboard) the top of the viewport. One per pane — a split view
   // zooms both, and the pane the pointer is not in keeps its own top in place.
@@ -1256,7 +1276,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     resetHistoryLog();
     // Awaited: the document's pictures live in IndexedDB, and the editor is built
     // from the whole document or the first pagination pass measures the wrong one.
-    const saved = await loadDocument();
+    const saved = await loadDocument(onDocumentLost);
 
     editor = new Editor({
       element: hosts[0],
@@ -1567,14 +1587,19 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   function paneEvents(node: HTMLElement, pane: number) {
     const scroll = () => onEditorScroll(pane);
     const over = (e: MouseEvent) => onEditorPointerOver(e, pane);
+    const pinch = (e: TouchEvent) => onPinch(e, pane);
     node.addEventListener('scroll', scroll);
     node.addEventListener('mouseover', over);
     node.addEventListener('mouseout', onEditorPointerOut);
+    node.addEventListener('touchstart', pinch, { passive: true });
+    node.addEventListener('touchmove', pinch, { passive: true });
     return {
       destroy() {
         node.removeEventListener('scroll', scroll);
         node.removeEventListener('mouseover', over);
         node.removeEventListener('mouseout', onEditorPointerOut);
+        node.removeEventListener('touchstart', pinch);
+        node.removeEventListener('touchmove', pinch);
       },
     };
   }

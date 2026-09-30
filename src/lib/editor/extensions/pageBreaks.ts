@@ -367,7 +367,7 @@ export function placeFromPage(view: EditorView, el: HTMLElement, grid?: PageGrid
   el.style.marginLeft = '0px';
   const top = topInEditor(view, el);
   const left = leftInEditor(view, el);
-  const column = parseFloat(getComputedStyle(view.dom as HTMLElement).paddingLeft) || 0;
+  const column = columnLeft(view, el);
   // One set against the body text counts from where that page's body begins.
   const page = g.pageAt(top);
   const from = el.dataset.fromBody != null ? g.contentTopOf(page) : g.topOf(page);
@@ -375,10 +375,66 @@ export function placeFromPage(view: EditorView, el: HTMLElement, grid?: PageGrid
   el.style.marginLeft = `${Math.round(column + (Number(el.dataset.pageX) || 0) - left)}px`;
 }
 
+// Any other run-through frame keeps its y below the anchor, but its x counts from the
+// column too (a table cell's, a text box's): the static position it starts from carries
+// the anchor paragraph's indent and whatever text precedes the anchor in its line.
+export function placeInColumn(view: EditorView, el: HTMLElement): void {
+  if (!el.isConnected || el.dataset.columnX == null) return;
+  el.style.marginLeft = '0px';
+  el.style.marginLeft = `${Math.round(frameColumn(view, el) + (Number(el.dataset.columnX) || 0) - leftInEditor(view, el))}px`;
+}
+
+// The x in cm a drag moves a run-through frame on from: its own, or for one placed in its
+// column without an x, the static place it shows — any x the drag sets counts from the
+// column instead, and starting from 0 would make the frame jump.
+export function freeDragX(view: EditorView, el: HTMLElement, x: unknown): number {
+  if (typeof x === 'number') return x;
+  if (el.dataset.wrap !== 'through' || el.dataset.pageX != null || el.dataset.anchorPage != null) return 0;
+  return Math.round(((leftInEditor(view, el) - frameColumn(view, el)) * 2.54 * 1000) / 96) / 1000;
+}
+
+function frameColumn(view: EditorView, el: HTMLElement): number {
+  const box = el.parentElement?.closest<HTMLElement>('td, th, .textbox-content');
+  return box ? leftInEditor(view, box) + (parseFloat(getComputedStyle(box).paddingLeft) || 0) : columnLeft(view, el);
+}
+
+// The body column's left edge: the page margin, and in a section with margins of its own
+// the inset its top-level block carries (descendants clear it, editor.css).
+function columnLeft(view: EditorView, el: HTMLElement): number {
+  let block = el;
+  while (block.parentElement && block.parentElement !== view.dom) block = block.parentElement;
+  return (parseFloat(getComputedStyle(view.dom as HTMLElement).paddingLeft) || 0)
+    + (parseFloat(getComputedStyle(block).getPropertyValue('--sec-inset-left')) || 0);
+}
+
+// A side float sunk below its anchor (image.ts) stops short of the next float on its
+// side: floats cannot overlap as LibreOffice lets them, and one pushed aside squeezes its
+// text. The room is known once the lines around both are laid out: every pass re-measures.
+export function sinkSideFloat(view: EditorView, el: HTMLElement): void {
+  const want = Number(el.dataset.sinkGap);
+  if (!el.isConnected || !(want > 0)) return;
+  const top = (e: HTMLElement) => {
+    let y = -(parseFloat(e.style.marginTop) || 0);
+    for (let n: HTMLElement | null = e; n && n !== view.dom; n = n.offsetParent as HTMLElement | null) y += n.offsetTop;
+    return y;
+  };
+  const floats = Array.from((view.dom as HTMLElement).querySelectorAll<HTMLElement>(`[data-wrap="${el.dataset.wrap}"]`));
+  const next = floats[floats.indexOf(el) + 1];
+  const gap = next ? Math.min(want, Math.max(0, Math.floor(top(next) - top(el) - el.offsetHeight))) : want;
+  el.style.marginTop = `${gap}px`;
+  el.style.shapeOutside = `inset(${gap}px 0 0 0) margin-box`;
+}
+
 // Pagination moves the page grid under those frames, so every pass re-places them.
 export function placePageFrames(view: EditorView, grid: PageGrid): void {
+  for (const el of Array.from((view.dom as HTMLElement).querySelectorAll<HTMLElement>('[data-sink-gap]'))) {
+    sinkSideFloat(view, el);
+  }
   for (const el of Array.from((view.dom as HTMLElement).querySelectorAll<HTMLElement>('[data-page-y]'))) {
     placeFromPage(view, el, grid);
+  }
+  for (const el of Array.from((view.dom as HTMLElement).querySelectorAll<HTMLElement>('[data-column-x]'))) {
+    placeInColumn(view, el);
   }
 }
 
@@ -541,16 +597,24 @@ type FootnoteBox = { id: string; el: HTMLElement; height: number };
 // bounded, because a note that keeps its own anchor moving never settles.
 const MAX_NOTE_FIT_PASSES = 3;
 
-/** A node decoration that survives its node being replaced (see repairBlockDecos). */
+/** A node decoration that survives its node being replaced (see repairDecos). */
 export const blockDeco = (from: number, to: number, attrs: Record<string, string>): Decoration =>
   Decoration.node(from, to, attrs, { block: attrs });
 
 export const isBlockDeco = (spec: { block?: Record<string, string> }): boolean => spec.block !== undefined;
 
+/** A widget in front of a block that survives its neighbours being replaced. */
+export const spacerDeco = (pos: number, toDOM: () => HTMLElement, key: string): Decoration =>
+  Decoration.widget(pos, toDOM, { side: -1, key, spacer: toDOM });
+
+/** A decoration repairDecos can restore when a mapping drops it. */
+export const isRepairable = (spec: { block?: unknown; spacer?: unknown }): boolean =>
+  spec.block !== undefined || spec.spacer !== undefined;
+
 // The mapping drops a node decoration whose node a step replaced, and changing a block's
-// type or attrs is exactly that step — the block would lose its inset or its page-top rule
-// until the next pass. Re-cut those spans by hand, over the blocks the range now holds.
-export function repairBlockDecos(before: DecorationSet, mapped: DecorationSet, tr: Transaction): DecorationSet {
+// type or attrs is exactly that step; a spacer between two blocks goes with either. Re-cut
+// the node spans over the blocks the range now holds, and re-seat a spacer still before one.
+export function repairDecos(before: DecorationSet, mapped: DecorationSet, tr: Transaction): DecorationSet {
   const decos = mapped.find(undefined, undefined, (spec) => !isBlockDeco(spec));
   for (const d of before.find(undefined, undefined, isBlockDeco)) {
     const to = tr.mapping.map(d.to, 1);
@@ -560,6 +624,11 @@ export function repairBlockDecos(before: DecorationSet, mapped: DecorationSet, t
       decos.push(blockDeco(pos, pos + node.nodeSize, d.spec.block));
       pos += node.nodeSize;
     }
+  }
+  for (const d of before.find(undefined, undefined, (spec) => spec.spacer !== undefined)) {
+    if (!tr.mapping.mapResult(d.from, -1).deleted) continue;
+    const pos = tr.mapping.map(d.from, 1);
+    if (tr.doc.resolve(pos).nodeAfter?.isBlock) decos.push(spacerDeco(pos, d.spec.spacer, d.spec.key));
   }
   return DecorationSet.create(tr.doc, decos);
 }
@@ -608,8 +677,8 @@ export const PageBreaks = Extension.create({
           if (tr.docChanged) {
             let dropped = false;
             const mapped = decorations.map(tr.mapping, tr.doc,
-              { onRemove: (spec) => { dropped ||= isBlockDeco(spec); } });
-            decorations = dropped ? repairBlockDecos(decorations, mapped, tr) : mapped;
+              { onRemove: (spec) => { dropped ||= isRepairable(spec); } });
+            decorations = dropped ? repairDecos(decorations, mapped, tr) : mapped;
           }
           const recalc = value.recalc + (tr.getMeta(FORCE_PAGE_RECALC) ? 1 : 0);
           const edit = value.edit
@@ -1327,9 +1396,9 @@ export const PageBreaks = Extension.create({
                   // a table cell, where the table breaks atomically between rows).
                   forceBreakBefore: !inTableCell && child.dataset?.pageBreakBefore === 'page',
                   // A heading keeps with the next block in both Word and LibreOffice,
-                  // so their styles carry it and the attr only marks the other blocks.
-                  keepNext: !inTableCell
-                    && (child.dataset?.keepNext === 'true' || /^H[1-5]$/.test(child.tagName)),
+                  // unless the file's own heading style drops it (`false`).
+                  keepNext: !inTableCell && (child.dataset?.keepNext === 'true'
+                    || (/^H[1-5]$/.test(child.tagName) && child.dataset?.keepNext !== 'false')),
                   sectionStart: !inTableCell && child.dataset?.sectionBreak === 'true',
                   refs: refsWithin(child),
                 });
@@ -1503,13 +1572,11 @@ export const PageBreaks = Extension.create({
                 sectionFirstPage = pushed ? page + 1 : page;
                 sectionFirstPages[sectionIndex] = sectionFirstPage;
                 // A section that must open on a right or left page takes the blank page
-                // before it, the way both word processors insert one — never for the
-                // document's own first page, which is a right page whatever it says.
+                // before it — never the document's first page. The sheet decides, not the
+                // printed number: LibreOffice pads a restart at 1 onto an even sheet (probed).
                 const side = i > 0 ? sideAt(sectionIndex) : null;
                 if (side) {
-                  const numberOf = (pg: number) => printedPageNumber(pg, sectionIndex, numStarts,
-                    (j) => (j === sectionIndex ? pg : sectionFirstPages[j] ?? 1));
-                  if ((isLeftPage(numberOf(sectionFirstPage)) ? 'even' : 'odd') !== side) {
+                  if ((sectionFirstPage % 2 === 0 ? 'even' : 'odd') !== side) {
                     sectionFirstPage++;
                     sectionFirstPages[sectionIndex] = sectionFirstPage;
                   }
@@ -1641,7 +1708,7 @@ export const PageBreaks = Extension.create({
                   naturalY: 0,
                 });
               } else if (effectiveTop >= contentEnd) {
-                const target = pageContentStart(page + 1, vm.top, grid);
+                const target = pageContentStart(page + 1, topRest, grid);
                 const { docPos, row } = leafSpacer(leaf);
                 breaks.push({
                   height: target - effectiveTop,
@@ -1669,7 +1736,7 @@ export const PageBreaks = Extension.create({
                   } else if (leaf.naturalHeight <= CONTENT_HEIGHT || cf) {
                     // A columns fragment may be pushed even when taller than a page:
                     // the flow splits it again once it sits at the next page top.
-                    const target = pageContentStart(page + 1, vm.top, grid);
+                    const target = pageContentStart(page + 1, topRest, grid);
                     const { docPos, row } = leafSpacer(leaf);
                     breaks.push({
                       height: target - effectiveTop,
@@ -1697,7 +1764,7 @@ export const PageBreaks = Extension.create({
                   while (boundaryNatural < leaf.naturalHeight) {
                     const split = findLineSplit(leaf.el, boundaryNatural, scale, minLines);
                     if (split === null) break;
-                    const target = pageContentStart(targetPage, vm.top, grid);
+                    const target = pageContentStart(targetPage, topRest, grid);
                     const h = target - (effectiveTop + extraShift + split.naturalLineTop);
                     if (h <= 0) break;
                     breaks.push({
@@ -1714,7 +1781,7 @@ export const PageBreaks = Extension.create({
                   }
                   if (breaks.length === 0) {
                     if (leaf.naturalHeight <= CONTENT_HEIGHT) {
-                      const target = pageContentStart(page + 1, vm.top, grid);
+                      const target = pageContentStart(page + 1, topRest, grid);
                       breaks.push({
                         height: target - effectiveTop,
                         docPos: preLeafDocPos(leaf.el),
@@ -1746,7 +1813,7 @@ export const PageBreaks = Extension.create({
                   ? Math.min(next.naturalHeight, CONTENT_HEIGHT)
                   : firstLinesHeight(next.el, scale, wantLines) + (parseFloat(getComputedStyle(next.el).paddingTop) || 0);
                 if (effectiveBottom + (leaf.spaceAfter ?? 0) + needed > contentEnd) {
-                  const target = pageContentStart(page + 1, vm.top, grid);
+                  const target = pageContentStart(page + 1, topRest, grid);
                   const { docPos, row } = leafSpacer(leaf);
                   breaks.push({
                     height: target - effectiveTop,
@@ -1984,7 +2051,7 @@ export const PageBreaks = Extension.create({
             // Every spacer is built per view: a split pane renders the same decorations,
             // and one DOM node cannot sit in two documents at once — each would keep
             // taking it back from the other.
-            const decoArray: Decoration[] = placements.map((p) => Decoration.widget(p.docPos, () => {
+            const decoArray: Decoration[] = placements.map((p) => spacerDeco(p.docPos, () => {
               if (p.row) {
                 // A table breaks between rows: the spacer must be a <tr> so it's
                 // valid inside <tbody> and creates a borderless gap that pushes
@@ -2028,7 +2095,7 @@ export const PageBreaks = Extension.create({
               spacerEl.style.userSelect = 'none';
               spacerEl.setAttribute('contenteditable', 'false');
               return spacerEl;
-            }, { side: -1, key: spacerKey(p) }));
+            }, spacerKey(p)));
             if (collapsedTrailing) {
               decoArray.push(blockDeco(collapsedTrailing.from, collapsedTrailing.to, {
                 style: 'height:0;min-height:0;margin:0;overflow:hidden',

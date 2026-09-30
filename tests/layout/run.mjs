@@ -164,10 +164,10 @@ function lintLayout() {
     if (l.left < body.left - 6 || l.right > body.right + 6) issue('beyond the side margin', l, { body: box(body) });
   }
   // A heading stays with the block it introduces, across a page and a column alike,
-  // unless that block asks for the break itself.
+  // unless that block asks for the break itself or the heading's file style drops the keep.
   const blocks = (parent) => [...parent.children].filter((e) => !e.hasAttribute('data-page-break-spacer'));
   for (const h of paper.querySelectorAll('.tiptap-host .tiptap :is(h1, h2, h3, h4, h5, h6)')) {
-    if (h.closest('td, th, li, .textbox-node, .hf-layer')) continue;
+    if (h.closest('td, th, li, .textbox-node, .hf-layer') || h.dataset.keepNext === 'false') continue;
     const sib = blocks(h.parentElement);
     const next = sib[sib.indexOf(h) + 1];
     if (!next || next.classList.contains('note') || next.hasAttribute('data-page-break-before')) continue;

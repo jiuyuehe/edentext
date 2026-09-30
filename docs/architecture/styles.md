@@ -79,3 +79,10 @@ are outside that document outline.
 The visible label and table-of-contents label use the same counting rules. ODF writes the
 definition as an outline style; DOCX writes matching numbering referenced by heading styles.
 Keep the heading level explicit so import does not mistake a numbered heading for a list item.
+
+**A run in a taller face does raise the line.** A run whose own font or character style
+sets a `--natural-line` takes the paragraph's line-height expression with that value
+(`editor.css`), so the tallest run sizes the line as in both word processors, and a
+fixed spacing stays fixed. The reverse stays: the paragraph's font is the CSS strut, so
+a paragraph whose runs are all in a shorter face than its own keeps its own line height.
+One run mixing scripts takes the western face's line even where the asian one is taller.

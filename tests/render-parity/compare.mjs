@@ -137,3 +137,30 @@ export function compare(ref, ed) {
 // tab or index leader collapses to one token too — both end the fill at the same stop.
 const norm = (s) => s.replace(/[\s\u00a0\u00ad\u200b\u2060\ufeff]+/g, '').replace(/([.\u00b7_-])\1{2,}/g, '\u2026');
 
+
+// Pictures, which pdftotext cannot see: each reference picture pairs with the editor's
+// nearest to it, page first, where one of about its size (a tenth either way) counts two
+// pages nearer — so alike icons pair by place and one pushed a page on still finds itself.
+const SIZE_TOL_MM = 1.5;
+export function compareImages(ref = [], ed = []) {
+  const issues = [], left = [...ed];
+  const at = (i) => ({ page: i.page + 1, wMm: round(i.w), hMm: round(i.h) });
+  for (const a of ref) {
+    let best = -1, cost = Infinity;
+    left.forEach((b, k) => {
+      const alike = Math.abs(a.w - b.w) <= 0.1 * a.w && Math.abs(a.h - b.h) <= 0.1 * a.h;
+      const c = (alike ? 0 : 2e6) + Math.abs(a.page - b.page) * 1e6 + Math.hypot(a.x - b.x, a.y - b.y)
+        + 10 * (Math.abs(a.w - b.w) + Math.abs(a.h - b.h));
+      if (c < cost) { best = k; cost = c; }
+    });
+    if (best < 0) { issues.push({ kind: 'imageCount', side: 'ref', ...at(a) }); continue; }
+    const [b] = left.splice(best, 1);
+    const dx = round(b.x - a.x), dy = round(b.y - a.y), dw = round(b.w - a.w), dh = round(b.h - a.h);
+    if (a.page !== b.page || Math.abs(dx) > POS_TOL_MM || Math.abs(dy) > POS_TOL_MM
+        || Math.abs(dw) > SIZE_TOL_MM || Math.abs(dh) > SIZE_TOL_MM) {
+      issues.push({ kind: 'image', ...at(a), edPage: b.page + 1, dxMm: dx, dyMm: dy, dwMm: dw, dhMm: dh });
+    }
+  }
+  for (const b of left) issues.push({ kind: 'imageCount', side: 'editor', ...at(b) });
+  return issues;
+}

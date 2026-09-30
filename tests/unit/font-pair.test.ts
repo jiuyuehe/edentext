@@ -35,6 +35,13 @@ describe('font pair rendering', () => {
     expect(style).toContain('font-family: var(--font-space,) var(--font-west), "Yu Mincho", var(--font-tail)');
   });
 
+  it('gives a run in a face off the default its own natural line', () => {
+    const ed = makeEditor(doc(run('tall', { fontFamily: 'Verdana' }), run('plain', { fontFamily: 'Times New Roman' })));
+    const [tall, plain] = [...ed.view.dom.querySelectorAll('span')].map((s) => s.getAttribute('style')!);
+    expect(tall).toContain('--natural-line: 1.2153');
+    expect(plain).not.toContain('--natural-line');
+  });
+
   it('parses its own spans back into both attrs', () => {
     const ed = makeEditor(doc(run('mixed 漢字', { fontFamily: 'Arial', fontFamilyAsian: 'SimSun' })));
     const html = ed.getHTML();

@@ -83,7 +83,18 @@ describe('a document that cannot be loaded falls back on a kept version', () => 
     localStorage.setItem('edentext-doc', '{"type":"doc"}');
     await loadDocument();
     vi.stubGlobal('confirm', () => false);
-    expect(await loadDocument()).toBeNull();
+    // Starting empty drops the document's page setup too, or it lives on in the next one.
+    const onLost = vi.fn();
+    expect(await loadDocument(onLost)).toBeNull();
+    expect(onLost).toHaveBeenCalledOnce();
+  });
+
+  it('reports no loss for a document that loads', async () => {
+    localStorage.setItem('edentext-doc', '{"type":"doc"}');
+    const onLost = vi.fn();
+    await loadDocument(onLost);
+    markDocumentLoaded();
+    expect(onLost).not.toHaveBeenCalled();
   });
 });
 
@@ -101,6 +112,18 @@ describe('autosave flush on pagehide', () => {
     expect(localStorage.getItem('edentext-doc')).toBeNull();
     window.dispatchEvent(new Event('pagehide'));
     expect(JSON.parse(localStorage.getItem('edentext-doc')!)).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
+    vi.useRealTimers();
+  });
+
+  // Written before its pictures reach IndexedDB, a flush naming them by key would lose
+  // every picture the tab dies before storing — the ones an import has just brought in.
+  it('keeps a picture the store has not confirmed inline', () => {
+    vi.useFakeTimers();
+    const src = 'data:image/png;base64,' + 'A'.repeat(5000);
+    const doc = { type: 'doc', content: [{ type: 'image', attrs: { src } }] };
+    saveDocument(() => doc);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(JSON.parse(localStorage.getItem('edentext-doc')!)).toEqual(doc);
     vi.useRealTimers();
   });
 

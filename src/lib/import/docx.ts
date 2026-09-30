@@ -1,5 +1,5 @@
 import { strFromU8 } from 'fflate';
-import { DocxStyles, parseRunProps, mergeRunProps, readNumPr, readTabStops, toggle as onOff, wVal, W, R, WP, A, B, WPS, WPG, MC, VML, O, PKG_REL, type RunProps, type ParaSpacing } from './docxStyles';
+import { DocxStyles, parseRunProps, mergeRunProps, readNumPr, readSpacing, readTabStops, toggle as onOff, wVal, W, R, WP, A, B, WPS, WPG, MC, VML, O, PKG_REL, type RunProps, type ParaSpacing } from './docxStyles';
 import { mostlyAsian } from '../utils/script';
 import { lengthToPt, WATERMARK_NAME } from './styleResolver';
 import { normalizeColor } from '../export/odt';
@@ -11,7 +11,7 @@ import { builtinStyleSheet, DEFAULT_STYLE, type ParaProps, type Style, type Styl
 import { DEFAULT_OUTLINE_LEVEL, MAX_OUTLINE_LEVELS, type OutlineNumbering } from '../styles/outlineNumbering';
 import { MAX_LIST_LEVELS, type ListLevelStyle, type ListStyle } from '../styles/listStyles';
 import { HEADER_SHADE } from '../editor/extensions/tableHeaderRow';
-import { fitInlineImage, framePx } from '../editor/extensions/image';
+import { cropOf, fitInlineImage, framePx } from '../editor/extensions/image';
 import { TEXTBOX_PADDING_CM } from '../editor/extensions/textBox';
 import { formatTabStops } from '../editor/extensions/tabStops';
 import type { CapsMode, LineStyle } from '../editor/extensions/textEffects';
@@ -40,7 +40,7 @@ import { fromWriterFormula } from '../utils/tableFormula';
 import { cellFormatFromCode, type CellFormat } from '../utils/cellFormat';
 import { ODF_SEQ_CATEGORY } from '../editor/extensions/caption';
 import type { CrossRefFormat } from '../editor/extensions/crossReference';
-import type { IndexKind } from '../editor/extensions/tableOfContents';
+import type { IndexKind, TocEntry } from '../editor/extensions/tableOfContents';
 import { bibTypeFromDocx, DOCX_BIB_FIELD, type BibSource } from '../editor/extensions/bibliographyEntry';
 import { normalizePageDecor, type PageDecor } from '../storage/pageDecor';
 import { DEFAULT_LINE_NUMBERING, normalizeLineNumbering, type LineNumbering } from '../storage/lineNumbering';
@@ -196,6 +196,7 @@ const DEFAULT_FONTS = new Set(['times new roman', 'liberation serif']);
 // Headings render sans (HEADING_FONT); Word writes Arial, LibreOffice Liberation Sans.
 const DEFAULT_HEADING_FONTS = new Set(['arial', 'liberation sans']);
 const LIST_LEFT_STEP_CM = 1.27; // matches export/docx.ts
+const LIST_HANGING_CM = 0.635; // matches export/docx.ts
 const LIST_INDENT_EPS_CM = 0.05;
 const LINK_BLUE = '#0563C1'; // the visual the exporter paints on hyperlink runs
 
@@ -541,6 +542,30 @@ function tocHeading(content: Element | null): string | null {
   return text && text.length <= 60 ? text : null;
 }
 
+// One cached row of an index field: its text up to the last tab, the page number after
+// it, the level from its entry style. The index shows these as saved until updated.
+function cachedIndexEntry(p: Element, ctx: Ctx, kind: IndexKind, pages: boolean): TocEntry | null {
+  let text = '';
+  for (const r of Array.from(p.getElementsByTagNameNS(W, 'r'))) {
+    for (const c of Array.from(r.children)) {
+      if (c.namespaceURI === W && c.localName === 't') text += c.textContent ?? '';
+      else if (c.namespaceURI === W && c.localName === 'tab') text += '\t';
+    }
+  }
+  // An INDEX field without \e puts ", " before the numbers instead of a tab.
+  const comma = pages && kind === 'alphabetical' && !text.includes('\t') ? /,\s*(?=\d[\d,;\s]*$)/.exec(text) : null;
+  const cut = comma ? comma.index : pages ? text.lastIndexOf('\t') : -1;
+  const body = (cut < 0 ? text : text.slice(0, cut)).replace(/\t+/g, ' ').trim();
+  const nums = cut < 0 ? [] : text.slice(cut + (comma ? comma[0].length : 1)).split(/[,;]/).map((n) => parseInt(n, 10)).filter((n) => n > 0);
+  // An alphabetical index's letter rows carry no number and are not entries.
+  if (!body || (kind === 'alphabetical' && pages && !nums.length)) return null;
+  // A style the file names but does not define still says its level in its id (TOC2).
+  const id = styleIdOf(fc(p, 'pPr'), ctx) ?? '';
+  const name = ctx.styleNames.get(id);
+  const level = Number((name ? INDEX_LEVEL_STYLES[kind]?.exec(name) : /(\d+)$/.exec(id))?.[1]) || 1;
+  return { text: body, level: Math.min(MAX_HEADING_LEVEL, level), page: nums[0] ?? 1, ...(nums.length > 1 ? { pages: nums } : {}) };
+}
+
 // Word's own cursor bookkeeping, never a reference target.
 const BOOKMARK_SKIP = new Set(['_GoBack']);
 
@@ -610,8 +635,9 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
     }
   };
   // Table-of-contents field tracking (see scanTocField). A TOC node is emitted for the
-  // body only; its cached paragraphs are skipped. The node view regenerates entries live.
+  // body only; its cached paragraphs (a bibliography's table rows) become its entries.
   const tocState: TocFieldState = { fieldDepth: 0, tocDepth: -1, instr: [] };
+  let cachedInto: { entries: TocEntry[]; kind: IndexKind; pages: boolean } | null = null;
   // Floating tables, each with the place in `out` its anchor follows (floatingTableBox).
   const floatBoxes: { box: Node; at: number }[] = [];
 
@@ -641,7 +667,7 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
       if ((/\bINDEX\b/.test(simple) || /\bBIBLIOGRAPHY\b/.test(simple)) && kind === 'body') {
         flush();
         const index = /\bBIBLIOGRAPHY\b/.test(simple) ? 'bibliography' : 'alphabetical';
-        out.push({ type: 'tableOfContents', attrs: { entries: [], title: '', index,
+        out.push({ type: 'tableOfContents', attrs: { entries: null, title: '', index,
           ...(index === 'bibliography' ? { citationStyle: ctx.citationStyle } : {}) } });
         continue;
       }
@@ -655,13 +681,19 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
         // being its own three, as the ODF side reads them off its entry templates.
         const levels = index === 'bibliography' ? null : tocMaxLevel(instr);
         const levelStyles = levels == null ? null : tocLevelStyles(ctx, levels, index);
-        out.push({ type: 'tableOfContents', attrs: { entries: [], title: '', index, ...tocPageNumbers(instr),
+        const pageNumbers = tocPageNumbers(instr);
+        cachedInto = { entries: [], kind: index, pages: pageNumbers.pageNumbers !== false && index !== 'bibliography' };
+        out.push({ type: 'tableOfContents', attrs: { entries: cachedInto.entries, title: '', index, ...pageNumbers,
           ...tocRowTab(el, ctx),
           ...(levels == null ? {} : { maxLevel: levels }),
           ...(levelStyles ? { levelStyles } : {}),
           ...(index === 'bibliography' ? { citationStyle: ctx.citationStyle } : {}) } });
       }
-      if (startedInToc || emit) continue;
+      if (startedInToc || emit) {
+        const entry = cachedInto && kind === 'body' ? cachedIndexEntry(el, ctx, cachedInto.kind, cachedInto.pages) : null;
+        if (entry) cachedInto!.entries.push(entry);
+        continue;
+      }
       const num = paragraphNum(el, ctx);
       if (num) {
         breakPending = false; // a break before a list item can't be modeled; drop it
@@ -671,11 +703,11 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
         if (top && top.ilvl === num.ilvl && top.numId !== num.numId) { closeTop(); top = stack[stack.length - 1]; }
         // Only the item's own level takes its w:ind; the levels opened above it to reach
         // it have no item of their own to speak for them.
-        const ownLeft = listIndentTwip(el);
+        const own = listItemIndent(el, ctx);
         while (stack.length === 0 || stack[stack.length - 1].ilvl < num.ilvl) {
           const ilvl = stack.length ? stack[stack.length - 1].ilvl + 1 : 0;
           stack.push({ ilvl, numId: num.numId,
-            list: makeListNode(ctx, num.numId, ilvl, ilvl === num.ilvl ? ownLeft : null) });
+            list: makeListNode(ctx, num.numId, ilvl, ilvl === num.ilvl ? own : EMPTY_ITEM_INDENT) });
           if (ilvl === num.ilvl) break;
         }
         const targetList = stack[stack.length - 1].list;
@@ -694,8 +726,14 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
         breakPending = trailingBreak;
       }
     } else if (tocState.tocDepth >= 0) {
-      // Still inside an open TOC/INDEX/BIBLIOGRAPHY field: whatever carries its cached
-      // result is skipped, the paragraphs above and a bibliography's table alike.
+      // Still inside an open TOC/INDEX/BIBLIOGRAPHY field: a bibliography's table holds
+      // one source per row.
+      if (el.localName === 'tbl' && cachedInto) {
+        for (const tr of fcAll(el, 'tr')) {
+          const text = fcAll(tr, 'tc').map((tc) => (tc.textContent ?? '').trim()).filter(Boolean).join(' ');
+          if (text) cachedInto.entries.push({ text, level: 1, page: 1 });
+        }
+      }
       continue;
     } else if (el.localName === 'tbl') {
       // A page break ending the paragraph above, or Word's own spelling of one: the first
@@ -724,9 +762,12 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
           const maxLevel = tocMaxLevel(instr);
           const sdtKind = tocIndexKind(instr);
           const levelStyles = tocLevelStyles(ctx, maxLevel, sdtKind);
+          const heading = tocHeading(content);
+          const pages = tocPageNumbers(instr).pageNumbers !== false;
+          const rows = content ? fcAll(content, 'p').slice(heading == null ? 0 : 1) : [];
           out.push({ type: 'tableOfContents', attrs: {
-            entries: [],
-            title: tocHeading(content) ?? '',
+            entries: rows.map((p) => cachedIndexEntry(p, ctx, sdtKind, pages && sdtKind !== 'bibliography')).filter((e) => e != null),
+            title: heading ?? '',
             maxLevel,
             index: sdtKind,
             ...tocPageNumbers(instr),
@@ -796,17 +837,30 @@ function listBaseCycle(ctx: Ctx, numId: number, ilvl: number): OrderedCycle {
   return cycle;
 }
 
-// `ownLeftTwip`: the item's own w:pPr/w:ind w:left, which overrides the level's — Word
-// resolves direct paragraph properties over the numbering's. The editor keeps one indent
-// per list, so the item opening it is the one that sets it.
-// A list item's own left indent (twips), direct w:pPr only — as blockAttrs reads the
-// other indents.
-function listIndentTwip(el: Element): number | null {
-  const ind = fc(fc(el, 'pPr'), 'ind');
-  return ind ? intAttr(ind, W, 'left') ?? intAttr(ind, W, 'start') : null;
+// A list item's own left indent and hang (twips), which override the level's — Word
+// resolves direct paragraph properties over the numbering's. The editor keeps one
+// geometry per list, so the item opening it is the one that sets it. A character count
+// wins over the twips and counts in the paragraph style's size, as blockAttrs reads it.
+type ItemIndent = { left: number | null; hang: number | null };
+const EMPTY_ITEM_INDENT: ItemIndent = { left: null, hang: null };
+function listItemIndent(el: Element, ctx: Ctx): ItemIndent {
+  const ppr = fc(el, 'pPr');
+  const ind = fc(ppr, 'ind');
+  if (!ind) return EMPTY_ITEM_INDENT;
+  const charTwip = blockDefaults(ctx.styles.paragraphRun(styleIdOf(ppr, ctx)), null, false).fontSizePt * 20 / 100;
+  const pick = (chars: string, twips: string) => {
+    const c = intAttr(ind, W, chars);
+    return c ? Math.round(c * charTwip) : intAttr(ind, W, twips);
+  };
+  const hanging = pick('hangingChars', 'hanging');
+  const first = pick('firstLineChars', 'firstLine');
+  return {
+    left: pick('leftChars', 'left') ?? intAttr(ind, W, 'start'),
+    hang: hanging ?? (first != null ? -first : null),
+  };
 }
 
-function makeListNode(ctx: Ctx, numId: number, ilvl: number, ownLeftTwip: number | null = null): Node {
+function makeListNode(ctx: Ctx, numId: number, ilvl: number, own: ItemIndent = EMPTY_ITEM_INDENT): Node {
   const def = ctx.styles.level(numId, ilvl);
   const bullet = !def.numFmt || def.numFmt === 'bullet' || def.numFmt === 'none';
   // A linked numbering style travels as `listStyleName` on the outermost list; its
@@ -836,7 +890,7 @@ function makeListNode(ctx: Ctx, numId: number, ilvl: number, ownLeftTwip: number
     }
     if (def.start != null && def.start > 1) attrs.start = def.start;
   }
-  const ownLeft = ownLeftTwip ?? def.leftTwip;
+  const ownLeft = own.left ?? def.leftTwip;
   if (ownLeft != null) {
     // A level's w:ind w:left is absolute, the editor nests one LIST_LEFT_STEP_CM per
     // level — so the attr is this level's step past the one above. Signed (w:left="360"
@@ -850,6 +904,9 @@ function makeListNode(ctx: Ctx, numId: number, ilvl: number, ownLeftTwip: number
     if (Math.abs(extra) > LIST_INDENT_EPS_CM) attrs.indent = extra;
   }
   if (def.rightAligned) attrs.markerAlign = 'right';
+  const hang = own.hang ?? def.hangingTwip;
+  if (hang != null && Math.abs(twipToCm(hang) - LIST_HANGING_CM) > LIST_INDENT_EPS_CM) attrs.hanging = round2(twipToCm(hang));
+  if (def.suffix === 'space' || def.suffix === 'nothing') attrs.markerSuffix = def.suffix;
   const node: Node = { type: bullet ? 'bulletList' : 'orderedList', content: [] };
   if (Object.keys(attrs).length) node.attrs = attrs;
   return node;
@@ -1268,6 +1325,12 @@ function convertParagraph(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault:
     baked ? ctx.styles.paragraphSpacing(styleId, kind === 'cell' ? ctx.cellSpacing : undefined) : {},
     bidi ?? ctx.pageRtl, kind === 'zone' ? null : styleJc);
   applyContextualSpacing(el, ppr, ctx, styleId, attrs);
+  // A direct left indent at or below 0 still overrides the style's own one.
+  const ind = kind !== 'list' && !baked ? fc(ppr, 'ind') : null;
+  const directLeft = ind && !intAttr(ind, W, 'leftChars') ? intAttr(ind, W, 'left') ?? intAttr(ind, W, 'start') : null;
+  if (directLeft != null && attrs.indent == null && (ctx.styles.styleIndentTwip(styleId) ?? 0) > 0) {
+    attrs.indent = Math.max(0, round2(twipToCm(directLeft)));
+  }
   // The editor has no rule node, so Word's horizontal line becomes its paragraph's own
   // bottom rule — a real w:pBdr keeps precedence, only one line can be drawn.
   const hr = hrBorderAttr(el);
@@ -1297,7 +1360,11 @@ function convertParagraph(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault:
     attrs.widowControl = false;
   }
   const directKn = fc(ppr, 'keepNext');
-  if (!level && (directKn ? onOff(directKn) : ctx.styles.paragraphKeepNext(styleId))) attrs.keepNext = true;
+  const kn = directKn ? onOff(directKn) : ctx.styles.paragraphKeepNext(styleId);
+  if (!level && kn) attrs.keepNext = true;
+  // A heading style the file defines without it (or a plain style given an outline level)
+  // lets the heading end a page; one the file only names is Word's built-in, which keeps.
+  if (level && !kn && (directKn || !styleId || ctx.styles.definesParagraphStyle(styleId))) attrs.keepNext = false;
   const directKl = fc(ppr, 'keepLines');
   if (!level && (directKl ? onOff(directKl) : ctx.styles.paragraphKeepLines(styleId))) attrs.keepLines = true;
   // "Don't hyphenate this paragraph" — only formatting where the document hyphenates
@@ -1343,10 +1410,12 @@ function convertParagraph(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault:
     if (name !== (level ? `Heading ${level}` : DEFAULT_STYLE)) attrs.styleName = name;
   }
 
-  // The paragraph mark's own run props (w:pPr/w:rPr) set the line-height floor for
-  // every line, not just an empty one — a block whose text is smaller than its style
-  // would otherwise keep the style's taller strut. Carried as a block attr.
-  const fs = paragraphMarkFontSize(ppr, ctx, baseRun, defaults.fontSizePt);
+  // The block's size is the strut of every line. LibreOffice sets a line with text by its
+  // runs alone (probed: a 28pt and a 10pt mark over 12pt text, 4.9mm pitch both), so runs
+  // agreeing on a size set it; the mark's own (w:pPr/w:rPr) only where they do not.
+  const runSize = uniformRunSize(content);
+  const ownSize = Math.abs(ownSizePt - defaults.fontSizePt) > 0.05 ? `${Math.round(ownSizePt * 10) / 10}pt` : null;
+  const fs = runSize !== undefined ? runSize ?? ownSize : paragraphMarkFontSize(ppr, ctx, baseRun, defaults.fontSizePt);
   if (fs) attrs.fontSize = fs;
   const ff = paragraphMarkFont(ppr, ctx, baseRun, defaults);
   if (ff.west) attrs.fontFamily = ff.west;
@@ -1378,6 +1447,14 @@ function applyContextualSpacing(el: Element, ppr: Element | null, ctx: Ctx, styl
 // The paragraph mark's resolved font size (w:pPr/w:rPr, incl. its rStyle), as a CSS
 // pt string, or null when it matches what the block renders at anyway (suppressed
 // like run sizes, against the same yardstick).
+// The size every text run of a block shares: null where each keeps the one it was
+// measured against (`runDefaults`), undefined where there is no text or they differ.
+function uniformRunSize(content: Node[]): string | null | undefined {
+  const sizes = new Set(content.filter((n) => n.type === 'text')
+    .map((n) => (n.marks?.find((m) => m.type === 'textStyle')?.attrs?.fontSize as string | undefined) ?? null));
+  return sizes.size === 1 ? [...sizes][0] : undefined;
+}
+
 function paragraphMarkFontSize(ppr: Element | null, ctx: Ctx, baseRun: RunProps, defaultPt: number): string | null {
   const rPr = fc(ppr, 'rPr');
   const rStyle = fc(rPr, 'rStyle');
@@ -1449,8 +1526,9 @@ function blockAttrs(ppr: Element | null, kind: BlockKind, headingLevel: number |
   }
 
   const sp = ppr ? fc(ppr, 'spacing') : null;
-  const before = (sp ? intAttr(sp, W, 'before') : null) ?? styleSpacing.before ?? null;
-  const after = (sp ? intAttr(sp, W, 'after') : null) ?? styleSpacing.after ?? null;
+  const own: ParaSpacing = sp ? readSpacing(sp) : {};
+  const before = own.before ?? styleSpacing.before ?? null;
+  const after = own.after ?? styleSpacing.after ?? null;
   const line = (sp ? intAttr(sp, W, 'line') : null) ?? styleSpacing.line ?? null;
   const rule = (sp && sp.getAttributeNS(W, 'lineRule')) || styleSpacing.lineRule || null;
   // An attribute no layer sets is Word's implied 0, which is also the editor's paragraph
@@ -2307,11 +2385,16 @@ function convertDrawing(drawing: Element, ctx: Ctx): Node | Node[] | null {
   const xfrm = drawing.getElementsByTagNameNS(A, 'xfrm')[0];
   const rot = xfrm ? parseInt(xfrm.getAttribute('rot') ?? '', 10) : NaN;
   if (Number.isFinite(rot) && rot) attrs.rotation = ((Math.round(rot / 60000) % 360) + 360) % 360;
+  // a:srcRect in thousandths of a percent; a negative side pads instead, which is not kept.
+  const rect = drawing.getElementsByTagNameNS(A, 'srcRect')[0];
+  const side = (k: string) => Math.max(0, intAttr(rect ?? null, '', k) ?? 0) / 100000;
+  const crop = rect && cropOf({ l: side('l'), t: side('t'), r: side('r'), b: side('b') });
+  if (crop) attrs.crop = crop;
 
   if (anchor) {
-    const { wrap, offsetCm, offsetYCm, fromPage, fromBody, alignH, distCm } = anchorWrap(anchor, ctx);
+    const { wrap, offsetCm, offsetYCm, fromPage, fromBody, alignH, distCm, alignXCm } = anchorWrap(anchor, ctx);
     attrs.wrap = wrap;
-    if (offsetCm != null) attrs.wrapOffset = offsetCm;
+    if ((offsetCm ?? alignXCm) != null) attrs.wrapOffset = offsetCm ?? alignXCm;
     if (offsetYCm != null) attrs.wrapOffsetY = offsetYCm;
     if (fromPage) attrs.wrapFromPage = true;
     if (fromBody) attrs.wrapFromBody = true;
@@ -2464,9 +2547,9 @@ function chartImage(drawing: Element, box: { w: number; h: number }, ctx: Ctx): 
 function frameNode(src: string, box: { w: number; h: number }, label: string, anchor: Element | undefined, ctx: Ctx): Node {
   const attrs: Record<string, unknown> = { src, width: box.w, height: box.h, alt: label };
   if (anchor) {
-    const { wrap, offsetCm, offsetYCm, fromPage, fromBody, alignH, distCm } = anchorWrap(anchor, ctx);
+    const { wrap, offsetCm, offsetYCm, fromPage, fromBody, alignH, distCm, alignXCm } = anchorWrap(anchor, ctx);
     attrs.wrap = wrap;
-    if (offsetCm != null) attrs.wrapOffset = offsetCm;
+    if ((offsetCm ?? alignXCm) != null) attrs.wrapOffset = offsetCm ?? alignXCm;
     if (offsetYCm != null) attrs.wrapOffsetY = offsetYCm;
     if (fromPage) attrs.wrapFromPage = true;
     if (fromBody) attrs.wrapFromBody = true;
@@ -2496,9 +2579,10 @@ function anchorOffsetY(anchor: Element): { cm: number | null; fromPage: boolean;
   if (!Number.isFinite(off)) return none;
   // The exporter floors this offset at one twip (LO derails on 0); sub-visible
   // remainders round back to none, not to a 0 that would accrete as an attribute.
-  // A page-relative one keeps its sign — a cover block may start above the page top.
+  // A page-relative one keeps its sign — a cover block may start above the page top —
+  // and so does one in front of or behind the text (anchorWrap drops it for the rest).
   const cm = round2(off / 360000);
-  return { cm: fromPage || fromBody || cm > 0 ? cm : null, fromPage, fromBody };
+  return { cm: fromPage || fromBody || cm !== 0 ? cm : null, fromPage, fromBody };
 }
 
 // The frame's own x in the text column, cm from its left edge. null where the file
@@ -2510,6 +2594,8 @@ function anchorOffsetX(anchor: Element, ctx: Ctx): number | null {
   const off = parseInt(posH?.getElementsByTagNameNS(WP, 'posOffset')[0]?.textContent ?? '', 10);
   if (!Number.isFinite(off)) return null;
   const from = posH?.getAttribute('relativeFrom');
+  // At its anchor character is where a frame without an x of its own sits.
+  if (from === 'character' && off === 0) return null;
   const base = from === 'page' || from === 'leftMargin' ? -cmToEmu(ctx.leftMarginCm)
     : from === 'rightMargin' ? cmToEmu(ctx.contentWidthCm) : 0;
   return round2((off + base) / 360000);
@@ -2518,7 +2604,7 @@ function anchorOffsetX(anchor: Element, ctx: Ctx): number | null {
 // Wrap mode and place are independent: the mode is what the file's wrap element says,
 // the place its position offsets. Only where neither names a side does the frame's own
 // x decide which half of the column it fills (text flows on one side of a CSS float).
-function anchorWrap(anchor: Element, ctx: Ctx): { wrap: 'left' | 'right' | 'topBottom' | 'through'; offsetCm: number | null; offsetYCm: number | null; fromPage: boolean; fromBody: boolean; alignH: 'left' | 'right' | null; distCm: number | null } {
+function anchorWrap(anchor: Element, ctx: Ctx): { wrap: 'left' | 'right' | 'topBottom' | 'through'; offsetCm: number | null; offsetYCm: number | null; fromPage: boolean; fromBody: boolean; alignH: 'left' | 'right' | null; distCm: number | null; alignXCm: number | null } {
   const { cm: offsetYCm, fromPage, fromBody } = anchorOffsetY(anchor);
   const offsetCm = anchorOffsetX(anchor, ctx);
   const align = anchor.getElementsByTagNameNS(WP, 'positionH')[0]
@@ -2533,10 +2619,21 @@ function anchorWrap(anchor: Element, ctx: Ctx): { wrap: 'left' | 'right' | 'topB
     const emu = parseInt(anchor.getAttribute(wrap === 'right' ? 'distL' : 'distR') ?? '', 10);
     return Number.isFinite(emu) && emu > 0 ? round2(emu / 360000) : null;
   };
-  const at = (wrap: 'left' | 'right' | 'topBottom' | 'through') => ({ wrap, offsetCm, offsetYCm, fromPage, fromBody, alignH, distCm: distOf(wrap) });
+  // A wrapped frame can't start above its paragraph; a run-through one simply overlaps.
+  const y = (wrap: string) => (offsetYCm != null && offsetYCm < 0 && wrap !== 'through' && !fromPage && !fromBody ? null : offsetYCm);
+  const at = (wrap: 'left' | 'right' | 'topBottom' | 'through') => ({ wrap, offsetCm, alignXCm: null as number | null, offsetYCm: y(wrap), fromPage, fromBody, alignH, distCm: distOf(wrap) });
+  const cx = intAttr(anchor.getElementsByTagNameNS(WP, 'extent')[0], '', 'cx') ?? 0;
   // wrapNone is Word's in-front-of / behind-text: the text runs through the frame, so it
   // reserves neither width nor height. behindDoc picks the side of the text it lands on.
-  if (anchor.getElementsByTagNameNS(WP, 'wrapNone')[0]) return at('through');
+  // Nothing floats a picture to a side, so its alignment in the column becomes that x
+  // (alignXCm); a text box keeps the alignment itself (wrapAlign).
+  if (anchor.getElementsByTagNameNS(WP, 'wrapNone')[0]) {
+    const from = anchor.getElementsByTagNameNS(WP, 'positionH')[0]?.getAttribute('relativeFrom');
+    const room = cmToEmu(ctx.contentWidthCm) - cx;
+    const x = offsetCm != null || (from !== 'margin' && from !== 'column') ? null
+      : alignH === 'right' ? room : align === 'center' ? room / 2 : alignH === 'left' ? 0 : null;
+    return { ...at('through'), alignXCm: x == null ? null : round2(x / 360000) };
+  }
   if (anchor.getElementsByTagNameNS(WP, 'wrapTopAndBottom')[0]) return at('topBottom');
   const wt = anchor.getElementsByTagNameNS(WP, 'wrapSquare')[0]?.getAttribute('wrapText');
   if (wt === 'right') return at('left'); // text on right ⇒ image on left
@@ -2544,7 +2641,6 @@ function anchorWrap(anchor: Element, ctx: Ctx): { wrap: 'left' | 'right' | 'topB
   if (align === 'right' || align === 'outside') return at('right');
   if (align) return at('left');
   if (offsetCm == null) return at('left');
-  const cx = intAttr(anchor.getElementsByTagNameNS(WP, 'extent')[0], '', 'cx') ?? 0;
   return at(cmToEmu(offsetCm) + cx / 2 > cmToEmu(ctx.contentWidthCm) / 2 ? 'right' : 'left');
 }
 

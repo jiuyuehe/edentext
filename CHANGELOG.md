@@ -2,6 +2,43 @@
 
 <!-- Newest release first. New entries go here: ## [x.y.z] — YYYY-MM-DD -->
 
+## [0.7.0] — 2026-09-29
+
+EdenText now speaks Japanese, and Chinese and Japanese documents get the typography they need:
+separate Latin and East Asian fonts, the page's line grid, indents counted in characters and
+emphasis marks. Headers and footers become full documents of their own, and pictures and frames land
+where their file puts them.
+
+### Added
+- **Japanese as a program and document language**, with Japanese font names, 「」 quotes and
+  ア/イ list numbering
+- **Separate Latin and East Asian fonts and languages** — a paragraph can set English in
+  Liberation Serif and Chinese in SimSun side by side; both formats keep the pair, and picking
+  a font sets the side it belongs to
+- **The page's line grid**, read, written and laid out, with SimSun and FangSong at their own
+  line heights, and a fixed line spacing in the paragraph dialog
+- **Indents counted in characters**, the Chinese named font sizes, emphasis marks (着重号) and
+  typed quotes that follow the language at the caret
+- **Headers and footers hold anything the body does** — tables, lists, positioned pictures and
+  text boxes — in both formats
+- **Indexes keep their saved rows** until updated, and an update can renew the page numbers alone
+- **A picture keeps its crop**; a list keeps its label's hang and the suffix after it
+- Built-in style names and the format buttons speak the UI language, and dialogs move by their title
+
+### Fixed
+- Line heights follow the font's own metrics and the tallest run on the line, not the paragraph mark
+- Pictures and frames in front of, behind or beside the text keep their position, alignment and
+  stacking order, in the column, at the page corner and in DOCX
+- A page break survives edits around it, a block pushed to the next page opens at its section's
+  top margin, and a chapter reopening its master starts on the right sheet
+- An imported document the schema rejects is repaired instead of opening broken
+- A lost autosave no longer leaves its page setup behind, and a quick reload keeps its pictures
+- East Asian text stays out of the spell and grammar check; catalog mistranslations corrected
+
+### Changed
+- The site deploys only after every CI leg passes, and an asset failing to load after start-up is
+  reported
+
 ## [0.6.0] — 2026-09-21
 
 Chinese, in both scripts and on both sides of the document: the UI speaks it, a paragraph can be
@@ -435,8 +472,7 @@ The gap against Word/LibreOffice, most valuable first. Reviewed 2026-09-13.
 
 **Content an imported document loses**
 - Charts are **drawn** from the file (`import/chart.ts`: DrawingML `chartN.xml` and ODF `chart:chart`), but as a picture, not a chart object — a re-export carries the drawing and the numbers behind it are no longer editable. The same holds for an **EMF** metafile (`import/emf.ts`): it is drawn, but as the SVG picture it was rebuilt into, and only from the record set a plot consists of — a hatched brush, a clipping region or a rotated bitmap is skipped. **WMF/SVM** metafiles and OLE objects still keep their box and a placeholder label, and export writes that back out: WMF is a different (16-bit) record format, SVM is StarOffice-proprietary, and an OLE object cannot be rendered without its application
-- A **text box in the header/footer** keeps its text but not its box: the zone is a one-paragraph document, so no block node fits in it and the box's paragraphs become lines of the zone ahead of the one that anchors it. Lists and tables flatten to text; floating DOCX drawings are removed, while inline images remain. A positioned box therefore reads in the zone's own flow rather than at its corner. An ODF **shape group** (`draw:g`) still drops with the "Drawings were removed" warning; DOCX drawing groups open as their individual frames
-- A table of contents is **regenerated** on load, never read from the field's cached rows — so an index whose producer left headings out of its cache comes back listing every heading in the document. Reading the rows instead is the opposite of a live index; what the file says *about* the rows (depth, leader, tab stop, entry styles, page numbers) is read
+- An ODF **shape group** (`draw:g`) still drops with the "Drawings were removed" warning; DOCX drawing groups open as their individual frames
 - **Nested tables** flatten to paragraphs on import and cannot be authored. A section has at most three columns; tables and text boxes inside a multi-column section move outside that section on import
 - A drawing tool: a freeform, a polygon or a connector **imports, draws and saves** (see below), but there is no way to author one here. A Word connector preset (`bentConnector3`) is also still dropped — Word resolves that geometry and writes no path for it
 
@@ -586,8 +622,3 @@ merely unimplemented belongs in the list above, not here.
   `text-autospace` has; Word sets ¼ em and LibreOffice ⅕ em (measured). CSS has
   no amount for it, so a line mixing both scripts runs ~1mm short per few
   boundaries. Noted 2026-09-26.
-- **Deliberate, not a defect:** a table of contents shows live page numbers.
-  LibreOffice and Word print the numbers cached in the file until the reader
-  updates the index, so a document whose cache is stale disagrees with us (the
-  deputy-standards fixture caches page 7 for a heading that is on page 8 in both
-  renderings). Noted 2026-08-11.

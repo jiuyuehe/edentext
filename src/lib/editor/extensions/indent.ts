@@ -174,15 +174,15 @@ export const Indent = Extension.create({
               };
             },
           },
-          // Left indent in characters of the block's size (w:leftChars, ODF's `ic`);
-          // excludes `indent`.
+          // Left indent in characters of the paragraph style's size (w:leftChars, ODF's
+          // `ic`; `--char-unit`, styleSheet.ts); excludes `indent`.
           indentChars: {
             default: null,
             parseHTML: (element: HTMLElement) => parseIndent(element.getAttribute('data-indent-chars')),
             renderHTML: (attributes: Record<string, unknown>) => {
               if (attributes.indentChars == null) return {};
               const n = Number(attributes.indentChars);
-              return { 'data-indent-chars': String(n), style: `margin-left: calc(var(--sec-inset-left, 0px) + ${n}em)` };
+              return { 'data-indent-chars': String(n), style: `margin-left: calc(var(--sec-inset-left, 0px) + ${n} * var(--char-unit, 1em))` };
             },
           },
           // Right indent in characters, the mirror of `indentChars`.
@@ -192,7 +192,7 @@ export const Indent = Extension.create({
             renderHTML: (attributes: Record<string, unknown>) => {
               if (attributes.indentRightChars == null) return {};
               const n = Number(attributes.indentRightChars);
-              return { 'data-indent-right-chars': String(n), style: `margin-right: calc(var(--sec-inset-right, 0px) + ${n}em)` };
+              return { 'data-indent-right-chars': String(n), style: `margin-right: calc(var(--sec-inset-right, 0px) + ${n} * var(--char-unit, 1em))` };
             },
           },
           // Right indent in cm (fo:margin-right / w:ind w:right), the mirror of `indent`.
@@ -222,15 +222,15 @@ export const Indent = Extension.create({
               };
             },
           },
-          // First-line indent in characters of the block's size (w:firstLineChars, ODF's
-          // `ic`), the unit East Asian text indents by; excludes `indentFirst`.
+          // First-line indent in characters of the paragraph style's size (w:firstLineChars,
+          // ODF's `ic`), the unit East Asian text indents by; excludes `indentFirst`.
           indentFirstChars: {
             default: null,
             parseHTML: (element: HTMLElement) => parseIndent(element.getAttribute('data-indent-first-chars')),
             renderHTML: (attributes: Record<string, unknown>) => {
               if (attributes.indentFirstChars == null) return {};
               const n = Number(attributes.indentFirstChars);
-              return { 'data-indent-first-chars': String(n), style: `text-indent: ${n}em` };
+              return { 'data-indent-first-chars': String(n), style: `text-indent: calc(${n} * var(--char-unit, 1em))` };
             },
           },
         },

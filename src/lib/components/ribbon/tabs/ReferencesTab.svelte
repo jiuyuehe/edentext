@@ -4,6 +4,7 @@
   import RibbonButton from '../RibbonButton.svelte';
   import CaptionDialog from '../../CaptionDialog.svelte';
   import BibliographyDialog from '../../BibliographyDialog.svelte';
+  import IndexUpdateDialog from '../../IndexUpdateDialog.svelte';
   import type { IndexKind } from '../../../editor/extensions/tableOfContents';
   import { anchored, clickOutside, isMenuOpen, toggleMenu, closeMenu } from '../menu.svelte';
   import type { HfZone } from '../../../storage/headerFooter';
@@ -30,10 +31,17 @@
     });
     return found;
   });
+  let hasIndex = $derived.by(() => {
+    if (tick < 0 || !editor) return false;
+    let found = false;
+    editor.state.doc.descendants((node) => { if (node.type.name === 'tableOfContents') found = true; return !found; });
+    return found;
+  });
   const LEVELS = HEADING_LEVELS;
   const INDEX_KINDS: IndexKind[] = ['toc', 'figures', 'tables', 'alphabetical', 'bibliography'];
   let captionOpen = $state(false);
   let citationOpen = $state(false);
+  let updateOpen = $state(false);
   let hasSelection = $derived(tick >= 0 && !!editor && !editor.state.selection.empty);
 
   // The selected text is the term unless the reader gives another — the same prompt
@@ -129,6 +137,16 @@
       </div>
     {/if}
   </div>
+  <!-- An index shows what it last listed, as in both word processors, until this: the
+       dialog offers Word's two choices, the whole index or its page numbers alone. -->
+  <RibbonButton
+    variant="big"
+    icon="update"
+    label={t().ribbon.tocUpdate}
+    title={t().ribbon.tocUpdateTitle}
+    disabled={!hasIndex}
+    onclick={() => (updateOpen = true)}
+  />
 </RibbonGroup>
 
 <div class="ribbon-sep"></div>
@@ -224,6 +242,7 @@
 
 <CaptionDialog bind:open={captionOpen} {editor} />
 <BibliographyDialog bind:open={citationOpen} {editor} />
+<IndexUpdateDialog bind:open={updateOpen} onPick={(mode) => editor?.chain().focus().updateIndexes(mode).run()} />
 
 <style>
   .rb-menu-wrap { position: relative; }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Schema, type Node as PMNode } from '@tiptap/pm/model';
 import { EditorState, type Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { blockDeco, isBlockDeco, repairBlockDecos } from '../../src/lib/editor/extensions/pageBreaks';
+import { blockDeco, isRepairable, repairDecos, spacerDeco } from '../../src/lib/editor/extensions/pageBreaks';
 
 const schema = new Schema({
   nodes: {
@@ -26,8 +26,8 @@ function insets(doc: PMNode): DecorationSet {
 // What the plugin does on a doc change: map, and repair where the mapping dropped one.
 function remap(before: DecorationSet, tr: Transaction): Array<[number, number]> {
   let dropped = false;
-  const mapped = before.map(tr.mapping, tr.doc, { onRemove: (spec) => { dropped ||= isBlockDeco(spec); } });
-  const after = dropped ? repairBlockDecos(before, mapped, tr) : mapped;
+  const mapped = before.map(tr.mapping, tr.doc, { onRemove: (spec) => { dropped ||= isRepairable(spec); } });
+  const after = dropped ? repairDecos(before, mapped, tr) : mapped;
   return after.find().map((d) => [d.from, d.to]);
 }
 
@@ -67,5 +67,20 @@ describe('block decorations across a doc change', () => {
     const before = insets(tr.doc);
     tr.insertText('x', 2);
     expect(remap(before, tr)).toEqual([[0, 6], [6, 11]]);
+  });
+
+  it('keeps a spacer whose neighbours had their attrs changed', () => {
+    const tr = state().tr;
+    const before = DecorationSet.create(tr.doc, [spacerDeco(5, () => document.createElement('div'), 's40')]);
+    tr.setNodeMarkup(0, schema.nodes.paragraph, {}).setNodeMarkup(5, schema.nodes.paragraph, {});
+    expect(before.map(tr.mapping, tr.doc).find()).toHaveLength(0);
+    expect(remap(before, tr)).toEqual([[5, 5]]);
+  });
+
+  it('drops a spacer whose block below is gone', () => {
+    const tr = state().tr;
+    const before = DecorationSet.create(tr.doc, [spacerDeco(5, () => document.createElement('div'), 's40')]);
+    tr.delete(0, 10).insert(0, para('x'));
+    expect(remap(before, tr)).toEqual([]);
   });
 });

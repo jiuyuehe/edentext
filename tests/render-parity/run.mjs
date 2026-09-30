@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, basename, extname, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
-import { compare, toLines } from './compare.mjs';
+import { compare, compareImages, toLines } from './compare.mjs';
 import { devServer, settle, extractLayout } from '../browser.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -49,7 +49,9 @@ function loRender(file, work, cache) {
     copyFileSync(out, pdf);
     copyFileSync(join(work, 'ref.xml'), xml);
   }
-  return { pages: parseBbox(readFileSync(xml, 'utf8')), pdf, cached: hit };
+  const imgs = join(CACHE, key + '.img.json');
+  if (!cache || !existsSync(imgs)) writeFileSync(imgs, JSON.stringify(pdfImages(pdf, work)));
+  return { pages: parseBbox(readFileSync(xml, 'utf8')), images: JSON.parse(readFileSync(imgs, 'utf8')), pdf, cached: hit };
 }
 
 // A PDF of the same name beside the document is the reference in LibreOffice's place:
@@ -58,7 +60,26 @@ function pdfReference(file) {
   const pdf = file.slice(0, -extname(file).length) + '.pdf';
   if (!existsSync(pdf)) return null;
   const xml = execFileSync('pdftotext', ['-bbox-layout', pdf, '-'], { maxBuffer: 1 << 28 }).toString();
-  return { pages: parseBbox(xml), pdf, cached: false, source: 'PDF' };
+  return { pages: parseBbox(xml), images: pdfImages(pdf, tmpdir()), pdf, cached: false, source: 'PDF' };
+}
+
+// Every picture the PDF places, as { page, x, y, w, h } in mm: pdftotext sees none of
+// them. pdftohtml lists them only while writing each one out, so it writes into a
+// directory of its own that goes again.
+function pdfImages(pdf, work) {
+  const dir = mkdtempSync(join(work, 'img-'));
+  try {
+    const xml = execFileSync('pdftohtml', ['-xml', '-zoom', '1', '-q', '-stdout', pdf, join(dir, 'i')],
+      { maxBuffer: 1 << 28 }).toString();
+    const out = [];
+    for (const [, n, body] of xml.matchAll(/<page number="(\d+)"[^>]*>([\s\S]*?)<\/page>/g)) {
+      for (const [, attrs] of body.matchAll(/<image ([^>]*)\/>/g)) {
+        const a = num(attrs);
+        out.push({ page: +n - 1, x: a.left * PT_MM, y: a.top * PT_MM, w: a.width * PT_MM, h: a.height * PT_MM });
+      }
+    }
+    return out;
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
 // pdftotext -bbox-layout emits <page><flow><block><line><word>, coords in pt,
@@ -160,12 +181,13 @@ async function worker() {
     try {
       const ref = pdfReference(file) ?? loRender(file, work, cache);
       const ed = await editorRender(browser, file);
-      const issues = compare(ref, ed);
+      const issues = [...compare(ref, ed), ...compareImages(ref.images, ed.images)];
       report[at] = {
         file: name, refPages: ref.pages.length, editorPages: ed.pages.length, issues,
         ...(jsonAt ? {
           ref: ref.pages.map((p) => toLines(p.words)),
           editor: ed.pages.map((p) => toLines(p.words)),
+          images: { ref: ref.images, editor: ed.images },
           margins: ed.margins,
         } : {}),
       };
@@ -210,6 +232,9 @@ function fmt(i) {
   if (i.kind === 'pageCount') return `pages: LO ${i.ref}, editor ${i.editor}`;
   if (i.kind === 'pageShift') return `p${i.page}: the editor runs ${i.by > 0 ? '+' : ''}${i.by} page(s) from here — "${i.text}"`;
   if (i.kind === 'position') return `${at}${n} off by dx ${i.dxMm}mm dy ${i.dyMm}mm — "${i.text}"`;
+  if (i.kind === 'image') return `p${i.page}${i.edPage !== i.page ? `\u2192ed p${i.edPage}` : ''} picture ${i.wMm}\u00d7${i.hMm}mm off by dx ${i.dxMm}mm dy ${i.dyMm}mm`
+    + (i.dwMm || i.dhMm ? `, size by ${i.dwMm}\u00d7${i.dhMm}mm` : '');
+  if (i.kind === 'imageCount') return `p${i.page} picture ${i.wMm}\u00d7${i.hMm}mm only in the ${i.side === 'ref' ? 'reference' : 'editor'}`;
   if (i.kind === 'lineEnd') return `${at}${n} ends ${i.dxMm}mm off — "${i.text}"`;
   return `p${i.page} l${i.line} ${i.kind} (LO ${i.refLines} / ed ${i.edLines} line(s))`
     + `\n        LO: ${i.ref}\n        ed: ${i.editor}`;

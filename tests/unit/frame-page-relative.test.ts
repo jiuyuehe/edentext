@@ -62,3 +62,20 @@ describe('a text box that grows with its text', () => {
     expect(await autoWidth('as-char')).toBeLessThan(30);
   });
 });
+
+// A cover picture aligned to the page's top left rather than placed by coordinate
+// (style:horizontal-pos="left", vertical-pos="top", both against the page) sits at its corner.
+describe('a frame aligned to the page corner', () => {
+  it('is placed from the page corner', async () => {
+    const files = unzipSync(await buildOdt({ type: 'doc', content: [doc.content[0].content[0]].map((i: N) => ({ type: 'paragraph', content: [i] })) }));
+    const xml = strFromU8(files['content.xml'])
+      .replace(/style:horizontal-pos="[^"]*"/g, 'style:horizontal-pos="left"')
+      .replace(/style:horizontal-rel="[^"]*"/g, 'style:horizontal-rel="page"')
+      .replace(/style:vertical-pos="[^"]*"/g, 'style:vertical-pos="top"')
+      .replace(/style:vertical-rel="[^"]*"/g, 'style:vertical-rel="page"');
+    expect(xml).toMatch(/horizontal-pos="left"/);
+    files['content.xml'] = strToU8(xml);
+    expect(find(importOdt(zipSync(files)).content as N, 'image').attrs)
+      .toMatchObject({ wrapFromPage: true, wrapOffsetY: 0, wrapOffset: -2 });
+  });
+});

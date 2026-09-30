@@ -64,7 +64,9 @@
   let breakBefore = $derived(read<string | null>('breakBefore', null) === 'page');
   // widowControl is on unless a paragraph turned it off; the other two are off unless set.
   let widowControl = $derived(read<boolean | null>('widowControl', null) !== false);
-  let keepNext = $derived(read<boolean | null>('keepNext', null) === true);
+  // A heading keeps with next unless it opted out, so there the stored value is `false`.
+  let inHeading = $derived(tick >= 0 && !!editor?.isActive('heading'));
+  let keepNext = $derived(inHeading ? read<boolean | null>('keepNext', null) !== false : read<boolean | null>('keepNext', null) === true);
   let keepLines = $derived(read<boolean | null>('keepLines', null) === true);
   // LibreOffice's Hyphenation checkbox: on unless this paragraph opted out.
   let hyphenate = $derived(read<boolean | null>('noHyphenation', null) !== true);
@@ -75,11 +77,11 @@
   }
 
   // Every block in the selection takes the value, whichever node type it is.
-  function setAttr(attr: string, value: unknown) {
+  function setAttr(attr: string, value: unknown, headingValue = value) {
     if (!editor) return;
     const chain = editor.chain().focus();
     for (const type of ['paragraph', 'heading']) {
-      if (editor.schema.nodes[type]) chain.updateAttributes(type, { [attr]: value });
+      if (editor.schema.nodes[type]) chain.updateAttributes(type, { [attr]: type === 'heading' ? headingValue : value });
     }
     chain.run();
   }
@@ -113,7 +115,7 @@
 
   const FLOW: { attr: string; on: () => boolean; label: () => string; set: (v: boolean) => void }[] = [
     { attr: 'widowControl', on: () => widowControl, label: () => t().paragraphDialog.widowControl, set: (v) => setAttr('widowControl', v ? null : false) },
-    { attr: 'keepNext', on: () => keepNext, label: () => t().paragraphDialog.keepNext, set: (v) => setAttr('keepNext', v || null) },
+    { attr: 'keepNext', on: () => keepNext, label: () => t().paragraphDialog.keepNext, set: (v) => setAttr('keepNext', v || null, v ? null : false) },
     { attr: 'keepLines', on: () => keepLines, label: () => t().paragraphDialog.keepLines, set: (v) => setAttr('keepLines', v || null) },
     { attr: 'noHyphenation', on: () => hyphenate, label: () => t().paragraphDialog.hyphenate, set: (v) => setAttr('noHyphenation', v ? null : true) },
     { attr: 'breakBefore', on: () => breakBefore, label: () => t().paragraphDialog.pageBreakBefore, set: (v) => setAttr('breakBefore', v ? 'page' : null) },
@@ -136,8 +138,8 @@
       <button role="tab" class:active={pane === 'breaks'} aria-selected={pane === 'breaks'} onclick={() => (pane = 'breaks')}>{t().paragraphDialog.breaksTab}</button>
     </div>
 
-    {#if pane === 'indents'}
-      <div class="grid">
+    <div class="panes">
+      <div class="grid" class:off={pane !== 'indents'}>
         <label class="row">
           <span>{t().align.section}</span>
           <select value={align} onchange={(e) => editor?.chain().focus().setTextAlign((e.currentTarget as HTMLSelectElement).value as never).run()}>
@@ -172,17 +174,16 @@
           <label class="row"><span></span><input type="text" inputmode="decimal" value={num(parseFloat(String(lineHeight)))} onchange={(e) => { const v = parseFloat((e.currentTarget as HTMLInputElement).value.replace(',', '.')); if (v > 0) editor?.chain().focus().setLineHeight(`${v}pt`).run(); }} /><em>pt</em></label>
         {/if}
       </div>
-    {:else}
-      <div class="flow">
+      <div class="flow" class:off={pane !== 'breaks'}>
         {#each FLOW as f}
           <label class="check">
             <input type="checkbox" checked={f.on()} onchange={(e) => f.set((e.currentTarget as HTMLInputElement).checked)} />
             <span>{f.label()}</span>
           </label>
         {/each}
+        <p class="hint">{t().paragraphDialog.flowHint}</p>
       </div>
-      <p class="hint">{t().paragraphDialog.flowHint}</p>
-    {/if}
+    </div>
 
     <div class="actions">
       <button class="secondary" onclick={() => { open = false; onTabs?.(); }}>{t().paragraphDialog.tabsButton}</button>
@@ -211,7 +212,9 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    width: 560px;
+    /* Grows with the longest localized label instead of scrolling. */
+    width: max-content;
+    min-width: 560px;
     padding: 18px 20px 16px;
     font-family: var(--font-sans);
     font-size: 0.85rem;
@@ -237,6 +240,11 @@
 
   .tabs button.active { color: var(--color-text); border-bottom-color: var(--color-primary); }
 
+  /* Both panes share one cell, so switching tabs never resizes the dialog. */
+  .panes { display: grid; }
+  .panes > * { grid-area: 1 / 1; }
+  .off { visibility: hidden; }
+
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
 
   /* Equal columns plus a fixed unit width put every field on the same edge; the
@@ -246,6 +254,12 @@
   .row { display: flex; align-items: center; gap: 8px; }
   .row > span { flex: 1; white-space: nowrap; color: var(--color-text-muted); }
   .row em { width: 4.8em; font-style: normal; color: var(--color-text-muted); }
+
+  /* A phone has room for one column, and a long label wraps there instead. */
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr; }
+    .row > span { white-space: normal; }
+  }
 
   .row input, .row select {
     width: 64px;
@@ -261,13 +275,14 @@
   /* No unit of its own, so it reaches across the field and unit columns. */
   .row select { width: calc(72px + 4.8em); }
   /* The unit column is as wide as the switchable unit, so every field keeps one edge. */
-  .row select.unit { width: 4.8em; padding: 0 2px; }
+  .row select.unit { width: 4.8em; }
   .row input { text-align: right; }
 
   .flow { display: flex; flex-direction: column; gap: 8px; }
   .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 
-  .hint { color: var(--color-text-muted); font-size: 0.78rem; }
+  /* Wraps at the dialog width rather than widening it. */
+  .hint { width: 0; min-width: 100%; color: var(--color-text-muted); font-size: 0.78rem; }
 
   .actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
   .spacer { flex: 1; }

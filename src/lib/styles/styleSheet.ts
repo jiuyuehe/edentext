@@ -271,6 +271,8 @@ const SANS = { stack: "'Arial', 'Liberation Sans'", sans: true };
 // SimSun where the font is missing, and LibreOffice's fallback measures 1.34.
 const SONG = { singleLine: 1.3, noBold: true, wideQuotes: true };
 const CJK_NO_BOLD = { noBold: true, wideQuotes: true };
+const SEGOE = { singleLine: 1.33 };
+const line = (singleLine: number) => ({ singleLine });
 const FONT_PROFILES: Record<string, FontProfile> = {
   'Liberation Serif': { stack: "'Liberation Serif', 'Times New Roman'" },
   'Liberation Sans': SANS,
@@ -278,6 +280,17 @@ const FONT_PROFILES: Record<string, FontProfile> = {
   Calibri: { singleLine: 1.2208 },
   'Calibri Light': { singleLine: 1.2208 },
   Carlito: { singleLine: 1.2208 },
+  // Word sets Segoe UI's win metrics, (2210 + 514) / 2048; Selawik, its open stand-in, shares them.
+  'Segoe UI': SEGOE, 'Segoe UI Semibold': SEGOE, 'Segoe UI Semilight': SEGOE, 'Segoe UI Light': SEGOE,
+  'Segoe UI Black': SEGOE, Selawik: SEGOE,
+  // Office faces often missing where the file is opened, as Word sets them: win ascent +
+  // descent + the hhea gap they leave out, read from the fonts Word ships.
+  Cambria: line(1.1724), Caladea: line(1.1724), Aptos: line(1.2847), Consolas: line(1.1709),
+  Candara: line(1.2207), Constantia: line(1.2207), Corbel: line(1.2207), Tahoma: line(1.207),
+  Verdana: line(1.2153), Georgia: line(1.1362), 'Trebuchet MS': line(1.1611),
+  'Century Gothic': line(1.2261), Garamond: line(1.125), 'Book Antiqua': line(1.2427),
+  'Palatino Linotype': line(1.3491), 'Lucida Sans Unicode': line(1.5366),
+  'Microsoft YaHei': line(1.3198), 'Malgun Gothic': line(1.3301),
   'Courier New': { singleLine: 1.1333 },
   'Liberation Mono': { singleLine: 1.1333 },
   SimSun: SONG, 宋体: SONG, NSimSun: SONG, 新宋体: SONG, FangSong: SONG, 仿宋: SONG, 仿宋_GB2312: SONG,
@@ -324,7 +337,31 @@ export function fontPairDeclarations(west?: string | null, asian?: string | null
 // A proportional line spacing multiplies the font's natural line height, while CSS
 // multiplies the font size — so the stored factor is scaled by the family's own.
 export function singleLineHeight(fontFamily?: string): number {
-  return (fontFamily && FONT_PROFILES[fontFamily]?.singleLine) || 1.15;
+  return (fontFamily && (FONT_PROFILES[fontFamily]?.singleLine ?? measuredLine(fontFamily))) || 1.15;
+}
+
+// Any other installed family: Chromium's `line-height: normal` (hhea), Word's win line where
+// they agree; a missing family measures as its fallback and keeps the default.
+// ponytail: cached once, so a face registered later (embedded, on reload) keeps the fallback's.
+const measured = new Map<string, number>();
+function measuredLine(name: string): number {
+  if (typeof document === 'undefined' || !document.body) return 0;
+  let v = measured.get(name);
+  if (v == null) {
+    const probe = (family: string) => {
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;visibility:hidden;font:1000px ${family};line-height:normal`;
+      el.textContent = 'x';
+      document.body.append(el);
+      const h = el.getBoundingClientRect().height;
+      el.remove();
+      return h;
+    };
+    const own = probe(`"${cssString(name)}", serif`);
+    v = own > 0 && own !== probe('serif') && Math.abs(own - 1150) > 1 ? Math.round(own * 10) / 10000 : 0;
+    measured.set(name, v);
+  }
+  return v;
 }
 
 // A line spacing as editor.css reads it: a factor of the font's natural line, or a fixed
@@ -341,8 +378,8 @@ export function textDeclarations(t: TextProps, asBlock = false): string[] {
   const out: string[] = [];
   out.push(...fontPairDeclarations(t.fontFamily, t.fontFamilyAsian));
   if (t.fontFamily) {
-    const lh = FONT_PROFILES[t.fontFamily]?.singleLine;
-    if (lh) out.push(`${asBlock ? '--natural-line' : 'line-height'}: ${lh}`);
+    const lh = singleLineHeight(t.fontFamily);
+    if (lh !== 1.15) out.push(`${asBlock ? '--natural-line' : 'line-height'}: ${lh}`);
   }
   if (t.fontSizePt != null) out.push(`font-size: ${t.fontSizePt}pt`);
   if (t.letterSpacingPt) out.push(`letter-spacing: ${t.letterSpacingPt}pt`);
@@ -400,7 +437,11 @@ export function styleCss(sheet: StyleSheet): string {
     rules.push(`.paper .tiptap ${attr} {\n  ${decls.join(';\n  ')};\n}`);
   }
   for (const style of Object.values(sheet.paragraph)) {
-    const decls = declarations(resolveStyle(sheet, style.name));
+    const resolved = resolveStyle(sheet, style.name);
+    const decls = declarations(resolved);
+    // A character indent counts in the style's size, whatever the block's own mark or
+    // runs say (probed in LibreOffice); indent.ts reads it.
+    if (resolved.text.fontSizePt != null) decls.push(`--char-unit: ${resolved.text.fontSizePt}pt`);
     if (!decls.length) continue;
     const attr = `[data-style="${cssString(style.name)}"]`;
     const selectors = [`.paper .tiptap ${attr}`];

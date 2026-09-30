@@ -36,7 +36,7 @@ function srcNodes(node: Json, out: Json[] = []): Json[] {
  * A structural copy: only the nodes on the path to a picture are rebuilt, so the
  * caller's JSON is untouched.
  */
-export function stashImages(json: object): { json: object; blobs: Map<string, string> } {
+export function stashImages(json: object, stash: (key: string) => boolean = () => true): { json: object; blobs: Map<string, string> } {
   const blobs = new Map<string, string>();
   const walk = (node: Json): Json => {
     const src = node?.attrs?.src;
@@ -44,13 +44,20 @@ export function stashImages(json: object): { json: object; blobs: Map<string, st
     let attrs = node?.attrs;
     if (typeof src === 'string' && src.startsWith('data:') && src.length >= MIN_STASH_CHARS) {
       const key = keyOf(src);
-      blobs.set(key, src);
-      attrs = { ...attrs, src: IDB_SRC + key };
+      if (stash(key)) {
+        blobs.set(key, src);
+        attrs = { ...attrs, src: IDB_SRC + key };
+      }
     }
     return content || attrs !== node?.attrs ? { ...node, ...(attrs ? { attrs } : {}), ...(content ? { content } : {}) } : node;
   };
   return { json: walk(json as Json), blobs };
 }
+
+// Keys this session has seen the store hold — the ones a JSON may name even when the
+// tab dies before the next write lands.
+const confirmed = new Set<string>();
+export const isStored = (key: string): boolean => confirmed.has(key);
 
 // Whether this session has anything in the store. Without it a document whose last
 // picture was just deleted would skip the sweep below and leave its bytes behind.
@@ -78,11 +85,14 @@ export async function putImages(blobs: Map<string, string>): Promise<boolean> {
     const known = await idbRequest<IDBValidKey[]>(db, STORE, 'readonly', (s) => s.getAllKeys());
     for (const [key, src] of blobs) {
       if (!known.includes(key)) await idbRequest(db, STORE, 'readwrite', (s) => s.put(src, key));
+      confirmed.add(key);
     }
     // Not from the stored copy yet, so the sweeper's own pictures come from `blobs`.
     const live = referenced();
     for (const key of known) {
-      if (!blobs.has(String(key)) && !live.has(String(key))) await idbRequest(db, STORE, 'readwrite', (s) => s.delete(key));
+      if (blobs.has(String(key)) || live.has(String(key))) continue;
+      confirmed.delete(String(key));
+      await idbRequest(db, STORE, 'readwrite', (s) => s.delete(key));
     }
     db.close();
     return true;
@@ -107,8 +117,10 @@ export async function restoreImages(json: object): Promise<number> {
     for (const node of nodes) {
       const key = String(node.attrs!.src).slice(IDB_SRC.length);
       const src = await idbRequest<string | undefined>(db, STORE, 'readonly', (s) => s.get(key));
-      if (src) node.attrs!.src = src;
-      else missing++;
+      if (src) {
+        node.attrs!.src = src;
+        confirmed.add(key);
+      } else missing++;
     }
     db.close();
   } catch {

@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { Editor } from '@tiptap/core';
 import { extensions } from '../../src/lib/editor/extensions';
 import {
-  DEFAULT_EDITOR_FONT, uniformFont, uniformFontSize, uniformMarkColor, uniformBlockAttr,
+  DEFAULT_EDITOR_FONT, uniformFont, uniformFontSize, uniformMarkColor, uniformBlockAttr, hasAsianLanguage,
 } from '../../src/lib/utils/selectionFormat';
 
 type N = any;
@@ -93,5 +93,19 @@ describe('uniformBlockAttr', () => {
     editor.commands.selectAll();
     expect(uniformBlockAttr(editor.state, 'lineHeight', '1')).toBe('1');
     editor.destroy();
+  });
+});
+
+describe('hasAsianLanguage', () => {
+  it('finds an East Asian language on a run or a paragraph', () => {
+    const plain = makeEditor(doc(para({}, run('aa', { lang: 'de-DE' }))));
+    plain.commands.selectAll();
+    expect(hasAsianLanguage(plain.state)).toBe(false);
+    const byRun = makeEditor(doc(para({}, run('aa'), run('bb', { langAsian: 'ja-JP' }))));
+    byRun.commands.selectAll();
+    expect(hasAsianLanguage(byRun.state)).toBe(true);
+    const byBlock = makeEditor(doc(para({ langAsian: 'zh-CN' }, run('aa'))));
+    expect(hasAsianLanguage(byBlock.state)).toBe(true);
+    for (const e of [plain, byRun, byBlock]) e.destroy();
   });
 });

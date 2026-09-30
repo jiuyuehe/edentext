@@ -3,14 +3,29 @@ import App from './App.svelte';
 import './styles/global.css';
 import { startNativeApp } from './lib/native/bootstrap';
 import { startTabPresence, pruneOldDocuments } from './lib/storage/docScope';
+import { dragDialogs } from './lib/utils/dragWindow';
 
 // This tab holds its document while it lives; the ones no tab has held for a while
 // and that fell out of the newest few are dropped here.
 startTabPresence();
 pruneOldDocuments();
 
+dragDialogs();
+
+dragDialogs();
+
 // Apply the same native theme/chrome bootstrap used by the Vue host.
 startNativeApp();
+// Apply saved theme before mount to prevent flash of wrong theme
+applyTheme(loadTheme());
+
+// Resolve the UI locale before mount and reflect it on <html lang> (chrome a11y)
+document.documentElement.lang = locale();
+
+// Keep 'auto' in sync when system theme changes
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (loadTheme() === 'auto') applyTheme('auto');
+});
 
 // Offline support (public/sw.js). Not in dev, where a worker would serve the cached
 // build over the one being edited.

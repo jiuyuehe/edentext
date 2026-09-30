@@ -73,6 +73,9 @@ export async function openApp(port, opts = {}) {
 // yet and would settle the layout at a page count it leaves again a frame later.
 // `loaded`: the caller knows the file is in (a document may be empty for good).
 export async function settle(page, loaded = false) {
+  // Each call waits out its own quiet period: a key left from the last call would pass at
+  // once, before a change just asked for (an index update) has even landed.
+  await page.evaluate(() => { window.__parityKey = undefined; });
   await page.waitForFunction((loaded) => {
     const el = document.querySelector('.tiptap');
     // Importing a large file takes seconds; an editor still empty is not "settled",
@@ -96,7 +99,7 @@ export async function settle(page, loaded = false) {
   }, loaded, { timeout: 180_000, polling: 500 });
 }
 
-// Runs in the browser: every rendered word with its page and mm position.
+// Runs in the browser: every rendered word and picture with its page and mm position.
 export function extractLayout() {
   const PAGE_GAP = 20, PX_MM = 25.4 / 96;
   const paper = document.querySelector('.paper');
@@ -127,11 +130,14 @@ export function extractLayout() {
     return i;
   };
 
+  // Visibility inherits and a child can turn it back on (a zone's background layer shows
+  // only its frames), so only the node's own element decides it; display does not.
   const skip = (node) => {
+    const own = node.nodeType === 1 ? node : node.parentElement;
+    if (own && getComputedStyle(own).visibility === 'hidden') return true;
     for (let e = node.parentElement; e && e !== paper; e = e.parentElement) {
       if (e.hasAttribute('data-page-break-spacer') || e.classList.contains('band-layer')) return true;
-      const s = getComputedStyle(e);
-      if (s.display === 'none' || s.visibility === 'hidden') return true;
+      if (getComputedStyle(e).display === 'none') return true;
     }
     return false;
   };
@@ -190,9 +196,20 @@ export function extractLayout() {
       }
     }
   }
+  // Every picture drawn, on the page its middle falls on: a sheet-sized background that
+  // starts a hair above its page would otherwise count to the gap's page above.
+  const images = [];
+  for (const img of paper.querySelectorAll('img')) {
+    const r = img.getBoundingClientRect();
+    if (!r.width || !r.height || skip(img)) continue;
+    const y = r.top - origin.top, page = pageAt(y + r.height / 2), box = boxes[page];
+    images.push({ page, x: (r.left - origin.left - box.left) * PX_MM, y: (y - box.top) * PX_MM,
+      w: r.width * PX_MM, h: r.height * PX_MM });
+  }
   // Folded, not spread: a several-hundred-page document has more words than a call
   // takes arguments, and Math.max(...words) then blows the stack instead of measuring.
-  const numPages = words.reduce((m, w) => (w.page > m ? w.page : m), 0) + 1;
+  // Every page the grid draws counts, a page holding only a picture too, as in the PDF.
+  const numPages = Math.max(boxes.length, words.reduce((m, w) => (w.page > m ? w.page : m), 0) + 1);
   const pages = Array.from({ length: numPages }, (_, i) => ({
     words: words.filter((w) => w.page === i).map(({ page, ...r }) => r),
     width: (boxes[i]?.width ?? pageW) * PX_MM,
@@ -201,6 +218,7 @@ export function extractLayout() {
   const mm = (v) => parseFloat(cs.getPropertyValue(v)) * PX_MM;
   return {
     pages,
+    images,
     margins: { top: mm('--user-margin-top'), bottom: mm('--user-margin-bottom'),
                left: mm('--user-margin-left'), right: mm('--user-margin-right') },
   };

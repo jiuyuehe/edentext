@@ -4,7 +4,7 @@
   import { FORMAT_MARKS, getSearchState, type FormatSpec } from '../editor/extensions/searchReplace';
   import { styleOrder } from '../styles/styleSheet';
   import { styleSheet } from '../styles/sheet.svelte';
-  import { t } from '../i18n/i18n.svelte';
+  import { styleLabel, t } from '../i18n/i18n.svelte';
   import { withShortcut } from '../i18n/shortcut';
 
   let { editor, tick, mode, focusNonce, onClose }:
@@ -160,7 +160,7 @@
             aria-label={t().findReplace.paragraphStyle}
           >
             <option value="">{t().findReplace.anyStyle}</option>
-            {#each paraStyles as s}<option value={s.name}>{s.name}</option>{/each}
+            {#each paraStyles as s}<option value={s.name}>{styleLabel(s.name)}</option>{/each}
           </select>
           <input
             class="fb-font"

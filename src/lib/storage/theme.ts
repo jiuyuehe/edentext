@@ -71,9 +71,10 @@ export function saveFieldShading(enabled: boolean): void {
     localStorage.setItem(FIELD_SHADING_KEY, String(enabled));
 }
 
-// The ruler is on unless it was switched off.
+// Unset, the ruler is on except on a phone-wide window, where it only costs a row.
 export function loadRuler(): boolean {
-    return localStorage.getItem(RULER_KEY) !== 'false';
+    const v = localStorage.getItem(RULER_KEY);
+    return v === null ? !window.matchMedia('(max-width: 600px)').matches : v === 'true';
 }
 
 export function saveRuler(enabled: boolean): void {

@@ -421,6 +421,8 @@
      inherit the page font size and dwarf the button rows. */
   font-size: 13px;
   color: var(--w-text);
+  /* `anchored` keeps 8px to either window edge; a phone is narrower than a menu. */
+  max-width: calc(100vw - 16px);
 }
 
 .ribbon-menu.right { left: auto; right: 0; }
@@ -442,6 +444,7 @@
   cursor: pointer;
 }
 
+.ribbon-menu button svg { flex-shrink: 0; }
 .ribbon-menu button:hover:not(:disabled) { background: var(--w-hover); }
 .ribbon-menu button:disabled { color: var(--w-text-tertiary); cursor: default; }
 .ribbon-menu button.selected { background: var(--w-active); }
@@ -458,7 +461,8 @@
   width: 14px;
   color: var(--w-accent);
 }
-.ribbon-menu .menu-sub { font-size: 11px; }
+/* Wraps only when the menu hits its max-width; otherwise it sizes to the unwrapped text. */
+.ribbon-menu .menu-sub { font-size: 11px; white-space: normal; text-align: right; }
 
 /* Section label above a run of rows, and the sticky action row below the list. */
 .ribbon-menu .rb-menu-label {
@@ -709,4 +713,23 @@ html, body {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+/* The native arrow ignores padding and hugs the border, so draw an inset chevron. The
+   !important beats the background and padding shorthands the dialogs give their selects. */
+select:not([multiple], [size], .bare) {
+  appearance: none;
+  padding-inline-end: 22px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b95a5' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 7px center !important;
+}
+
+/* A modal dialog moves by its title (utils/dragWindow.ts). */
+dialog h2 { cursor: move; user-select: none; touch-action: none; }
+
+/* On a phone every dialog's fixed desktop width gives way to the screen's; the
+   dialog itself is capped there already and scrolls when taller. */
+@media (max-width: 600px) {
+  dialog > * { width: auto !important; min-width: 0 !important; max-width: calc(100vw - 2em) !important; }
 }

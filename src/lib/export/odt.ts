@@ -31,6 +31,8 @@ import { isEmphasis } from '../editor/extensions/textEffects';
 import { BORDER_SIDES, parseBorderAttr } from '../editor/extensions/tableCellBorders';
 import { parseCellPadding, DEFAULT_CELL_PADDING, type CellPadding } from '../editor/extensions/tableCellPadding';
 import { TEXTBOX_PADDING_CM, type TextVAlign } from '../editor/extensions/textBox';
+import { cropOf, type Crop } from '../editor/extensions/image';
+import { imageSizeCm } from '../import/imageFormats';
 import { numberLocale, parseCellNumber, toWriterFormula, type CellRef, type NumberLocale } from '../utils/tableFormula';
 import { SHAPES, arrowHeadCm, isShapeKind, isLineKind, odfEnhancedGeometry, odfEnhancedPath, type ShapeKind } from '../utils/shapes';
 import { normalizeLeader, parseTabStops } from '../editor/extensions/tabStops';
@@ -311,7 +313,7 @@ function hasCustomAttrs(attrs: TiptapNode['attrs']): boolean {
   if (typeof attrs.fontSize === 'string' && attrs.fontSize) return true;
   if (typeof attrs.fontFamily === 'string' && attrs.fontFamily) return true;
   if (typeof attrs.fontFamilyAsian === 'string' && attrs.fontFamilyAsian) return true;
-  if (typeof attrs.indent === 'number' && attrs.indent > 0) return true;
+  if (typeof attrs.indent === 'number' && attrs.indent >= 0) return true;
   if (typeof attrs.indentFirst === 'number' && attrs.indentFirst !== 0) return true;
   if (typeof attrs.indentFirstChars === 'number' && attrs.indentFirstChars !== 0) return true;
   if (typeof attrs.indentChars === 'number' && attrs.indentChars !== 0) return true;
@@ -320,7 +322,7 @@ function hasCustomAttrs(attrs: TiptapNode['attrs']): boolean {
   if (typeof attrs.tabStops === 'string' && attrs.tabStops) return true;
   if (typeof attrs.backgroundColor === 'string' && attrs.backgroundColor) return true;
   if (attrs.widowControl === false) return true;
-  if (attrs.keepNext === true) return true;
+  if (typeof attrs.keepNext === 'boolean') return true;
   if (attrs.keepLines === true) return true;
   if (attrs.noHyphenation === true) return true;
   if (attrs.snapToGrid === false) return true;
@@ -468,7 +470,7 @@ function replaceSectionBreaks(doc: TiptapNode): TiptapNode {
 // bytes is ArrayBuffer-backed to match fflate's zip entry map. rotationDeg is CW;
 // wrap floats the frame at its anchor paragraph (left/right/top-bottom/run-through).
 type WrapMode = 'inline' | 'left' | 'right' | 'topBottom' | 'through';
-type ImageExport = { path: string; bytes: Uint8Array<ArrayBuffer>; mimeType: string; widthCm: number; heightCm: number; alt: string; rotationDeg: number; wrap: WrapMode; wrapOffsetCm: number | null; wrapOffsetYCm: number | null; wrapDistCm: number | null; wrapAlign: string | null; anchorPage: number | null; vAlign: string | null; inFront: boolean; wrapFromPage: boolean; wrapFromBody: boolean };
+type ImageExport = { path: string; bytes: Uint8Array<ArrayBuffer>; mimeType: string; widthCm: number; heightCm: number; alt: string; rotationDeg: number; wrap: WrapMode; wrapOffsetCm: number | null; wrapOffsetYCm: number | null; wrapDistCm: number | null; wrapAlign: string | null; anchorPage: number | null; vAlign: string | null; inFront: boolean; wrapFromPage: boolean; wrapFromBody: boolean; clip: string | null };
 
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64);
@@ -518,7 +520,16 @@ function imageDescriptor(node: TiptapNode, index: number, namePrefix = 'image'):
     wrapFromBody: node.attrs?.wrapFromBody === true,
     vAlign: typeof node.attrs?.vAlign === 'string' ? node.attrs.vAlign : null,
     inFront: node.attrs?.inFront === true,
+    clip: foClip(cropOf(node.attrs?.crop), bytes),
   };
+}
+
+// fo:clip="rect(top, right, bottom, left)": the crop as lengths of the picture's own size.
+function foClip(c: Crop | null, bytes: Uint8Array): string | null {
+  const size = c && imageSizeCm(bytes);
+  if (!c || !size) return null;
+  const cm = (v: number) => `${Math.round(v * 1000) / 1000}cm`;
+  return `rect(${cm(c.t * size.h)}, ${cm(c.r * size.w)}, ${cm(c.b * size.h)}, ${cm(c.l * size.w)})`;
 }
 
 // Replace every inline `image` node with an IMG-sentinel text node and collect its
@@ -1389,7 +1400,8 @@ function paraStyleFromAttrs(attrs: TiptapNode['attrs'], withIndents = true): Par
     borderBottom: border(attrs?.borderBottom),
     borderLeft: border(attrs?.borderLeft),
     dir: attrs?.dir === 'rtl' || attrs?.dir === 'ltr' ? attrs.dir : null,
-    indent: cm(attrs?.indent),
+    // An explicit 0 is kept: it overrides the named style's indent.
+    indent: withIndents && attrs?.indent === 0 ? 0 : cm(attrs?.indent),
     indentFirst: cm(attrs?.indentFirst),
     indentFirstChars: cm(attrs?.indentFirstChars),
     indentChars: cm(attrs?.indentChars),
@@ -1978,7 +1990,7 @@ function applyEmptyLineFontSizes(odtBytes: Uint8Array): Uint8Array {
 function paraBoxSpec(attrs: TiptapNode['attrs']): string {
   const s = paraStyleFromAttrs(attrs);
   const noWidow = attrs?.widowControl === false;
-  const keepNext = attrs?.keepNext === true;
+  const keepNext = typeof attrs?.keepNext === 'boolean';
   const keepLines = attrs?.keepLines === true;
   const noHyphen = attrs?.noHyphenation === true;
   const noSnap = attrs?.snapToGrid === false;
@@ -1994,7 +2006,7 @@ function paraBoxSpec(attrs: TiptapNode['attrs']): string {
   if (!s.background && !s.borderTop && !s.borderRight && !s.borderBottom && !s.borderLeft && !noWidow && !right && !keepNext && !keepLines && !wm && !noHyphen && !lang && !langAsian && !noSnap && !chars && !leftChars) return '';
   return [s.background, s.borderTop, s.borderRight, s.borderBottom, s.borderLeft]
     .map((v) => v ?? '')
-    .concat(noWidow ? 'w0' : '', right, keepNext ? 'k1' : '', keepLines ? 'g1' : '', wm ?? '', noHyphen ? 'h0' : '', lang, langAsian, noSnap ? 's0' : '', chars ? `${chars}ic` : '', leftChars ? `${leftChars}ic` : '').join('|');
+    .concat(noWidow ? 'w0' : '', right, keepNext ? (attrs?.keepNext ? 'k1' : 'k0') : '', keepLines ? 'g1' : '', wm ?? '', noHyphen ? 'h0' : '', lang, langAsian, noSnap ? 's0' : '', chars ? `${chars}ic` : '', leftChars ? `${leftChars}ic` : '').join('|');
 }
 
 function boxSpecToProps(spec: string): string {
@@ -2009,6 +2021,7 @@ function boxSpecToProps(spec: string): string {
   if (widow === 'w0') props.push('fo:orphans="0"', 'fo:widows="0"');
   if (marginRight) props.push(`${marginRight.endsWith('ic') ? 'loext' : 'fo'}:margin-right="${marginRight}"`);
   if (keepNext === 'k1') props.push('fo:keep-with-next="always"');
+  if (keepNext === 'k0') props.push('fo:keep-with-next="auto"');
   if (keepLines === 'g1') props.push('fo:keep-together="always"');
   if (writingMode) props.push(`style:writing-mode="${writingMode}"`);
   if (snap === 's0') props.push('style:snap-to-layout-grid="false"');
@@ -2648,7 +2661,7 @@ function applyBulletListChars(odtBytes: Uint8Array, chars: (string[] | null)[]):
 // Per-level indent (cm) and label alignment of each top-level list, from the first list
 // at that level. odf-kit uses label-alignment mode (which ignores the paragraph margin),
 // so both go onto the L# list-style's own level definitions.
-type ListLevelProps = { indent: number; right: boolean };
+type ListLevelProps = { indent: number; right: boolean; hanging: number | null; suffix: 'space' | 'nothing' | null };
 
 function collectListLevelProps(node: TiptapNode, result: ListLevelProps[][]): void {
   for (const child of node.content ?? []) {
@@ -2658,7 +2671,7 @@ function collectListLevelProps(node: TiptapNode, result: ListLevelProps[][]): vo
     const visit = (list: TiptapNode, depth: number) => {
       if (levels[depth - 1] === undefined) {
         const eff = effectiveListLevel(list.attrs ?? {}, list.type === 'orderedList', style, depth);
-        levels[depth - 1] = { indent: eff.indent, right: eff.markerAlign === 'right' };
+        levels[depth - 1] = { indent: eff.indent, right: eff.markerAlign === 'right', hanging: eff.hanging, suffix: eff.markerSuffix };
       }
       for (const item of list.content ?? []) {
         for (const block of item.content ?? []) {
@@ -2672,7 +2685,7 @@ function collectListLevelProps(node: TiptapNode, result: ListLevelProps[][]): vo
 }
 
 function applyListLevelProps(odtBytes: Uint8Array, props: ListLevelProps[][]): Uint8Array {
-  const plain = (l: ListLevelProps) => !l?.indent && !l?.right;
+  const plain = (l: ListLevelProps) => !l?.indent && !l?.right && l?.hanging == null && !l?.suffix;
   if (props.every(levels => levels.every(plain))) return odtBytes;
 
   const files = unzipSync(odtBytes);
@@ -2692,9 +2705,13 @@ function applyListLevelProps(odtBytes: Uint8Array, props: ListLevelProps[][]): U
         ? lvl.replace(/(fo:margin-left)="([\d.]+)cm"/g, bump(cm))
              .replace(/(text:list-tab-stop-position)="([\d.]+)cm"/g, bump(cm))
         : lvl;
-      return levels[n - 1]?.right
+      const own = levels[n - 1];
+      let out = own?.right
         ? shifted.replace('<style:list-level-properties ', '<style:list-level-properties fo:text-align="end" ')
         : shifted;
+      if (own?.hanging != null) out = out.replace(/fo:text-indent="[^"]*"/, `fo:text-indent="${-own.hanging}cm"`);
+      if (own?.suffix) out = out.replace(/text:label-followed-by="[^"]*"/, `text:label-followed-by="${own.suffix}"`);
+      return out;
     });
 
   props.forEach((levels, i) => {
@@ -4350,6 +4367,14 @@ const verticalRel = (f: { wrapFromPage: boolean; wrapFromBody: boolean }) =>
 // Graphic style for a floating frame (wrap + side, anchored to the paragraph top).
 // Inline images need none. Injected into content.xml automatic-styles by applyImages.
 function imageGraphicStyle(img: ImageExport, index: number): string {
+  const style = frameGraphicStyle(img, index);
+  if (!img.clip) return style;
+  return style
+    ? style.replace('<style:graphic-properties', `<style:graphic-properties fo:clip="${img.clip}"`)
+    : `<style:style style:name="ImgFr${index + 1}" style:family="graphic"><style:graphic-properties fo:clip="${img.clip}"/></style:style>`;
+}
+
+function frameGraphicStyle(img: ImageExport, index: number): string {
   if (img.anchorPage) {
     return (
       `<style:style style:name="ImgFr${index + 1}" style:family="graphic">` +
@@ -4362,7 +4387,10 @@ function imageGraphicStyle(img: ImageExport, index: number): string {
     return (
       `<style:style style:name="ImgFr${index + 1}" style:family="graphic">` +
       `<style:graphic-properties style:wrap="run-through" style:run-through="${img.inFront ? 'foreground' : 'background'}"` +
-      ` style:horizontal-rel="paragraph-content" style:horizontal-pos="${img.wrapOffsetCm != null ? 'from-left' : 'left'}"` +
+      // An x counts from the column ("paragraph" in LibreOffice, probed); none keeps the
+      // frame at the anchor paragraph's text edge.
+      (img.wrapOffsetCm != null ? ` style:horizontal-rel="paragraph" style:horizontal-pos="from-left"`
+        : ` style:horizontal-rel="paragraph-content" style:horizontal-pos="left"`) +
       // Against the page the anchor lands on, which is what the file the frame came from
       // said and what places a cover block; the anchor itself stays in the flow.
       ` style:vertical-rel="${verticalRel(img)}" style:vertical-pos="${img.wrapOffsetYCm != null ? 'from-top' : 'top'}"/></style:style>`
@@ -4399,7 +4427,7 @@ function imageFrameXml(img: ImageExport, index: number): string {
   const anchor = img.anchorPage != null
     ? ` text:anchor-type="page" text:anchor-page-number="${img.anchorPage}"`
     : ` text:anchor-type="${floats ? 'char' : 'as-char'}"`;
-  const named = floats || (img.vAlign != null && img.vAlign in INLINE_VALIGN_ODF);
+  const named = floats || !!img.clip || (img.vAlign != null && img.vAlign in INLINE_VALIGN_ODF);
   const styleName = named ? ` draw:style-name="ImgFr${index + 1}"` : '';
   const x = img.wrapOffsetCm != null && floats && !img.wrapAlign ? ` svg:x="${img.wrapOffsetCm}cm"` : '';
   // An as-char frame carries svg:y only for the offset alignment, which is what it means.
@@ -4711,7 +4739,8 @@ function textBoxGraphicStyle(box: TextBoxExport, index: number): string {
     ? ' style:vertical-pos="top" style:vertical-rel="baseline"'
     : ` ${imageWrapProps(box.wrap, box.wrapOffsetCm, box.wrapAlign, box.wrapDistCm, 'left')} style:number-wrapped-paragraphs="no-limit"`
       + (box.wrap === 'through' && box.inFront ? ' style:run-through="foreground"' : '') +
-      ` style:horizontal-rel="paragraph-content"` +
+      // A run-through x counts from the column, as on an image.
+      ` style:horizontal-rel="${box.wrap === 'through' && box.wrapOffsetCm != null ? 'paragraph' : 'paragraph-content'}"` +
       ` style:vertical-pos="${box.wrapOffsetYCm != null ? 'from-top' : 'top'}"` +
       ` style:vertical-rel="${verticalRel(box)}"`;
   // auto-grow only for plain text boxes; a custom-shape needs both explicitly
@@ -5417,7 +5446,8 @@ export async function buildOdt(docJson: TiptapNode, margins: PageMargins = DEFAU
       if (spacing.spaceBefore != null) opts.spaceBefore = `${spacing.spaceBefore}pt`;
       if (spacing.spaceAfter != null) opts.spaceAfter = `${spacing.spaceAfter}pt`;
       // Left indent → fo:margin-left (odf-kit emits it natively from indentLeft).
-      if (typeof node.attrs?.indent === 'number' && node.attrs.indent > 0) {
+      // An explicit 0 is kept: it overrides the named style's indent.
+      if (typeof node.attrs?.indent === 'number' && node.attrs.indent >= 0) {
         opts.indentLeft = `${node.attrs.indent}cm`;
       }
       // First-line indent → fo:text-indent; negative is a hanging indent.

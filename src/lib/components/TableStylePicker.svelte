@@ -4,7 +4,7 @@
   import { DEFAULT_TABLE_LOOK } from '../styles/tableStyles';
   import { styleSheet } from '../styles/sheet.svelte';
   import { previewCellCss, previewTextCss, styleLook, type TableRegion } from '../styles/tableStyles';
-  import { t } from '../i18n/i18n.svelte';
+  import { styleLabel, t } from '../i18n/i18n.svelte';
 
   let { editor, tick }: { editor: Editor | null; tick: number } = $props();
 
@@ -27,10 +27,6 @@
   // real table — so a preview can never disagree with what applying it does.
   const ROWS = 4;
   const COLS = 3;
-
-  function styleLabel(name: string): string {
-    return (t().table.styleNames as Record<string, string>)[name] ?? name;
-  }
 
   function apply(name: string | null) {
     open = false;

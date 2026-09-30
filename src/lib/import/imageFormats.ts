@@ -47,6 +47,43 @@ function sniffImageMime(bytes: Uint8Array): string | null {
   return null;
 }
 
+// A bitmap's own size in cm, what ODF's fo:clip lengths are measured against: its pixels
+// at the resolution it states (PNG pHYs, JPEG JFIF), 96dpi where it states none.
+// ponytail: LibreOffice takes the screen's resolution there (128dpi probed on macOS).
+export function imageSizeCm(b: Uint8Array): { w: number; h: number } | null {
+  const u16 = (i: number) => (b[i] << 8) | b[i + 1];
+  const u32 = (i: number) => ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
+  const cm = (w: number, h: number, dx = 96, dy = dx) => (w && h && dx > 0 && dy > 0 ? { w: (w / dx) * 2.54, h: (h / dy) * 2.54 } : null);
+  const mime = sniffImageMime(b);
+  if (mime === 'image/png' && b.length >= 24) {
+    for (let i = 8; i + 8 <= b.length;) {
+      const len = u32(i), type = String.fromCharCode(b[i + 4], b[i + 5], b[i + 6], b[i + 7]);
+      if (type === 'pHYs' && b[i + 16] === 1) return cm(u32(16), u32(20), u32(i + 8) * 0.0254, u32(i + 12) * 0.0254);
+      if (type === 'IDAT' || type === 'IEND') break;
+      i += 12 + len;
+    }
+    return cm(u32(16), u32(20));
+  }
+  if (mime === 'image/jpeg') {
+    let dpi: [number, number] | null = null;
+    for (let i = 2; i + 9 < b.length && b[i] === 0xff;) {
+      const marker = b[i + 1], len = u16(i + 2);
+      if (marker === 0xe0 && String.fromCharCode(b[i + 4], b[i + 5], b[i + 6], b[i + 7]) === 'JFIF') {
+        const unit = b[i + 11], x = u16(i + 12), y = u16(i + 14);
+        if (unit === 1) dpi = [x, y];
+        else if (unit === 2) dpi = [x * 2.54, y * 2.54];
+      }
+      // SOF0–SOF15, less DHT (c4), JPG (c8) and DAC (cc): height, then width.
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc)
+        return cm(u16(i + 7), u16(i + 5), ...(dpi ?? [96, 96]));
+      i += 2 + len;
+    }
+    return null;
+  }
+  if (mime === 'image/gif' && b.length >= 10) return cm(b[6] | (b[7] << 8), b[8] | (b[9] << 8));
+  return null;
+}
+
 // The mime to render `bytes` (from `path`) as, or null when the browser can't display
 // the format. Extension wins when renderable; otherwise the magic number is consulted.
 export function displayableImageMime(bytes: Uint8Array, path: string): string | null {

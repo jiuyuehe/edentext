@@ -5,7 +5,7 @@ import { canJoin, canSplit } from '@tiptap/pm/transform';
 import { DecorationSet, type EditorView } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import {
-  readVerticalMargins, bandAt, FORCE_PAGE_RECALC, isSplitPane, blockDeco, isBlockDeco, repairBlockDecos,
+  readVerticalMargins, bandAt, FORCE_PAGE_RECALC, isSplitPane, blockDeco, isBlockDeco, repairDecos,
 } from './pageBreaks';
 import { sameColumnsAttrs, COLUMNS_FIT_MARGIN_PX } from './columns';
 
@@ -189,7 +189,7 @@ export const ColumnsFlow = Extension.create({
             let dropped = false;
             const mapped = decorations.map(tr.mapping, tr.doc,
               { onRemove: (spec) => { dropped ||= isBlockDeco(spec); } });
-            decorations = dropped ? repairBlockDecos(decorations, mapped, tr) : mapped;
+            decorations = dropped ? repairDecos(decorations, mapped, tr) : mapped;
           }
           // A pass of its own never refreshes the budget — not even the recalc the
           // decoration update asks for, or reflow and decorations pump each other forever.

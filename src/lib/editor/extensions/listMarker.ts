@@ -156,6 +156,28 @@ export const ListMarker = Extension.create<{ sheet: () => StyleSheet }>({
             renderHTML: (attrs: Record<string, unknown>) =>
               attrs.markerAlign === 'right' ? { 'data-marker-align': 'right' } : {},
           },
+          // How far the label hangs left of the text (cm; w:hanging, ODF's negated
+          // fo:text-indent); negative is a first-line indent. null = LIST_HANGING_CM.
+          hanging: {
+            default: null,
+            parseHTML: (el: HTMLElement) => {
+              const v = parseFloat(el.getAttribute('data-hanging') ?? '');
+              return Number.isFinite(v) ? v : null;
+            },
+            renderHTML: (attrs: Record<string, unknown>) =>
+              typeof attrs.hanging === 'number' ? { 'data-hanging': String(attrs.hanging), style: `--list-hang: ${attrs.hanging}cm` } : {},
+          },
+          // What follows the label: a space or nothing (w:suff, ODF's label-followed-by)
+          // instead of the tab to the text. null = the tab.
+          markerSuffix: {
+            default: null,
+            parseHTML: (el: HTMLElement) => {
+              const v = el.getAttribute('data-marker-suffix');
+              return v === 'space' || v === 'nothing' ? v : null;
+            },
+            renderHTML: (attrs: Record<string, unknown>) =>
+              attrs.markerSuffix ? { 'data-marker-suffix': String(attrs.markerSuffix) } : {},
+          },
         },
       },
     ];

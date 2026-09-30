@@ -12,10 +12,10 @@ import { t } from '../../i18n/i18n.svelte';
 import type { Transaction } from '@tiptap/pm/state';
 import { pageOfElement, topInEditor, scheduleFieldRound, FORCE_PAGE_RECALC, type FieldWrite, type PageGrid, type VMargins } from './pageBreaks';
 
-// A generated index: a block atom listing every source with its live page number — the
+// A generated index: a block atom listing every source with its page number — the
 // headings for a table of contents, the captions of one category for a list of figures
-// or tables. The node view regenerates entries from the sources + pagination and caches
-// them in `entries` (persisted like a Word/LO field); round-trips to ODF/DOCX.
+// or tables. Like a Word/LO field it shows its cached `entries` until updated
+// (`updateIndexes`); `entries: null` has none yet and generates on mount.
 
 export type TocEntry = {
   text: string;
@@ -62,6 +62,7 @@ declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     tableOfContents: {
       setTableOfContents: (index?: IndexKind) => ReturnType;
+      updateIndexes: (mode?: IndexUpdate) => ReturnType;
     };
   }
 }
@@ -137,10 +138,10 @@ export const TableOfContents = Node.create({
         renderHTML: attrs => (attrs.citationStyle && attrs.citationStyle !== 'key' ? { 'data-toc-cite': String(attrs.citationStyle) } : {}),
       },
       entries: {
-        default: [] as TocEntry[],
+        default: [] as TocEntry[] | null,
         parseHTML: el => {
           try { return JSON.parse((el as HTMLElement).getAttribute('data-entries') ?? '[]'); }
-          catch { return []; }
+          catch { return null; }
         },
         renderHTML: attrs => ({ 'data-entries': JSON.stringify(attrs.entries ?? []) }),
       },
@@ -160,7 +161,15 @@ export const TableOfContents = Node.create({
       setTableOfContents:
         (index = 'toc') =>
         ({ commands }) =>
-          commands.insertContent({ type: this.name, attrs: { index, title: indexTitle(index) } }),
+          commands.insertContent({ type: this.name, attrs: { index, title: indexTitle(index), entries: null } }),
+      // Every index of the document regenerates, as LibreOffice's Update All does; 'pages'
+      // keeps each index's rows and renews only their page numbers, Word's other choice.
+      updateIndexes:
+        (mode = 'all') =>
+        ({ editor, dispatch }) => {
+          if (dispatch) editor.view.dom.dispatchEvent(new CustomEvent(INDEX_UPDATE, { bubbles: true, detail: mode }));
+          return true;
+        },
     };
   },
 
@@ -169,16 +178,36 @@ export const TableOfContents = Node.create({
   },
 });
 
+const INDEX_UPDATE = 'pm-index-update';
+export type IndexUpdate = 'all' | 'pages';
+
+// Which fresh row each cached one is, in order and each used once: by its text, else with
+// its number label and spacing set aside (a file's "1.\tIntroduction", our "1 Introduction").
+// -1 where none reads the same — a heading since removed or retitled.
+export function matchRows(cached: { text: string }[], fresh: { text: string }[]): number[] {
+  const bare = (t: string) => t.replace(/\s+/g, ' ').trim().replace(/^(?:\d+|[A-Z])(?:[.:](?:\d+|[A-Z]))*[.:)]?\s+/, '');
+  const used = new Set<number>();
+  const out = cached.map(() => -1);
+  for (const key of [(t: string) => t, bare]) {
+    cached.forEach((c, i) => {
+      if (out[i] >= 0) return;
+      const j = fresh.findIndex((f, k) => !used.has(k) && key(f.text) === key(c.text));
+      if (j >= 0) { out[i] = j; used.add(j); }
+    });
+  }
+  return out;
+}
+
 // `''` is a title the file deliberately doesn't have, so only a missing one defaults.
 const tocTitle = (title: unknown, index: unknown): string =>
   typeof title === 'string' ? title : indexTitle(indexKindOf(index));
 
 type HeadingRef = { text: string; level: number; pos: number };
 
-// Node view: renders the title + one clickable row per heading. Recomputes on each
-// pagination settle (pm-pagecount, caught on the .paper ancestor) and on doc change, in
-// the field round: it measures with the other fields, and writes its entries back on the
-// round's transaction — guarded by a serialized key against a loop.
+// Node view: renders the title + one clickable row per entry. While `updating` it
+// regenerates on each pagination settle (pm-pagecount, caught on the .paper ancestor) in
+// the field round, writing its entries back on the round's transaction, until a pass
+// changes nothing; otherwise it paints the cached entries.
 class TocView {
   dom: HTMLElement;
   private editor: Editor;
@@ -186,8 +215,13 @@ class TocView {
   private lastKey = '';
   private lastLook = '';
   private wasPaginated = false;
+  private updating: IndexUpdate | false;
   private paper: HTMLElement | null = null;
   private onPageCount = () => this.schedule();
+  private onUpdate = (e: Event) => {
+    this.updating = (e as CustomEvent).detail === 'pages' && Array.isArray(this.node()?.attrs?.entries) ? 'pages' : 'all';
+    this.schedule();
+  };
 
   constructor(editor: Editor, node: PMNode, getPos: () => number) {
     this.editor = editor;
@@ -198,11 +232,14 @@ class TocView {
     this.dom.dataset.toc = 'true';
     this.dom.setAttribute('contenteditable', 'false');
     this.applyFlow(node);
+    this.updating = Array.isArray(node.attrs.entries) ? false : 'all';
+    this.lastLook = lookOf(node);
 
     // Mount deferred so .paper exists and the first pagination pass has run.
     requestAnimationFrame(() => {
       this.paper = this.dom.closest('.paper') as HTMLElement | null;
       this.paper?.addEventListener('pm-pagecount', this.onPageCount);
+      this.paper?.addEventListener(INDEX_UPDATE, this.onUpdate);
       this.schedule();
     });
   }
@@ -273,30 +310,49 @@ class TocView {
   private measure(vm: VMargins): FieldWrite | void {
     if (this.editor.isDestroyed || !this.dom.isConnected) return;
     const grid = vm.grid;
-    let heads = this.sources();
+    const cached = this.node()?.attrs?.entries as TocEntry[] | null | undefined;
+    let heads: (HeadingRef | undefined)[] | null = null;
     let entries: TocEntry[];
-    if (indexKindOf(this.node()?.attrs?.index) === 'alphabetical') {
+    if (!this.updating && Array.isArray(cached)) {
+      entries = cached;
+    } else if (indexKindOf(this.node()?.attrs?.index) === 'alphabetical') {
       // A term marked five times is one row with five page numbers, and the row jumps
       // to the first of them.
-      const marks = heads.map(h => ({ ...h, page: this.pageOf(h.pos, grid) }));
+      const marks = this.sources().map(h => ({ ...h, page: this.pageOf(h.pos, grid) }));
       const rows = indexRows(marks.map(m => ({ term: m.text, key1: '', page: m.page })));
       entries = rows.map(r => ({ text: r.text, level: 1, page: r.pages[0], pages: r.pages }));
       heads = rows.map(r => marks.find(m => m.text === r.text)!);
     } else {
-      entries = heads.map(h => ({ text: h.text, level: h.level, page: this.pageOf(h.pos, grid) }));
+      const sources = this.sources();
+      heads = sources;
+      entries = sources.map(h => ({ text: h.text, level: h.level, page: this.pageOf(h.pos, grid) }));
+    }
+    if (this.updating === 'pages' && Array.isArray(cached)) {
+      // The saved rows stay as they are; each takes the page of the source it names.
+      const fresh = entries;
+      const found = heads!;
+      const at = matchRows(cached, fresh);
+      entries = cached.map((e, i) => {
+        const f = fresh[at[i]];
+        if (!f) return e;
+        const { pages: _old, ...row } = e;
+        return { ...row, page: f.page, ...(f.pages ? { pages: f.pages } : {}) };
+      });
+      heads = at.map(j => found[j]);
     }
     // Repaint on anything a row is drawn from: the entries, and the index's own look
     // (leader, page numbers, title, level styles). Its cached entries are what syncAttr
     // writes back, so keying on them too would chase this pass's own result.
-    const { entries: _cached, ...look } = this.node()?.attrs ?? {};
-    this.lastLook = JSON.stringify(look);
-    const key = JSON.stringify([entries, look]);
+    const node = this.node();
+    this.lastLook = node ? lookOf(node) : '';
+    const key = JSON.stringify([entries, this.lastLook]);
     const stale = key !== this.lastKey;
     this.lastKey = key;
+    if (!stale && heads) this.updating = false;
     return (tr) => {
       if (stale) {
         this.paint(entries, heads);
-        this.syncAttr(entries, tr);
+        if (heads) this.syncAttr(entries, tr);
       }
       // The rows carry their page numbers now, so where they fall is read once every
       // field of the round has written.
@@ -336,7 +392,8 @@ class TocView {
     }
   }
 
-  private paint(entries: TocEntry[], heads: HeadingRef[]): void {
+  // A cached row jumps to the source that reads the same; heads is null for those.
+  private paint(entries: TocEntry[], heads: (HeadingRef | undefined)[] | null): void {
     this.dom.textContent = '';
     const titleText = tocTitle(this.node()?.attrs?.title, this.node()?.attrs?.index);
     if (titleText) {
@@ -382,14 +439,13 @@ class TocView {
         page.textContent = e.pages ? e.pages.join(', ') : String(e.page);
         row.append(text, leader, page);
       }
-      const pos = heads[i]?.pos;
-      if (pos != null) {
-        row.addEventListener('mousedown', ev => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          this.goTo(pos);
-        });
-      }
+      row.addEventListener('mousedown', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const sources = heads ? null : this.sources();
+        const pos = heads ? heads[i]?.pos : sources![matchRows(entries, sources!)[i]]?.pos;
+        if (pos != null) this.goTo(pos);
+      });
       this.dom.appendChild(row);
     });
     this.stopAtTab();
@@ -465,9 +521,16 @@ class TocView {
   update(node: PMNode): boolean {
     if (node.type.name !== 'tableOfContents') return false;
     this.applyFlow(node);
-    // The entries are what syncAttr just wrote back; only a changed look is news.
-    const { entries: _cached, ...look } = node.attrs;
-    if (JSON.stringify(look) !== this.lastLook) this.schedule();
+    // The entries are what syncAttr just wrote back; a changed look regenerates them,
+    // as changing an index's settings does in both word processors.
+    const look = lookOf(node);
+    if (look !== this.lastLook) {
+      this.lastLook = look;
+      this.updating = 'all';
+      this.schedule();
+    } else if (!this.updating) {
+      this.schedule(); // an undo can bring other cached entries back
+    }
     return true;
   }
 
@@ -483,5 +546,12 @@ class TocView {
 
   destroy(): void {
     this.paper?.removeEventListener('pm-pagecount', this.onPageCount);
+    this.paper?.removeEventListener(INDEX_UPDATE, this.onUpdate);
   }
+}
+
+// Everything a row is drawn from but the entries themselves (and the flow flags).
+function lookOf(node: PMNode): string {
+  const { entries: _cached, breakBefore: _b, sectionBreak: _s, ...look } = node.attrs;
+  return JSON.stringify(look);
 }

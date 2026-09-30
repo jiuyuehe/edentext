@@ -9,7 +9,7 @@ import { builtinStyleSheet, DEFAULT_STYLE, type ParaProps, type Style, type Styl
 import { DEFAULT_OUTLINE_LEVEL, MAX_OUTLINE_LEVELS, type OutlineLevel, type OutlineNumbering } from '../styles/outlineNumbering';
 import { LIST_LEVEL_STEP_CM, MAX_LIST_LEVELS, type ListLevelStyle, type ListStyle } from '../styles/listStyles';
 import { HEADER_SHADE } from '../editor/extensions/tableHeaderRow';
-import { fitInlineImage, framePx } from '../editor/extensions/image';
+import { cropOf, fitInlineImage, framePx, type Crop } from '../editor/extensions/image';
 import { odfChartDataUrl } from './chart';
 import { formatTabStops, normalizeLeader } from '../editor/extensions/tabStops';
 import { isEmphasis, type CapsMode, type LineStyle } from '../editor/extensions/textEffects';
@@ -23,7 +23,7 @@ import { docxPicture, matchFormat, toDateValue, type Token } from '../utils/date
 import {
   shapeFromOdfType, lineKindFor, parseSvgPath, parseOdfPoints, fitPath, type ShapeKind,
 } from '../utils/shapes';
-import { imageDataUrl, placeholderImage, unzipArchive, type ConvertedImages } from './imageFormats';
+import { imageDataUrl, imageSizeCm, placeholderImage, unzipArchive, type ConvertedImages } from './imageFormats';
 import { boundedInt, IMPORT_LIMITS, parseImportXml } from './importLimits';
 import { astToLatex } from '../math/latex';
 import { parseMathml } from '../math/mathml';
@@ -39,7 +39,7 @@ import { clampPageStart, type PageNumbering } from '../storage/pageNumbering';
 import { newCommentId } from '../editor/extensions/comment';
 import { ODF_SEQ_CATEGORY } from '../editor/extensions/caption';
 import { isCrossRefFormat } from '../editor/extensions/crossReference';
-import type { IndexKind } from '../editor/extensions/tableOfContents';
+import type { IndexKind, TocEntry } from '../editor/extensions/tableOfContents';
 import { isBibType } from '../editor/extensions/bibliographyEntry';
 import { citationStyleFromTemplate } from '../utils/citationStyle';
 import type { PageDecor } from '../storage/pageDecor';
@@ -276,6 +276,17 @@ function boxTextFlow(el: Element, ctx: Ctx, attrs: Record<string, unknown>): voi
   if (anchor === 'middle' || anchor === 'bottom') attrs.textVAlign = anchor;
 }
 
+// Nothing floats a run-through picture to a side, so its alignment in the column
+// becomes the x that alignment gives, as the DOCX leg does for wrapNone.
+function pictureAlignX(frame: Element, attrs: Record<string, unknown>, gp: PropMap, contentCm: number): void {
+  const hpos = gp['style:horizontal-pos'], rel = gp['style:horizontal-rel'];
+  const w = lengthToCm(frame.getAttributeNS(NS.svg, 'width'));
+  if (attrs.wrap !== 'through' || attrs.wrapOffset != null || w == null || !contentCm) return;
+  if (rel && rel !== 'paragraph' && rel !== 'paragraph-content' && rel !== 'page-content') return;
+  const x = hpos === 'right' ? contentCm - w : hpos === 'center' ? (contentCm - w) / 2 : null;
+  if (x != null) attrs.wrapOffset = Math.round(x * 100) / 100;
+}
+
 function applyFrameRotationAndWrap(el: Element, attrs: Record<string, unknown>, gp: PropMap, contentCm = 0, leftMarginCm = 0): void {
   const deg = frameRotationDeg(el);
   if (deg) attrs.rotation = deg;
@@ -302,7 +313,9 @@ function applyFrameRotationAndWrap(el: Element, attrs: Record<string, unknown>, 
   const hpos = gp['style:horizontal-pos'];
   const hrel = gp['style:horizontal-rel'];
   const pageX = hrel === 'page' || hrel === 'page-start-margin' ? leftMarginCm : 0;
-  const rawX = hpos === 'from-left' ? lengthToCm(el.getAttributeNS(NS.svg, 'x')) : null;
+  // Set against the page's left edge is x 0 there: a cover picture filling the sheet.
+  const rawX = hpos === 'from-left' ? lengthToCm(el.getAttributeNS(NS.svg, 'x'))
+    : hpos === 'left' && pageX ? 0 : null;
   const x = rawX == null ? null : rawX - pageX;
   if (x != null && attrs.wrap) attrs.wrapOffset = Math.round(x * 100) / 100;
   // Where the file names no side (parallel/dynamic), the text takes whichever side of
@@ -322,9 +335,10 @@ function applyFrameRotationAndWrap(el: Element, attrs: Record<string, unknown>, 
   const rel = gp['style:vertical-rel'];
   const fromPage = rel === 'page';
   const fromBody = rel === 'page-content';
-  const y = gp['style:vertical-pos'] === 'from-top' && (!rel || rel.startsWith('paragraph') || rel === 'line' || fromPage || fromBody)
-    ? lengthToCm(el.getAttributeNS(NS.svg, 'y')) : null;
-  if (y != null && attrs.wrap && (fromPage || fromBody || y > 0)) {
+  const vpos = gp['style:vertical-pos'];
+  const y = vpos === 'from-top' && (!rel || rel.startsWith('paragraph') || rel === 'line' || fromPage || fromBody)
+    ? lengthToCm(el.getAttributeNS(NS.svg, 'y')) : vpos === 'top' && (fromPage || fromBody) ? 0 : null;
+  if (y != null && attrs.wrap && (fromPage || fromBody || y > 0 || (attrs.wrap === 'through' && y < 0))) {
     attrs.wrapOffsetY = Math.round(y * 100) / 100;
     if (fromPage) attrs.wrapFromPage = true;
     if (fromBody) attrs.wrapFromBody = true;
@@ -366,14 +380,14 @@ export function applyUniformRunFont(attrs: Record<string, unknown>, content: { t
 }
 
 // A top-and-bottom frame set below its paragraph's top sinks behind the paragraph's
-// text: a full-width float pushes every following line under itself, so where there is
-// text the offset can only be drawn as the lines standing above the frame.
+// text: a full-width float pushes every following line under itself, so the offset can
+// only be drawn as what stands above the frame — which is why frames go top to bottom.
 export function sinkOffsetFrames(content: { type: string; text?: string; attrs?: Record<string, unknown> }[]): void {
   const sinks = (n: { type: string; attrs?: Record<string, unknown> }) =>
     (n.type === 'image' || n.type === 'textBox')
     && n.attrs?.wrap === 'topBottom' && (n.attrs.wrapOffsetY as number) > 0;
-  if (!content.some(sinks) || !content.some(n => n.type === 'text' && n.text?.trim())) return;
-  const frames = content.filter(sinks);
+  if (!content.some(sinks)) return;
+  const frames = content.filter(sinks).sort((a, b) => (a.attrs!.wrapOffsetY as number) - (b.attrs!.wrapOffsetY as number));
   for (const f of frames) content.splice(content.indexOf(f), 1);
   content.push(...frames);
 }
@@ -436,9 +450,22 @@ function convertFrame(frame: Element, ctx: Ctx): Node | null {
   if (hCm != null) attrs.height = framePx(cmToPx(hCm));
   const title = frame.getElementsByTagNameNS(NS.svg, 'title')[0]?.textContent;
   if (title) attrs.alt = title;
-  applyFrameRotationAndWrap(frame, attrs, ctx.resolver.graphicProps(frame.getAttributeNS(NS.draw, 'style-name')), ctx.contentWidthCm, ctx.leftMarginCm);
+  const gp = ctx.resolver.graphicProps(frame.getAttributeNS(NS.draw, 'style-name'));
+  const crop = clipCrop(gp['fo:clip'], ctx.files[href]);
+  if (crop) attrs.crop = crop;
+  applyFrameRotationAndWrap(frame, attrs, gp, ctx.contentWidthCm, ctx.leftMarginCm);
+  pictureAlignX(frame, attrs, gp, ctx.contentWidthCm);
   if (!attrs.wrap || attrs.wrap === 'inline') fitInlineImage(attrs, Math.floor(cmToPx(ctx.contentWidthCm)));
   return { type: 'image', attrs };
+}
+
+// fo:clip="rect(top, right, bottom, left)" cuts lengths off the picture at its own size.
+function clipCrop(clip: unknown, bytes: Uint8Array | undefined): Crop | null {
+  const m = typeof clip === 'string' ? /rect\(([^)]*)\)/.exec(clip) : null;
+  const size = m && bytes ? imageSizeCm(bytes) : null;
+  if (!m || !size) return null;
+  const [t, r, b, l] = m[1].split(/[\s,]+/).filter(Boolean).map((v) => Math.max(0, lengthToCm(v) ?? 0));
+  return cropOf({ l: l / size.w, t: t / size.h, r: r / size.w, b: b / size.h });
 }
 
 // A shape's fill color; fo:background-color (LibreOffice's per-shape fill) beats draw:fill.
@@ -584,7 +611,9 @@ function convertChartFrame(frame: Element, ctx: Ctx): Node | null {
   const src = doc && odfChartDataUrl(doc, cmToPx(wCm), cmToPx(hCm));
   if (!src) return null;
   const attrs: Record<string, unknown> = { src, width: framePx(cmToPx(wCm)), height: framePx(cmToPx(hCm)), alt: 'Chart' };
-  applyFrameRotationAndWrap(frame, attrs, ctx.resolver.graphicProps(frame.getAttributeNS(NS.draw, 'style-name')), ctx.contentWidthCm, ctx.leftMarginCm);
+  const gp = ctx.resolver.graphicProps(frame.getAttributeNS(NS.draw, 'style-name'));
+  applyFrameRotationAndWrap(frame, attrs, gp, ctx.contentWidthCm, ctx.leftMarginCm);
+  pictureAlignX(frame, attrs, gp, ctx.contentWidthCm);
   if (!attrs.wrap || attrs.wrap === 'inline') fitInlineImage(attrs, Math.floor(cmToPx(ctx.contentWidthCm)));
   return { type: 'image', attrs };
 }
@@ -806,6 +835,7 @@ const DEFAULT_HEADING_FONTS = new Set(['arial', 'liberation sans']);
 // A top-level list's margin beyond this level-1 base is its whole-list indent.
 const LIST_BASE_MARGIN_CM = 1.27;
 const LIST_INDENT_EPS_CM = 0.05;
+const LIST_HANGING_CM = 0.635; // the hang every list export writes (export/docx.ts)
 
 // ---- entry --------------------------------------------------------------------
 
@@ -1233,9 +1263,8 @@ function convertBlocks(elements: Element[], ctx: Ctx, kind: BlockKind, boldByDef
   return out;
 }
 
-// A <text:table-of-content> → a tableOfContents node. Entries (text + level + page) are
-// parsed from the cached index-body as a starting cache; the node view recomputes page
-// numbers live after mount, so parse fidelity isn't critical.
+// A <text:table-of-content> → a tableOfContents node. Its entries (text + level + page)
+// are the cached index-body, shown as saved until the index is updated.
 const ODF_INDEX_KIND: Record<string, IndexKind | undefined> = {
   'table-of-content': 'toc', 'illustration-index': 'figures', 'table-index': 'tables',
   'alphabetical-index': 'alphabetical', 'bibliography': 'bibliography',
@@ -1262,21 +1291,6 @@ function convertToc(el: Element, ctx: Ctx, indexKind: IndexKind): Node {
   // Before the rest: a section the index opens may have a text width of its own, which
   // is what the entries' tab stop is measured against.
   const flow = indexSectionFlow(el, ctx);
-  const indexBody = el.getElementsByTagNameNS(NS.text, 'index-body')[0];
-  const entries: { text: string; level: number; page: number }[] = [];
-  if (indexBody) {
-    for (const p of Array.from(indexBody.children)) {
-      if (p.namespaceURI !== NS.text || p.localName !== 'p') continue; // skip index-title
-      const style = p.getAttributeNS(NS.text, 'style-name') ?? '';
-      const m = /Contents_20_(\d+)/.exec(style);
-      const level = m ? Math.min(MAX_HEADING_LEVEL, Math.max(1, parseInt(m[1], 10))) : 1;
-      const { text, page } = tocEntryTextAndPage(p);
-      // An alphabetical row's number cell is a list ("3, 7, 12"); the node view rebuilds
-      // it from the marks, so the cache only has to survive until then.
-      const pages = page.split(/[,;]/).map((n) => Math.max(1, parseInt(n, 10) || 1)).filter(Boolean);
-      if (text) entries.push({ text, level, page: pages[0] ?? 1, ...(pages.length > 1 ? { pages } : {}) });
-    }
-  }
   // The file's own heading ("Inhalt", "Sommaire", …), so a reopened index keeps its name.
   // No <text:index-title> means the index really has none — its heading is an ordinary
   // paragraph above it, and adding ours would double it.
@@ -1323,7 +1337,7 @@ function convertToc(el: Element, ctx: Ctx, indexKind: IndexKind): Node {
   // The attr defaults stay implicit, as everywhere else: '.' is the leader a fresh index
   // has, and a null stop is the end of the column. `leader: null` is not the default — it
   // is an index whose rows deliberately have no fill.
-  const attrs: Record<string, unknown> = { entries, title, maxLevel, index: indexKind, ...flow,
+  const attrs: Record<string, unknown> = { entries: null, title, maxLevel, index: indexKind, ...flow,
     ...(leader === '.' ? {} : { leader }), ...(tabPosCm != null ? { tabPosCm } : {}) };
   // A template that names no page number is an index of text alone (Word's TOC \n). A
   // bibliography row never has one, so its own template says nothing about this.
@@ -1345,26 +1359,54 @@ function convertToc(el: Element, ctx: Ctx, indexKind: IndexKind): Node {
       ? 'numbered'
       : styles.find((st) => st && st !== 'key') ?? 'key';
   }
+  const pages = attrs.pageNumbers !== false && indexKind !== 'bibliography';
+  const entries: TocEntry[] = [];
+  const indexBody = el.getElementsByTagNameNS(NS.text, 'index-body')[0];
+  for (const p of Array.from(indexBody?.children ?? [])) {
+    // A bibliography converted from a Word table holds one source per row.
+    if (p.namespaceURI === NS.table && p.localName === 'table') {
+      for (const tr of Array.from(p.getElementsByTagNameNS(NS.table, 'table-row'))) {
+        const text = Array.from(tr.getElementsByTagNameNS(NS.text, 'p'))
+          .map((q) => tocEntryTextAndPage(q, false).text).filter(Boolean).join(' ');
+        if (text) entries.push({ text, level: 1, page: 1 });
+      }
+      continue;
+    }
+    if (p.namespaceURI !== NS.text || p.localName !== 'p') continue; // skip index-title
+    // The rows name automatic styles derived from the level's own (Contents 2, …).
+    const style = p.getAttributeNS(NS.text, 'style-name') ?? '';
+    const levelOf = (name: string | null) => /(?:_20_| )(\d+)$/.exec(name ?? '');
+    const m = levelOf(style) ?? levelOf(ctx.resolver.namedAncestor(style));
+    const level = m ? Math.min(MAX_HEADING_LEVEL, Math.max(1, parseInt(m[1], 10))) : 1;
+    const { text, page } = tocEntryTextAndPage(p, pages);
+    const nums = page.split(/[,;]/).map((n) => parseInt(n, 10)).filter((n) => n > 0);
+    // An alphabetical index's letter rows carry no number and are not entries.
+    if (!text || (indexKind === 'alphabetical' && pages && !nums.length)) continue;
+    entries.push({ text, level, page: nums[0] ?? 1, ...(nums.length > 1 ? { pages: nums } : {}) });
+  }
+  attrs.entries = entries;
   return { type: 'tableOfContents', attrs };
 }
 
-// Split a TOC entry paragraph around its last <text:tab/>: the text before it is the
-// entry text, the run after it is the page number. Tabs contribute no textContent, so
-// partition the text nodes by their document position relative to the tab element.
-function tocEntryTextAndPage(p: Element): { text: string; page: string } {
-  const FOLLOWING = 0x04; // Node.DOCUMENT_POSITION_FOLLOWING (the DOM Node is shadowed here)
+// A cached row: its text up to the last tab (earlier tabs read as spaces), the page
+// number after it — or, for an index without page numbers, the whole row as text.
+function tocEntryTextAndPage(p: Element, pages: boolean): { text: string; page: string } {
   const tabs = p.getElementsByTagNameNS(NS.text, 'tab');
-  const lastTab = tabs.length ? tabs[tabs.length - 1] : null;
+  const lastTab = pages && tabs.length ? tabs[tabs.length - 1] : null;
   let before = '';
   let after = '';
-  const walker = p.ownerDocument.createTreeWalker(p, NodeFilter.SHOW_TEXT);
-  let n: ChildNode | null;
-  while ((n = walker.nextNode() as ChildNode | null)) {
-    const txt = n.nodeValue ?? '';
-    if (lastTab && lastTab.compareDocumentPosition(n) & FOLLOWING) after += txt;
-    else before += txt;
-  }
-  return { text: before.trim(), page: after.trim() };
+  let past = false;
+  const walk = (el: Element) => {
+    for (const c of Array.from(el.childNodes)) {
+      if (c === lastTab) { past = true; continue; }
+      const e = c.nodeType === 1 ? (c as Element) : null;
+      if (e && !(e.namespaceURI === NS.text && (e.localName === 'tab' || e.localName === 's'))) { walk(e); continue; }
+      const txt = e ? ' ' : c.nodeValue ?? '';
+      if (past) after += txt; else before += txt;
+    }
+  };
+  walk(p);
+  return { text: before.replace(/\s+/g, ' ').trim(), page: after.trim() };
 }
 
 // What a block's named style already gives it — the yardstick for "is this direct
@@ -1816,7 +1858,7 @@ function convertParaLike(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault =
   // its own header/footer; the block that does it opens that section, and from it on
   // the blocks measure against that master's text width.
   const master = kind === 'body' ? resolver.masterPageOf(styleName) : null;
-  const opensSection = !!master && master !== (ctx.masterPages[ctx.masterPages.length - 1] ?? ctx.leadingMaster);
+  const opensSection = !!master && opensMaster(master, ctx);
   if (opensSection) {
     ctx.masterPages.push(master!);
     // The same paragraph carries the number the section restarts at, if it does.
@@ -1865,6 +1907,8 @@ function convertParaLike(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault =
   // Keep with next: a heading does that anyway (pageBreaks.ts), and what the block's
   // own style supplies (Title keeps with next) is not direct formatting either.
   if (!isHeading && !defaults.keepNext && paraProps['fo:keep-with-next'] === 'always') attrs.keepNext = true;
+  // Unless a heading style the file defines drops it; an undefined one is the built-in.
+  if (isHeading && paraProps['fo:keep-with-next'] !== 'always' && resolver.namedAncestor(styleName)) attrs.keepNext = false;
   if (!isHeading && !defaults.keepLines && paraProps['fo:keep-together'] === 'always') attrs.keepLines = true;
   // "Don't hyphenate this paragraph" — only meaningful where the document hyphenates at
   // all; below that switch it is the default and no formatting.
@@ -2907,6 +2951,7 @@ function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, d
       if (bulletChar) attrs.bulletChar = bulletChar;
       if (indent != null) attrs.indent = indent;
       if (listLevelRightAligned(levelDef)) attrs.markerAlign = 'right';
+      Object.assign(attrs, listLevelLabel(levelDef, depth));
     }
     const node: Node = { type: 'bulletList', content: items };
     if (Object.keys(attrs).length) node.attrs = attrs;
@@ -2932,6 +2977,7 @@ function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, d
     if (listStyleType) attrs.listStyleType = listStyleType;
     if (indent != null) attrs.indent = indent;
     if (listLevelRightAligned(levelDef)) attrs.markerAlign = 'right';
+    Object.assign(attrs, listLevelLabel(levelDef, depth));
   }
   const node: Node = { type: 'orderedList', content: items };
   if (Object.keys(attrs).length) node.attrs = attrs;
@@ -2947,6 +2993,21 @@ function listLevelRightAligned(levelDef: Element | null): boolean {
     return align === 'end' || align === 'right';
   }
   return false;
+}
+
+// The label's hang (the negated fo:text-indent) and what follows it, where they differ
+// from the flat 0.635cm and tab the editor draws. odf-kit writes depth × 0.635cm, which
+// is the same default.
+function listLevelLabel(levelDef: Element | null, depth: number): { hanging?: number; markerSuffix?: 'space' | 'nothing' } {
+  const la = levelDef?.getElementsByTagNameNS(NS.style, 'list-level-label-alignment')[0];
+  if (!la) return {};
+  const out: { hanging?: number; markerSuffix?: 'space' | 'nothing' } = {};
+  const ti = lengthToCm(la.getAttributeNS(NS.fo, 'text-indent'));
+  const hang = ti == null ? null : Math.round(-ti * 100) / 100;
+  if (hang != null && ![LIST_HANGING_CM, depth * LIST_HANGING_CM].some((d) => Math.abs(hang - d) <= LIST_INDENT_EPS_CM)) out.hanging = hang;
+  const follow = la.getAttributeNS(NS.text, 'label-followed-by');
+  if (follow === 'space' || follow === 'nothing') out.markerSuffix = follow;
+  return out;
 }
 
 // Level's fo:margin-left (cm) from its <style:list-level-label-alignment> (the
@@ -3045,13 +3106,22 @@ function unbakeRegionColor(nodes: Node[], color: string): void {
   }
 }
 
+// Naming another master opens a section; naming the current one again does only where
+// that restarts something — its first page hands over, or it demands a side (probed:
+// every chapter reopening LibreOffice's Chapter Intro opens headless on a right page).
+function opensMaster(master: string, ctx: Ctx): boolean {
+  const current = ctx.masterPages[ctx.masterPages.length - 1] ?? ctx.leadingMaster;
+  if (master !== current) return true;
+  return ctx.bodyBlocks > 0 && (!!ctx.resolver.masterPageHF(master).restPage || !!ctx.resolver.pageStartSide(master));
+}
+
 // A block whose style names a master page opens a section, exactly as a paragraph style
 // does (convertParaLike): ODF's only per-section header/footer, and naming one is a page
 // break. Mutates ctx, so it runs before the block is converted against the new width.
 function sectionFlowAttrs(master: string | null, breakBefore: boolean, ctx: Ctx): Record<string, unknown> | null {
   const attrs: Record<string, unknown> = {};
   if (breakBefore && ctx.bodyBlocks) attrs.breakBefore = 'page';
-  if (master && master !== (ctx.masterPages[ctx.masterPages.length - 1] ?? ctx.leadingMaster)) {
+  if (master && opensMaster(master, ctx)) {
     ctx.masterPages.push(master);
     ctx.masterPageStarts.push(null);
     const geo = ctx.resolver.pageGeometry(master);

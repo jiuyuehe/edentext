@@ -1,5 +1,5 @@
 import { FontFamily as FontFamilyBase } from '@tiptap/extension-text-style';
-import { fontPairDeclarations } from '../../styles/styleSheet';
+import { fontPairDeclarations, singleLineHeight } from '../../styles/styleSheet';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -43,9 +43,13 @@ export const FontFamily = FontFamilyBase.extend({
         fontFamily: {
           ...(group.attributes as Record<string, object>).fontFamily,
           parseHTML: westOf,
-          // Both halves in one declaration: a style attribute keeps one font-family.
-          renderHTML: (attrs: Record<string, unknown>) =>
-            css(attrs.fontFamily ? fontPairDeclarations(attrs.fontFamily as string, attrs.fontFamilyAsian as string | null) : []),
+          // Both halves in one declaration: a style attribute keeps one font-family. A face
+          // off the default carries its natural line: a taller one raises its line (editor.css).
+          renderHTML: (attrs: Record<string, unknown>) => {
+            if (!attrs.fontFamily) return {};
+            const family = attrs.fontFamily as string, lh = singleLineHeight(family);
+            return css([...fontPairDeclarations(family, attrs.fontFamilyAsian as string | null), ...(lh !== 1.15 ? [`--natural-line: ${lh}`] : [])]);
+          },
         },
         fontFamilyAsian: {
           default: null,

@@ -115,6 +115,8 @@
     position: relative;
     width: 440px;
     max-width: 90vw;
+    max-height: 90vh;
+    overflow-y: auto;
     box-sizing: border-box;
     padding: 20px 22px 22px;
     background: var(--color-surface);

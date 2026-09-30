@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import type { Editor } from '@tiptap/core';
-  import { t } from '../i18n/i18n.svelte';
+  import { styleLabel, t } from '../i18n/i18n.svelte';
   import {
     DEFAULT_STYLE, HEADING_PARENT, isAbstractStyle, propsFromBlock, resolveStyle, styleDelta,
     styleOrder, uniqueStyleName, type Style, type StyleFamily,
@@ -454,11 +454,11 @@
                   class="entry"
                   class:active={current === s.name}
                   style="padding-left: {indentRem(0)}rem"
-                  title={s.name}
+                  title={styleLabel(s.name)}
                   onclick={() => select(s.name)}
                   ondblclick={() => { if (!s.builtin) editingName = s.name; }}
                 >
-                  <span class="name">{s.name}</span>
+                  <span class="name">{styleLabel(s.name)}</span>
                   {#if !s.builtin}<span class="badge">{t().styles.custom}</span>{/if}
                 </button>
               {/if}
@@ -485,11 +485,11 @@
                   class="entry"
                   class:active={current === s.name}
                   style="padding-left: {indentRem(0)}rem"
-                  title={s.name}
+                  title={styleLabel(s.name)}
                   onclick={() => select(s.name)}
                   ondblclick={() => { if (!s.builtin) editingName = s.name; }}
                 >
-                  <span class="name">{s.name}</span>
+                  <span class="name">{styleLabel(s.name)}</span>
                   {#if !s.builtin}<span class="badge">{t().styles.custom}</span>{/if}
                 </button>
               {/if}
@@ -516,11 +516,11 @@
                 class="entry"
                 class:active={current === s.name}
                 style="padding-left: {indentRem(depth)}rem"
-                title={s.name}
+                title={styleLabel(s.name)}
                 onclick={() => select(s.name)}
                 ondblclick={() => { if (!s.builtin) editingName = s.name; }}
               >
-                <span class="name">{s.name}</span>
+                <span class="name">{styleLabel(s.name)}</span>
                 {#if isAbstractStyle(s.name)}<span class="badge">{t().styles.abstract}</span>
                 {:else if !s.builtin}<span class="badge">{t().styles.custom}</span>{/if}
               </button>
@@ -681,12 +681,12 @@
           color: {resolved.text.color ?? 'var(--color-page-text)'};
           text-decoration: {[resolved.text.underline && 'underline', resolved.text.strike && 'line-through'].filter(Boolean).join(' ') || 'none'};
           text-align: {resolved.para.textAlign ?? 'left'};
-        ">{style.name}</div>
+        ">{styleLabel(style.name)}</div>
 
         <label>{t().styles.parent}
           <select value={style.parent ?? ''} onchange={(e) => putStyle({ ...style, parent: e.currentTarget.value || null }, family)}>
             <option value="">—</option>
-            {#each parentOptions as name}<option value={name}>{name}</option>{/each}
+            {#each parentOptions as name}<option value={name}>{styleLabel(name)}</option>{/each}
           </select>
         </label>
         {/if}

@@ -208,7 +208,9 @@ function materializeListMarkers(root: HTMLElement): void {
     if (!glyph) continue;
     const target = li.querySelector(':scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5') ?? li;
     const label = document.createElement('span');
-    label.style.cssText = `float:left;min-width:0.635cm;margin-left:-0.635cm;white-space:pre;color:${cs.color}`;
+    const hang = cs.getPropertyValue('--list-hang').trim() || '0.635cm';
+    const min = li.parentElement?.hasAttribute('data-marker-suffix') ? '0' : `max(0cm, ${hang})`;
+    label.style.cssText = `float:left;min-width:${min};margin-left:calc(-1 * ${hang});white-space:pre;color:${cs.color}`;
     // Same symbol shim the editor's ::marker uses (glyphs Liberation Serif lacks).
     label.style.fontFamily = `'EdenText Symbols', ${cs.fontFamily}`;
     label.textContent = `${glyph} `; // the trailing space editor.css puts in every marker

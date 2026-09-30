@@ -4,10 +4,10 @@
   import { anchored, clickOutside, isMenuOpen, toggleMenu, closeMenu } from '../menu.svelte';
   import { blockStyleName } from '../../../editor/extensions/paragraphStyle';
   import { activeCharacterStyle } from '../../../editor/extensions/characterStyle';
-  import { DEFAULT_STYLE, headingStyleName, resolveStyle, visibleStyles, type StyleFamily } from '../../../styles/styleSheet';
+  import { DEFAULT_STYLE, fontPairDeclarations, headingStyleName, resolveStyle, visibleStyles, type StyleFamily } from '../../../styles/styleSheet';
   import { MAX_HEADING_LEVEL } from '../../../styles/headings';
   import { showAllStyles, styleSheet, toggleAllStyles } from '../../../styles/sheet.svelte';
-  import { t } from '../../../i18n/i18n.svelte';
+  import { styleLabel, t } from '../../../i18n/i18n.svelte';
   import { shortcutHint, type ShortcutId } from '../../../editor/shortcuts';
 
   let { editor, tick, onManageStyles }: {
@@ -33,17 +33,6 @@
     return activeCharacterStyle(editor.state as never);
   });
 
-  // Built-in names are translated; a user style shows its own.
-  function label(name: string): string {
-    const s = t().toolbar.styles;
-    return ({
-      Standard: s.default, Title: s.docTitle, Subtitle: s.subtitle, Quotations: s.quote,
-      'Heading 1': t().toolbar.heading1, 'Heading 2': t().toolbar.heading2,
-      'Heading 3': t().toolbar.heading3, 'Heading 4': t().toolbar.heading4,
-      'Heading 5': t().toolbar.heading5, 'Heading 6': t().toolbar.heading6,
-    } as Record<string, string>)[name] ?? name;
-  }
-
   // Only the styles the Shortcuts extension binds carry a hint.
   function styleShortcut(name: string): string | undefined {
     if (name === DEFAULT_STYLE) return shortcutHint('styleStandard');
@@ -61,7 +50,8 @@
     return `font-size: ${Math.min(max, Math.max(Math.min(13, max), pt))}px;`
       + `font-weight: ${s.text.bold ? 700 : 400};`
       + `font-style: ${s.text.italic ? 'italic' : 'normal'};`
-      + `font-family: ${s.text.fontFamily ?? 'inherit'};`
+      // The editor's own stack, so a missing family shows the substitute the page renders.
+      + fontPairDeclarations(s.text.fontFamily, s.text.fontFamilyAsian).map((d) => `${d};`).join('')
       + (s.text.color ? `color: ${s.text.color};` : '');
   }
 
@@ -90,11 +80,11 @@
         class="tile"
         class:active={current === s.name}
         onclick={() => apply(s.name)}
-        title={styleShortcut(s.name) ? `${label(s.name)} (${styleShortcut(s.name)})` : label(s.name)}
+        title={styleShortcut(s.name) ? `${styleLabel(s.name)} (${styleShortcut(s.name)})` : styleLabel(s.name)}
         aria-pressed={current === s.name}
       >
-        <span class="tile-sample" style={tileStyle(s.name, 21)}>AaBb</span>
-        <span class="tile-name">{label(s.name)}</span>
+        <span class="tile-sample" style={tileStyle(s.name, 21)}>{t().styles.sample}</span>
+        <span class="tile-name">{styleLabel(s.name)}</span>
       </button>
     {/each}
   </div>
@@ -110,7 +100,7 @@
           <div class="rb-menu-label">{t().toolbar.styles.title}</div>
           {#each paraStyles as s}
             <button class:selected={current === s.name} style={tileStyle(s.name)} onclick={() => apply(s.name)}>
-              {label(s.name)}
+              {styleLabel(s.name)}
               {#if styleShortcut(s.name)}<span class="menu-key">{styleShortcut(s.name)}</span>{/if}
             </button>
           {/each}
@@ -120,7 +110,7 @@
           {#if charStyles.length}
             <div class="rb-menu-label">{t().styles.characterStyles}</div>
             {#each charStyles as c}
-              <button class:selected={currentChar === c.name} style={tileStyle(c.name)} onclick={() => applyChar(c.name)}>{c.name}</button>
+              <button class:selected={currentChar === c.name} style={tileStyle(c.name)} onclick={() => applyChar(c.name)}>{styleLabel(c.name)}</button>
             {/each}
           {/if}
         </div>

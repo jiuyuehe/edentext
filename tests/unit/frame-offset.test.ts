@@ -50,4 +50,10 @@ describe('a top-and-bottom frame’s offsets', () => {
     sinkOffsetFrames(alone);
     expect(alone.map((n: N) => n.type)).toEqual(['image']);
   });
+
+  it('stacks sunk frames top to bottom, whatever order the file wrote them in', () => {
+    const content = [IMG({ wrap: 'topBottom', wrapOffsetY: 7.7 }), IMG({ wrap: 'topBottom', wrapOffsetY: 1 })];
+    sinkOffsetFrames(content);
+    expect(content.map((n: N) => n.attrs.wrapOffsetY)).toEqual([1, 7.7]);
+  });
 });

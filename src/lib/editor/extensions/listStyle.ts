@@ -195,7 +195,7 @@ export const ListStyle = Extension.create<{ sheet: () => StyleSheet }>({
               return kind ? state.schema.nodes[kind === 'number' ? 'orderedList' : 'bulletList'] : node.type;
             };
             const clear = (attrs: Record<string, unknown>) =>
-              ({ ...attrs, bulletChar: null, listStyleType: null, markerAlign: null, indent: null });
+              ({ ...attrs, bulletChar: null, listStyleType: null, markerAlign: null, indent: null, hanging: null, markerSuffix: null });
             const pos = $from.before(outer);
             const node = $from.node(outer);
             tr.setNodeMarkup(pos, typeFor(node, 1), { ...clear(node.attrs), listStyleName: name });

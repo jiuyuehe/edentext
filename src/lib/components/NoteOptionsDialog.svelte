@@ -6,7 +6,7 @@
   import ColorPicker from './ColorPicker.svelte';
   import { styleSheet } from '../styles/sheet.svelte';
   import { formatOrdinal } from '../utils/orderedListTypes';
-  import { t } from '../i18n/i18n.svelte';
+  import { styleLabel, t } from '../i18n/i18n.svelte';
 
   // LibreOffice's Tools ▸ Footnotes and Endnotes. Everything here round-trips to ODF's
   // text:notes-configuration + style:footnote-sep and to Word's w:footnotePr.
@@ -110,14 +110,14 @@
       <label class="row">
         <span>{t().notesDialog.bodyStyle}</span>
         <select value={cls.bodyStyle} onchange={(e) => patch({ bodyStyle: e.currentTarget.value })}>
-          {#each Object.keys(styleSheet().paragraph) as name}<option value={name}>{name}</option>{/each}
+          {#each Object.keys(styleSheet().paragraph) as name}<option value={name}>{styleLabel(name)}</option>{/each}
           {#if !styleSheet().paragraph[cls.bodyStyle]}<option value={cls.bodyStyle}>{cls.bodyStyle}</option>{/if}
         </select>
       </label>
       <label class="row">
         <span>{t().notesDialog.citationStyle}</span>
         <select value={cls.citationStyle} onchange={(e) => patch({ citationStyle: e.currentTarget.value })}>
-          {#each Object.keys(styleSheet().character) as name}<option value={name}>{name}</option>{/each}
+          {#each Object.keys(styleSheet().character) as name}<option value={name}>{styleLabel(name)}</option>{/each}
           {#if !styleSheet().character[cls.citationStyle]}<option value={cls.citationStyle}>{cls.citationStyle}</option>{/if}
         </select>
       </label>

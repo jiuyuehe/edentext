@@ -85,6 +85,27 @@ try {
   await page.waitForSelector('.tiptap', { timeout: 15_000 });
   await settled(opened);
 
+  // A language for all text rewrites every block's attrs, the blocks on both sides of each
+  // page break included; the breaks have to stay where they were, and through the undo.
+  // Kept-together paragraphs break between blocks, and a language of their own first
+  // gives clearing it something to change. Every step is undone again after.
+  const breaks = () => page.evaluate(() => Array.from(document.querySelectorAll('[data-page-break-spacer]'),
+    (s) => Math.round(s.getBoundingClientRect().top)).join(','));
+  const relabel = async (how) => { await page.evaluate(how); await page.waitForTimeout(1500); return breaks(); };
+  const undo = () => document.querySelector('.tiptap').editor.commands.undo();
+  const breaksKept = await relabel(() => document.querySelector('.tiptap').editor.chain()
+    .selectAll().updateAttributes('paragraph', { keepLines: true }).setTextSelection(1).run());
+  const breaksLabelled = await relabel(() => document.querySelector('.tiptap').editor.chain()
+    .selectAll().setBlockLanguage('fr-FR').setTextSelection(1).run());
+  await page.locator('.statusbar .lang-picker select').selectOption('doc:de');
+  const breaksCleared = await relabel(() => {});
+  const breaksUndone = await relabel(undo);
+  check(breaksKept.includes(',') && [breaksLabelled, breaksCleared, breaksUndone].every((b) => b === breaksKept),
+    `a language for all text keeps the page breaks (${breaksKept} → ${breaksLabelled} → ${breaksCleared} → ${breaksUndone})`);
+  await page.evaluate(undo);
+  await page.evaluate(undo);
+  await settled(opened);
+
   // The caret is placed through the editor: a click lands wherever the element's centre
   // happens to be. The focus itself arrives on the next animation frame, so a key sent
   // before it is lost — wait for it.
@@ -311,6 +332,28 @@ try {
   check(bands === '-/none true/none -/both anchored/none -/none true/none true/none -/both',
     `loaded from the autosave, the block after a band frame clears it, after an anchored one it does not (${bands})`);
 
+  // An index shows the rows it saved, as both word processors do, until it is updated.
+  const heading = (t) => ({ type: 'heading', attrs: { level: 1 }, content: [words(t)] });
+  await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [
+    { type: 'tableOfContents', attrs: { title: '', entries: [{ text: 'Two', level: 1, page: 9 }, { text: 'Gone', level: 1, page: 7 }] } },
+    heading('One'), heading('Two'),
+  ] });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.toc-entry', { timeout: 15_000 });
+  await settle(page, true);
+  const tocRows = () => page.evaluate(() => Array.from(document.querySelectorAll('.toc-entry'),
+    (r) => `${r.querySelector('.toc-text').textContent} ${r.querySelector('.toc-page').textContent}`).join(', '));
+  const cachedRows = await tocRows();
+  // Word's other choice: the saved rows stay, their page numbers are renewed.
+  await page.evaluate(() => document.querySelector('.tiptap').editor.commands.updateIndexes('pages'));
+  await settle(page, true);
+  const renumbered = await tocRows();
+  await page.evaluate(() => document.querySelector('.tiptap').editor.commands.updateIndexes());
+  await settle(page, true);
+  const updated = await tocRows();
+  check(cachedRows === 'Two 9, Gone 7' && renumbered === 'Two 1, Gone 7' && updated === 'One 1, Two 1',
+    `an index keeps its saved rows until updated (${cachedRows} → ${renumbered} → ${updated})`);
+
   // A two-column section over several pages pages in one pass: a continuation is judged
   // with a full page wherever it renders, and the split counts the blocks' margins as the
   // overflow test does — else one block moves down per pass, a pass per block.
@@ -399,16 +442,18 @@ try {
     `a frame out of the flow is dragged by its own offsets (moved ${dx}/${dy}, wanted 60/40)`);
 
   // A text box in that mode moves the same way, but by its frame ring — its own drag
-  // is ProseMirror's node move, which would re-anchor it instead.
+  // is ProseMirror's node move, which would re-anchor it instead. Past the autosave's
+  // debounce, or its write puts the dragged picture back in the text box's place.
+  await page.waitForTimeout(1500);
   await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [
     block(words('before the box '), { type: 'textBox', attrs: { width: 200, height: 80, wrap: 'through' },
       content: [block(words('in the box'))] }, words(' after it')),
   ] });
   await page.reload({ waitUntil: 'load' });
-  await page.waitForSelector('.tiptap .image-node[data-wrap="through"]', { timeout: 15_000 });
+  await page.waitForSelector('.tiptap .textbox-node[data-wrap="through"]', { timeout: 15_000 });
   await settle(page, true);
   const boxAt = () => page.evaluate(() => {
-    const r = document.querySelector('.tiptap .image-node[data-wrap="through"]').getBoundingClientRect();
+    const r = document.querySelector('.tiptap .textbox-node[data-wrap="through"]').getBoundingClientRect();
     return { x: r.left, y: r.top };
   });
   const boxBefore = await boxAt();

@@ -7,6 +7,8 @@
      by App.svelte); extra bottom padding clears the fixed status bar. */
   padding: calc(var(--toolbar-overlay-h, 0px) + 1.25rem) 1rem 3rem;
   overflow: auto;
+  /* Pinch over the document is Editor.svelte's zoom, not the browser's. */
+  touch-action: pan-x pan-y;
   /* A flex item's automatic minimum is its content: without this a canvas wider than
      the window — a page grid, or a page beside the balloon strip — widens the whole app
      instead of scrolling here, and the toolbar above ends short of it. */
@@ -412,6 +414,12 @@
 .paper .tiptap .image-node.image-line:not([data-v-align='offset']) {
   vertical-align: bottom !important;
 }
+/* ProseMirror's caret shim after a paragraph-ending image: an image wider than the line
+   leaves it no room, and it wrapped onto an empty line of its own that neither word
+   processor sets. Out of flow it takes none. */
+.paper .tiptap .image-node.image-line + img.ProseMirror-separator {
+  position: absolute;
+}
 /* While selected, lift the node (and its handles) above the header/footer layer
    (z-index 22) so a rotate/resize handle poking into a margin stays grabbable. */
 .paper .tiptap .image-node.image-selected {
@@ -436,12 +444,17 @@
   top: 50%;
   transform: translate(-50%, -50%);
 }
+.paper .tiptap .image-crop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
 .paper .tiptap .image-rotor img {
   width: 100%;
   height: 100%;
   display: block;
 }
-.paper .tiptap .image-node.image-selected .image-rotor img {
+.paper .tiptap .image-node.image-selected .image-crop {
   outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
@@ -683,7 +696,10 @@
    Either half may come from the style rule or, nearer, from the block's own attrs
    (lineHeight.ts / blockFontSize.ts) — multiplying them here is what keeps both.
    A fixed spacing (--line-fixed) replaces the product outright. */
-.paper .tiptap :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, li, .toc-entry) {
+/* A run in a face of its own sets the same product with that face's natural line, so a
+   taller one raises its line as in both word processors; a fixed spacing stays fixed. */
+.paper .tiptap :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, li, .toc-entry),
+.paper .tiptap :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, li, .toc-entry) :is([style*='--natural-line'], [data-char-style]) {
   line-height: var(--line-fixed, calc(var(--line-factor) * var(--natural-line)));
 }
 
@@ -733,6 +749,10 @@
 .paper .tiptap li {
   list-style: none;
 }
+/* The level's hanging indent; a list's own `hanging` attr sets it inline (listMarker.ts). */
+.paper .tiptap :is(ol, ul) {
+  --list-hang: 0.635cm;
+}
 
 /* The containing block for the right-aligned marker below, which stays absolute. */
 .paper .tiptap li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10) {
@@ -744,8 +764,8 @@
    the first line right instead of printing under it, as both word processors do. */
 .paper .tiptap li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before {
   float: left;
-  min-width: 0.635cm;
-  margin-left: -0.635cm;
+  min-width: max(0cm, var(--list-hang));
+  margin-left: calc(-1 * var(--list-hang));
   white-space: pre;
   line-height: inherit;
   /* The marker follows the item's first text portion (listMarker.ts sets the custom
@@ -765,7 +785,11 @@
   top: 0;
   min-width: 0;
   margin-left: 0;
-  right: calc(100% + 0.635cm);
+  right: calc(100% + var(--list-hang));
+}
+/* A label followed by a space or nothing has no tab to run to: the text follows it. */
+.paper .tiptap :is(ol, ul)[data-marker-suffix] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before {
+  min-width: 0;
 }
 
 /* Ordered numbering, keyed by data-eff-list-style — the effective numbering

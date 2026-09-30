@@ -68,7 +68,7 @@ describe('page-placed header frame', () => {
     const files = unzipSync(await buildOdt(first.content as any, margins, 'portrait', { header: first.header, footer: null, pageCount: 1 }));
     // The same frame as LibreOffice may write it: x from the page edge.
     const styles = strFromU8(files['styles.xml'])
-      .replace(/style:horizontal-rel="paragraph-content"/, 'style:horizontal-rel="page"')
+      .replace(/style:horizontal-rel="paragraph(?:-content)?"/, 'style:horizontal-rel="page"')
       .replace(/svg:x="-0\.54cm"/, 'svg:x="2cm"');
     expect(styles).toMatch(/horizontal-rel="page"[\s\S]*svg:x="2cm"|svg:x="2cm"[\s\S]*horizontal-rel="page"/);
     files['styles.xml'] = strToU8(styles);
