@@ -240,7 +240,7 @@ export function docxPicture(fmt: DtFormat): string {
 }
 
 const LOCALE_TAG: Record<string, string> = {
-  en: 'en-US', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', pt: 'pt-PT', ru: 'ru-RU', uk: 'uk-UA',
+  en: 'en-US', el: 'el-GR', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', pt: 'pt-PT', ru: 'ru-RU', uk: 'uk-UA',
   'zh-Hans': 'zh-CN', 'zh-Hant': 'zh-TW', ja: 'ja-JP',
 };
 

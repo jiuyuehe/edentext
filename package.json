@@ -32,6 +32,7 @@
     "@tsconfig/svelte": "^5.0.8",
     "@vitest/coverage-v8": "^4.1.10",
     "dictionary-de": "^3.0.0",
+    "dictionary-el": "^4.0.0",
     "dictionary-en": "^4.0.0",
     "dictionary-es": "^4.0.0",
     "dictionary-fr": "^3.0.0",
