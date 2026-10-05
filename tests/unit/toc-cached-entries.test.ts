@@ -35,7 +35,7 @@ const docx = zipSync({
 });
 
 const toc = (doc: any) => doc.content.content.find((n: any) => n.type === 'tableOfContents');
-const CACHED = [{ text: '1 Chapter', level: 1, page: 3 }, { text: 'Section', level: 2, page: 4 }];
+const CACHED = [{ text: '1\tChapter', level: 1, page: 3 }, { text: 'Section', level: 2, page: 4 }];
 
 describe('an imported index', () => {
   it('shows the rows its DOCX field cached', () => {

@@ -1541,12 +1541,14 @@ function tocEntryTextAndPage(p: Element, pages: boolean): { text: string; page: 
       if (c === lastTab) { past = true; continue; }
       const e = c.nodeType === 1 ? (c as Element) : null;
       if (e && !(e.namespaceURI === NS.text && (e.localName === 'tab' || e.localName === 's'))) { walk(e); continue; }
-      const txt = e ? ' ' : c.nodeValue ?? '';
+      const txt = e ? (e.localName === 'tab' ? '\t' : ' ') : c.nodeValue ?? '';
       if (past) after += txt; else before += txt;
     }
   };
   walk(p);
-  return { text: before.replace(/\s+/g, ' ').trim(), page: after.trim() };
+  // A tab inside the text stays one: it sets the title at the level's hanging indent.
+  const text = before.replace(/[^\S\t]+/g, ' ').replace(/ ?\t[\t ]*/g, '\t').trim();
+  return { text, page: after.trim() };
 }
 
 // What a block's named style already gives it — the yardstick for "is this direct

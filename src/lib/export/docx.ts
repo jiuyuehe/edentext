@@ -2840,7 +2840,10 @@ function indexFieldParagraphs(node: TiptapNode, kind: IndexKind, maxLevel: numbe
     tabStops: [{ type: TabStopType.RIGHT, position: cmToTwip(tabCm), ...(leader ? { leader } : {}) }],
     children: [
       ...(i === 0 ? open : []),
-      ...e.text.split('\n').map((part, li) => new TextRun(li ? { text: part, break: 1 } : { text: part })),
+      ...e.text.split('\n').flatMap((line, li) => line.split('\t').flatMap((part, ti) => [
+        ...(ti ? runsFromXml('<w:r><w:tab/></w:r>') : []),
+        new TextRun(li && !ti ? { text: part, break: 1 } : { text: part }),
+      ])),
       ...(noPage ? [] : runsFromXml(`<w:r><w:tab/></w:r><w:r><w:t xml:space="preserve">${escapeXml(e.pages)}</w:t></w:r>`)),
       ...(i === entries.length - 1 ? close : []),
     ],

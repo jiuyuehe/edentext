@@ -5069,7 +5069,7 @@ function tocXml(toc: TocExport, index: number, bibTypes: string[]): string {
         `</text:index-title>`
       : '') +
     toc.entries
-      .map(e => `<text:p text:style-name="${tocLevelStyle(toc, e.level)}">${escapeXml(e.text).replace(/\n/g, '<text:line-break/>')}`
+      .map(e => `<text:p text:style-name="${tocLevelStyle(toc, e.level)}">${escapeXml(e.text).replace(/\n/g, '<text:line-break/>').replace(/\t/g, '<text:tab/>')}`
         // A bibliography row is the source, nothing else: no tab, no page number. An
         // index switched to text alone says the same about its rows.
         + (toc.kind === 'bibliography' || !toc.pageNumbers ? '' : `<text:tab/>${e.pages?.join(', ') ?? e.page}`) + '</text:p>')

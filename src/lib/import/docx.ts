@@ -474,7 +474,10 @@ type TocFieldState = { fieldDepth: number; tocDepth: number; instr: string[] };
 function tocMaxLevel(instr: string): number {
   const m = /\\o\s+"?\s*\d+\s*-\s*(\d+)/.exec(instr);
   const n = m ? Number(m[1]) : NaN;
-  return n >= 1 ? Math.min(MAX_HEADING_LEVEL, n) : MAX_HEADING_LEVEL;
+  // \t "Style;level;Style;level" lists styles at levels of their own, past \o's range too.
+  const t = /\\t\s+"([^"]*)"/.exec(instr)?.[1].split(/[;,]/).filter((_, i) => i % 2).map(Number) ?? [];
+  const deepest = Math.max(n >= 1 ? n : 0, ...t.filter((l) => l >= 1));
+  return deepest >= 1 && (m || t.length) ? Math.min(MAX_HEADING_LEVEL, deepest) : MAX_HEADING_LEVEL;
 }
 
 // `\n` drops the page numbers. Word names a level range with it; the editor's index is
@@ -571,7 +574,8 @@ function cachedIndexEntry(p: Element, ctx: Ctx, kind: IndexKind, pages: boolean)
   // An INDEX field without \e puts ", " before the numbers instead of a tab.
   const comma = pages && kind === 'alphabetical' && !text.includes('\t') ? /,\s*(?=\d[\d,;\s]*$)/.exec(text) : null;
   const cut = comma ? comma.index : pages ? text.lastIndexOf('\t') : -1;
-  const body = (cut < 0 ? text : text.slice(0, cut)).replace(/\t+/g, ' ').trim();
+  // A tab inside the text stays one: it sets the title at the level's hanging indent.
+  const body = (cut < 0 ? text : text.slice(0, cut)).replace(/\t+/g, '\t').trim();
   const nums = cut < 0 ? [] : text.slice(cut + (comma ? comma[0].length : 1)).split(/[,;]/).map((n) => parseInt(n, 10)).filter((n) => n > 0);
   // An alphabetical index's letter rows carry no number and are not entries.
   if (!body || (kind === 'alphabetical' && pages && !nums.length)) return null;
