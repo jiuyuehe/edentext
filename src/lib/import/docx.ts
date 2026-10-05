@@ -3276,17 +3276,23 @@ function buildTable(tbl: Element, ctx: Ctx): Node | null {
       // outer side, anything inside it the layer's insideH/insideV.
       const tcBorders = fc(tcPr, 'tcBorders');
       const table: GridBox = { row: 0, col: 0, rowEnd: trs.length, colEnd: gridCols };
-      const layers: { els: (Element | null)[]; box: GridBox }[] = [
+      // A band's own edges (top/bottom of a row band, left/right of a column band) close
+      // each band row or column; inside the banded region it declares none for, its
+      // insideH/insideV stands (probed in LibreOffice).
+      const bandAxis = (el: Element): 'h' | 'v' | null => /^band\dHorz$/.test(el.getAttributeNS(W, 'type') ?? '') ? 'h'
+        : /^band\dVert$/.test(el.getAttributeNS(W, 'type') ?? '') ? 'v' : null;
+      const layers: { els: (Element | null)[]; box: GridBox; band?: 'h' | 'v' | null }[] = [
         { els: tblBorderEls, box: table },
-        ...areas.map((a) => ({ els: [fc(fc(a.el, 'tcPr'), 'tcBorders')], box: a.box })),
+        ...areas.map((a) => ({ els: [fc(fc(a.el, 'tcPr'), 'tcBorders')], box: a.box, band: bandAxis(a.el) })),
         { els: [tcBorders], box },
       ];
       const resolve = (side: 'top' | 'bottom' | 'left' | 'right') => {
         let v: string | null | undefined;
         for (const layer of layers) {
           const name = areaSide(layer.box, box, side);
+          const own = layer.band === (side === 'top' || side === 'bottom' ? 'h' : 'v') && name !== side;
           for (const el of layer.els) {
-            const got = docxBorderAttr(fc(el, name));
+            const got = (own ? docxBorderAttr(fc(el, side)) : undefined) ?? docxBorderAttr(fc(el, name));
             if (got !== undefined) { v = got; break; }
           }
         }
