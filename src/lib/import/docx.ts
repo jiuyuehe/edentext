@@ -2878,9 +2878,11 @@ function convertWpsShape(wsp: Element, root: Element, isAnchor: boolean, ctx: Ct
     }
   }
   // Word's own top/bottom inset is half its side one; only one that differs is kept.
-  const tIns = Number(bodyPr?.getAttribute('tIns') ?? NaN) / 360000;
   const sideCm = (attrs.paddingCm as number | undefined) ?? TEXTBOX_PADDING_CM;
-  if (Number.isFinite(tIns) && tIns >= 0 && Math.abs(tIns - sideCm) > 0.01) attrs.paddingYCm = Math.round(tIns * 1000) / 1000;
+  for (const [ins, key] of [['tIns', 'paddingTopCm'], ['bIns', 'paddingBottomCm']]) {
+    const cm = Number(bodyPr?.getAttribute(ins) ?? NaN) / 360000;
+    if (Number.isFinite(cm) && cm >= 0 && Math.abs(cm - sideCm) > 0.01) attrs[key] = Math.round(cm * 1000) / 1000;
+  }
 
   const txbxContent = nsChild(nsChild(wsp, WPS, 'txbx'), W, 'txbxContent');
   // Only a:spAutoFit grows the shape with its text; without it the box keeps its extent

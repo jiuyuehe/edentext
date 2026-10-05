@@ -61,7 +61,8 @@ export interface TextBoxAttrs {
   wrapDist: number | null;    // cm of gap to the text beside it
   wrapAlign: string | null;   // 'center'/'right' = set against the middle/far end
   paddingCm: number;          // inset ring around the text (ODF fo:padding)
-  paddingYCm: number | null;  // its top and bottom where they differ (Word's tIns/bIns)
+  paddingTopCm: number | null;  // its top and bottom where they differ from the sides
+  paddingBottomCm: number | null;  // (Word's tIns/bIns)
   shapeKind: ShapeKind;
   shapePath: string | null;   // a freeform's own outline, in the 0…100 box
   shapeTextArea: TextArea | null; // where its text goes, same box
@@ -258,9 +259,14 @@ export const TextBox = Node.create({
         parseHTML: el => parseCmAttr((el as HTMLElement).getAttribute('data-padding')) ?? TEXTBOX_PADDING_CM,
         renderHTML: () => ({}),
       },
-      paddingYCm: {
+      paddingTopCm: {
         default: null,
-        parseHTML: el => parseCmAttr((el as HTMLElement).getAttribute('data-padding-y')),
+        parseHTML: el => parseCmAttr((el as HTMLElement).getAttribute('data-padding-top')),
+        renderHTML: () => ({}),
+      },
+      paddingBottomCm: {
+        default: null,
+        parseHTML: el => parseCmAttr((el as HTMLElement).getAttribute('data-padding-bottom')),
         renderHTML: () => ({}),
       },
       shapeKind: {
@@ -401,7 +407,8 @@ export const TextBox = Node.create({
       ...(stroke ? { 'data-stroke': stroke } : {}),
       ...(a.strokeWidthPt !== 1 ? { 'data-stroke-width': String(a.strokeWidthPt) } : {}),
       ...(a.paddingCm !== TEXTBOX_PADDING_CM ? { 'data-padding': String(a.paddingCm) } : {}),
-      ...(a.paddingYCm != null ? { 'data-padding-y': String(a.paddingYCm) } : {}),
+      ...(a.paddingTopCm != null ? { 'data-padding-top': String(a.paddingTopCm) } : {}),
+      ...(a.paddingBottomCm != null ? { 'data-padding-bottom': String(a.paddingBottomCm) } : {}),
     }), 0];
   },
 
@@ -677,11 +684,9 @@ class TextBoxView {
     this.rotor.style.minHeight = !fixed && h ? `${h}px` : '';
     this.rotor.style.height = fixed ? `${h}px` : '';
     // The content clips, not the rotor: the resize handles sit on the rotor's edge.
-    // A hair of tolerance, so a font's metrics a little taller than the file's never
-    // cut a glyph that fits there.
+    // Its edge is the inset's, where LibreOffice cuts the text too (probed).
     this.contentDOM.style.maxHeight = fixed ? '100%' : '';
     this.contentDOM.style.overflow = fixed ? 'clip' : '';
-    this.contentDOM.style.overflowClipMargin = fixed ? '0.3em' : '';
   }
 
   private applyAll(): void {
@@ -913,12 +918,12 @@ class TextBoxView {
     } else if (a.wrap === 'left' || a.wrap === 'right') {
       d.style.float = a.wrap;
       d.style.margin = frameMargins(a.wrap, a.wrapOffset, this.wrapperWidth(), null, a.wrapDist);
+      unstackFloat(d, a.wrap, a.wrapOffset);
     } else if (a.wrap === 'through') {
       // Behind the text, which is what a shape with no run-through of its own exports as
       // — and under a picture behind the text too (-1), which is the order LibreOffice
       // paints a cover page in; a box the file puts in front of the text sits above both.
       applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true, a.wrapFromBody === true, a.zIndex);
-      unstackFloat(d, a.wrap, a.wrapOffset);
       // Deferred: the frame has to be laid out before its own page can be read. Its
       // column only needs it in the document, so one already there lands at once.
       if (!a.wrapFromPage && !a.wrapFromBody && d.isConnected) placeInColumn(this.editor.view, d);
@@ -1209,8 +1214,8 @@ export type TextBoxDebugEntry = {
 // dump. Reads the .textbox-rotor's computed style via the view's DOM lookup.
 // The inset ring as CSS: its top and bottom where the file gives them apart.
 function ringCss(a: TextBoxAttrs): string {
-  const x = `${paddingPx(a.paddingCm).toFixed(2)}px`;
-  return a.paddingYCm != null ? `${paddingPx(a.paddingYCm).toFixed(2)}px ${x}` : x;
+  const px = (cm: number | null) => `${paddingPx(cm ?? a.paddingCm).toFixed(2)}px`;
+  return `${px(a.paddingTopCm)} ${px(null)} ${px(a.paddingBottomCm)}`;
 }
 
 // The document with every growing box as tall as it renders. A .docx box keeps its extent

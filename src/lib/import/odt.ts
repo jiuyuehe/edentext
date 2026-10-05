@@ -584,8 +584,10 @@ function convertTextBoxFrame(frame: Element, textBoxEl: Element, ctx: Ctx): Node
   boxWrapAlign(gp, attrs);
   const padCm = lengthToCm(gp['fo:padding'] ?? gp['fo:padding-left']);
   if (padCm != null && Math.abs(padCm - TEXTBOX_PADDING_CM) > 0.01) attrs.paddingCm = Math.round(padCm * 1000) / 1000;
-  const topCm = lengthToCm(gp['fo:padding-top']);
-  if (topCm != null && Math.abs(topCm - (padCm ?? TEXTBOX_PADDING_CM)) > 0.01) attrs.paddingYCm = Math.round(topCm * 1000) / 1000;
+  for (const [prop, key] of [['fo:padding-top', 'paddingTopCm'], ['fo:padding-bottom', 'paddingBottomCm']]) {
+    const cm = lengthToCm(gp[prop]);
+    if (cm != null && Math.abs(cm - (padCm ?? TEXTBOX_PADDING_CM)) > 0.01) attrs[key] = Math.round(cm * 1000) / 1000;
+  }
   shapeStyleAttrs(gp, attrs, false);
   boxTextFlow(frame, ctx, attrs);
   return { type: 'textBox', attrs, content: textBoxContent(Array.from(textBoxEl.children), ctx, wCm) };

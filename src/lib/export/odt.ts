@@ -1045,7 +1045,8 @@ type TextBoxExport = {
   inFront: boolean;
   zIndex: number;
   paddingCm: number;
-  paddingYCm: number | null;
+  paddingTopCm: number | null;
+  paddingBottomCm: number | null;
   shapeKind: ShapeKind;
   shapePath: string | null;
   shapeTextArea: TextArea | null;
@@ -1082,7 +1083,8 @@ function textBoxDescriptor(node: TiptapNode): TextBoxExport {
     inFront: a.inFront === true,
     zIndex: frameRank(a.zIndex),
     paddingCm: typeof a.paddingCm === 'number' ? round3(a.paddingCm) : TEXTBOX_PADDING_CM,
-    paddingYCm: typeof a.paddingYCm === 'number' ? round3(a.paddingYCm) : null,
+    paddingTopCm: typeof a.paddingTopCm === 'number' ? round3(a.paddingTopCm) : null,
+    paddingBottomCm: typeof a.paddingBottomCm === 'number' ? round3(a.paddingBottomCm) : null,
     shapeKind: isShapeKind(a.shapeKind) ? a.shapeKind : 'textbox',
     shapePath: typeof a.shapePath === 'string' && a.shapePath ? a.shapePath : null,
     shapeTextArea: asTextArea(a.shapeTextArea),
@@ -4791,7 +4793,8 @@ function textBoxGraphicStyle(box: TextBoxExport, index: number): string {
   return (
     `<style:style style:name="TbxFr${index + 1}" style:family="graphic"${parent}>` +
     `<style:graphic-properties ${fill} ${stroke}${arrows} fo:padding="${box.paddingCm}cm"` +
-    (box.paddingYCm != null ? ` fo:padding-top="${box.paddingYCm}cm" fo:padding-bottom="${box.paddingYCm}cm"` : '') +
+    (box.paddingTopCm != null ? ` fo:padding-top="${box.paddingTopCm}cm"` : '') +
+    (box.paddingBottomCm != null ? ` fo:padding-bottom="${box.paddingBottomCm}cm"` : '') +
     `${grow} draw:textarea-vertical-align="${box.textVAlign}"${vertMode}${wrap}/>${vertical}` +
     `</style:style>`
   );
