@@ -387,6 +387,20 @@ export class DocxStyles {
     return this.styleFirstLineTwip(this.basedOn.get(styleId) ?? null, seen);
   }
 
+  // The indent the style chain gives a paragraph it numbers: only the styles from this
+  // one down to the one that brings the numbering outrank the level (probed in LibreOffice).
+  numberedStyleIndent(styleId: string | null | undefined): { left: number | null; first: number | null } {
+    let left: number | undefined, first: number | undefined;
+    const seen = new Set<string>();
+    for (let s = styleId ?? null; s && !seen.has(s); s = this.basedOn.get(s) ?? null) {
+      seen.add(s);
+      left ??= this.ownIndentTwip.get(s);
+      first ??= this.ownFirstTwip.get(s);
+      if (this.ownNumId.has(s)) break;
+    }
+    return { left: left ?? null, first: first ?? null };
+  }
+
   styleHangingTwip(styleId: string | null | undefined, seen = new Set<string>()): number | null {
     if (!styleId || seen.has(styleId)) return null;
     seen.add(styleId);

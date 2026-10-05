@@ -875,9 +875,8 @@ function listItemIndent(el: Element, ctx: Ctx): ItemIndent {
   // Numbering the paragraph style brings is outranked by that style's own indent, which
   // a direct w:numPr ranks below the level's again (probed in LibreOffice).
   const styleId = styleIdOf(ppr, ctx);
-  const fromStyle = !fc(ppr, 'numPr') ? styleId : null;
-  const styleFirst = ctx.styles.styleFirstLineTwip(fromStyle);
-  const styled: ItemIndent = { left: ctx.styles.styleIndentTwip(fromStyle), hang: styleFirst != null ? -styleFirst : null };
+  const own = !fc(ppr, 'numPr') ? ctx.styles.numberedStyleIndent(styleId) : { left: null, first: null };
+  const styled: ItemIndent = { left: own.left, hang: own.first != null ? -own.first : null };
   if (!ind) return styled;
   const charTwip = blockDefaults(ctx.styles.paragraphRun(styleId), null, false).fontSizePt * 20 / 100;
   const pick = (chars: string, twips: string) => {
