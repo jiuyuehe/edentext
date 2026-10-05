@@ -1712,6 +1712,8 @@ function paraPropsFromOdf(props: PropMap): ParaProps {
   if (mt != null) out.spaceBefore = snapPt(mt);
   if (mb != null) out.spaceAfter = snapPt(mb);
   if (ml != null) out.indent = Math.round(ml * 100) / 100;
+  const ti = lengthToCm(props['fo:text-indent']);
+  if (ti != null) out.indentFirst = Math.round(ti * 100) / 100;
   // The ODF percentage itself, or a fixed height, as everywhere else in the model
   // (blockAttrs, both DOCX paths, and the export, which writes either straight back).
   const lh = lineSpacing(props['fo:line-height']);

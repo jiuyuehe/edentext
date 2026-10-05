@@ -193,6 +193,7 @@ export class DocxStyles {
   private ownAlign = new Map<string, string>(); // style's own w:pPr/w:jc
   private ownSpacing = new Map<string, ParaSpacing>(); // style's own w:pPr/w:spacing
   private ownIndentTwip = new Map<string, number>(); // style's own w:pPr/w:ind left
+  private ownFirstTwip = new Map<string, number>(); // w:ind firstLine, or minus w:hanging
   private ownHangingTwip = new Map<string, number>(); // style's own w:pPr/w:ind hanging
   private paraStyleNames = new Map<string, string>(); // paragraph styleId → w:name
   private charStyleNames = new Map<string, string>(); // character styleId → w:name
@@ -296,6 +297,9 @@ export class DocxStyles {
         if (Number.isFinite(left)) this.ownIndentTwip.set(id, left);
         const hanging = parseInt(ind.getAttributeNS(W, 'hanging') ?? '', 10);
         if (Number.isFinite(hanging)) this.ownHangingTwip.set(id, hanging);
+        const firstLine = parseInt(ind.getAttributeNS(W, 'firstLine') ?? '', 10);
+        if (Number.isFinite(hanging)) this.ownFirstTwip.set(id, -hanging);
+        else if (Number.isFinite(firstLine)) this.ownFirstTwip.set(id, firstLine);
       }
       const pBdr = ppr && firstChild(ppr, 'pBdr');
       if (pBdr) this.ownPBdr.set(id, pBdr);
@@ -365,6 +369,15 @@ export class DocxStyles {
     const own = this.ownIndentTwip.get(styleId);
     if (own != null) return own;
     return this.styleIndentTwip(this.basedOn.get(styleId) ?? null, seen);
+  }
+
+  // The style's first-line offset (twips, negative = hanging) along the basedOn chain.
+  styleFirstLineTwip(styleId: string | null | undefined, seen = new Set<string>()): number | null {
+    if (!styleId || seen.has(styleId)) return null;
+    seen.add(styleId);
+    const own = this.ownFirstTwip.get(styleId);
+    if (own != null) return own;
+    return this.styleFirstLineTwip(this.basedOn.get(styleId) ?? null, seen);
   }
 
   styleHangingTwip(styleId: string | null | undefined, seen = new Set<string>()): number | null {

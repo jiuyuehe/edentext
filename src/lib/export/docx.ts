@@ -3098,7 +3098,13 @@ function paragraphStyleOf(style: Style): IParagraphStyleOptions {
   const lineRule = fixedPt > 0 ? LineRuleType.EXACT : LineRuleType.AUTO;
   if (Object.keys(spacing).length) paragraph.spacing = { ...spacing, ...(spacing.line ? { lineRule } : {}) };
   if (p.textAlign) paragraph.alignment = alignOf({ textAlign: p.textAlign });
-  if (p.indent != null) paragraph.indent = { left: cmToTwip(p.indent) };
+  const first = typeof p.indentFirst === 'number' ? p.indentFirst : null;
+  if (p.indent != null || first != null) {
+    paragraph.indent = {
+      ...(p.indent != null ? { left: cmToTwip(p.indent) } : {}),
+      ...(first != null ? (first < 0 ? { hanging: cmToTwip(-first) } : { firstLine: cmToTwip(first) }) : {}),
+    };
+  }
   if (style.outlineLevel) paragraph.keepNext = true;
   // The style's own colored field and rule lines.
   const shading = paraShadingOf(p);

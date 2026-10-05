@@ -330,12 +330,12 @@
   text-indent: 0;
 }
 /* A note style declares its indent as a hanging pair (fo:margin-left with a negative
-   fo:text-indent) and the style model has no first-line half, so its margin alone would
-   just push the note right. The hanging pair stays LibreOffice's; the font, size and
-   colour are the file's. */
+   fo:text-indent), which the note's padding and marker already draw. The hanging pair
+   stays LibreOffice's; the font, size and colour are the file's. */
 .paper .tiptap .note[data-style] {
   margin-left: 0;
   margin-right: 0;
+  text-indent: -0.6cm;
 }
 /* A footnote is lifted out of the flow to the foot of its anchor's page; pageBreaks.ts
    sets `top` in document px and marks the first note of each page. The margin custom

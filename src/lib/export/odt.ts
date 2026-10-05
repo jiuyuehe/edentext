@@ -2105,6 +2105,7 @@ function ownStyleAttrs(style: { para: Record<string, unknown>; text: Record<stri
   if (before != null) para['fo:margin-top'] = `${before}pt`;
   if (after != null) para['fo:margin-bottom'] = `${after}pt`;
   if (p.indent != null) para['fo:margin-left'] = `${p.indent}cm`;
+  if (p.indentFirst != null) para['fo:text-indent'] = `${p.indentFirst}cm`;
   if (p.backgroundColor) para['fo:background-color'] = String(p.backgroundColor);
   for (const [key, side] of [['borderTop', 'top'], ['borderRight', 'right'], ['borderBottom', 'bottom'], ['borderLeft', 'left']] as const) {
     const v = p[key];

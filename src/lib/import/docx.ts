@@ -1127,6 +1127,8 @@ function stylePara(ctx: Ctx, id: string | null): ParaProps {
   else if (jc === 'left' || jc === 'start') out.textAlign = 'left';
   const ind = ctx.styles.styleIndentTwip(id);
   if (ind != null) out.indent = round2(twipToCm(ind));
+  const first = ctx.styles.styleFirstLineTwip(id);
+  if (first != null) out.indentFirst = round2(twipToCm(first));
   // The style's own rule lines and colored field — a Title's rule lives here, not on the
   // block, so every paragraph the style governs draws it (styleCss).
   const shd = ctx.styles.paragraphShading(id);
