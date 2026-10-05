@@ -2,11 +2,11 @@
 // template or $derived re-renders when setLocale() reassigns it — no store bridge.
 
 import en, { type Messages } from './locales/en';
-import el from './locales/el';
 import de from './locales/de';
 import es from './locales/es';
 import fr from './locales/fr';
 import pt from './locales/pt';
+import el from './locales/el';
 import ru from './locales/ru';
 import uk from './locales/uk';
 import ja from './locales/ja';
@@ -15,7 +15,7 @@ import zhHant from './locales/zh-Hant';
 import { loadAppLanguage, saveAppLanguage } from '../storage/appLanguage';
 import type { Locale } from './config';
 
-const catalogs: Record<Locale, Messages> = { en, el, de, es, fr, pt, ru, uk, ja, 'zh-Hans': zhHans, 'zh-Hant': zhHant };
+const catalogs: Record<Locale, Messages> = { en, de, es, fr, pt, el, ru, uk, ja, 'zh-Hans': zhHans, 'zh-Hant': zhHant };
 
 let current = $state<Locale>(loadAppLanguage());
 

@@ -28,11 +28,11 @@ export interface LanguageDef {
 export const LANGUAGES: LanguageDef[] = [
   { code: 'en', label: 'English (US)', odf: { language: 'en', country: 'US' }, grammar: true },
   { code: 'en-GB', label: 'English (UK)', odf: { language: 'en', country: 'GB' }, grammar: true },
-  { code: 'el', label: 'Ελληνικά', odf: { language: 'el', country: 'GR' } },
   { code: 'de', label: 'Deutsch', odf: { language: 'de', country: 'DE' } },
   { code: 'es', label: 'Español (España)', odf: { language: 'es', country: 'ES' } },
   { code: 'fr', label: 'Français', odf: { language: 'fr', country: 'FR' } },
   { code: 'pt', label: 'Português (Portugal)', odf: { language: 'pt', country: 'PT' } },
+  { code: 'el', label: 'Ελληνικά', odf: { language: 'el', country: 'GR' } },
   { code: 'ru', label: 'Русский', odf: { language: 'ru', country: 'RU' } },
   { code: 'uk', label: 'Українська', odf: { language: 'uk', country: 'UA' } },
   { code: 'ja-JP', label: '日本語', odf: { language: 'ja', country: 'JP' }, noDict: true },
