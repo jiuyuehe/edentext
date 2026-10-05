@@ -134,8 +134,11 @@ export function listMarkerDecos(doc: ProseMirrorNode, charProps?: CharStyleProps
   const decos: Decoration[] = [];
   doc.descendants((node, pos, parent) => {
     if (node.type.name !== 'listItem') return;
-    const format = withOwnMarker(parent?.attrs.markerFormat, itemMarkerFormat(node, charProps));
-    decos.push(Decoration.node(pos, pos + node.nodeSize, { style: markerStyle(format) }));
+    const own = parent?.attrs.markerFormat as Partial<MarkerFormat> | null | undefined;
+    const format = withOwnMarker(own, itemMarkerFormat(node, charProps));
+    // A level sized apart from its text raises the item's first line, as both word
+    // processors set it; editor.css puts that marker in the line instead of floating it.
+    decos.push(Decoration.node(pos, pos + node.nodeSize, { style: markerStyle(format), ...(own?.fontSize ? { class: 'marker-sized' } : {}) }));
   });
   return DecorationSet.create(doc, decos);
 }
