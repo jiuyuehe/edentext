@@ -224,6 +224,13 @@ describe('the frame as an atom', () => {
     ed.destroy();
   });
 
+  it('shows no frame with the caret just before it, where a zone starts out', () => {
+    const ed = makeEditor(...doc());
+    ed.commands.setTextSelection(boxPos(ed));
+    expect(frame(ed).classList.contains('textbox-active')).toBe(false);
+    ed.destroy();
+  });
+
   it('turns editable, and shows its frame, with the caret in its text', () => {
     const ed = makeEditor(...doc());
     ed.commands.setTextSelection(boxPos(ed) + 2);

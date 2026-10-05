@@ -513,13 +513,16 @@ export const TextBox = Node.create({
           clipboardSerializer,
           decorations(state) {
             const { from, to } = state.selection;
+            const selected = state.selection instanceof NodeSelection ? from : -1;
             const decos: Decoration[] = [];
             // A box rides a paragraph's inline content, so the walk has to enter blocks.
             state.doc.descendants((node, pos) => {
               if (node.type.name !== 'textBox') return node.isBlock;
               const end = pos + node.nodeSize;
               const attrs: Record<string, string> = {};
-              if (from >= pos && to <= end) attrs.class = 'textbox-active';
+              // Selected, or the caret inside: a caret just before the box is beside it,
+              // which is where every zone's editor starts out.
+              if (selected === pos || (from > pos && to < end)) attrs.class = 'textbox-active';
               // A frame nobody is editing is an atom to the browser. Left editable it
               // swallows the caret meant for the box's own place in the line — there is
               // no text position beside a box that starts its paragraph — and what is
