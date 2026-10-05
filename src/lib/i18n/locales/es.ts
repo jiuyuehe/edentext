@@ -15,7 +15,7 @@ const es: Messages = {
   },
   browserDocs: {
     title: 'Documentos recientes',
-    intro: 'Estos documentos se guardan automáticamente, pero solo en este navegador. Guarde un documento como archivo para conservarlo de forma permanente.',
+    intro: 'Estos documentos se guardan automáticamente, pero solo en este navegador. Guarde un documento como archivo para conservarlo de forma permanente. El autoguardado se puede desactivar en Configuración.',
     thisTab: 'Esta pestaña',
     otherTab: 'Abierto en otra pestaña',
     open: 'Abrir',

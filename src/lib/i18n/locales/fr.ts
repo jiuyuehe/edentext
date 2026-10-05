@@ -15,7 +15,7 @@ const fr: Messages = {
   },
   browserDocs: {
     title: 'Documents récents',
-    intro: 'Ces documents sont enregistrés automatiquement, mais uniquement dans ce navigateur. Enregistrez un document comme fichier pour le conserver durablement.',
+    intro: 'Ces documents sont enregistrés automatiquement, mais uniquement dans ce navigateur. Enregistrez un document comme fichier pour le conserver durablement. L\'enregistrement automatique peut être désactivé dans les Paramètres.',
     thisTab: 'Cet onglet',
     otherTab: 'Ouvert dans un autre onglet',
     open: 'Ouvrir',

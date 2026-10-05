@@ -16,7 +16,7 @@ const en = {
   },
   browserDocs: {
     title: 'Recent documents',
-    intro: 'These documents are saved automatically, but only in this browser. Save a document as a file to keep it permanently.',
+    intro: 'These documents are saved automatically, but only in this browser. Save a document as a file to keep it permanently. Autosave can be turned off in Settings.',
     thisTab: 'This tab',
     otherTab: 'Open in another tab',
     open: 'Open',

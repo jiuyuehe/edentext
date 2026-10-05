@@ -15,7 +15,7 @@ const de: Messages = {
   },
   browserDocs: {
     title: 'Zuletzt benutzte Dokumente',
-    intro: 'Diese Dokumente werden automatisch gespeichert, aber nur in diesem Browser. Speichern Sie ein Dokument als Datei, damit es dauerhaft erhalten bleibt.',
+    intro: 'Diese Dokumente werden automatisch gespeichert, aber nur in diesem Browser. Speichern Sie ein Dokument als Datei, damit es dauerhaft erhalten bleibt. Das automatische Speichern lässt sich in den Einstellungen ausschalten.',
     thisTab: 'Dieser Tab',
     otherTab: 'In einem anderen Tab geöffnet',
     open: 'Öffnen',

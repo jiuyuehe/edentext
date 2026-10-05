@@ -15,7 +15,7 @@ const pt: Messages = {
   },
   browserDocs: {
     title: 'Documentos recentes',
-    intro: 'Estes documentos são guardados automaticamente, mas apenas neste navegador. Guarde um documento como ficheiro para o manter de forma permanente.',
+    intro: 'Estes documentos são guardados automaticamente, mas apenas neste navegador. Guarde um documento como ficheiro para o manter de forma permanente. A gravação automática pode ser desativada nas Definições.',
     thisTab: 'Este separador',
     otherTab: 'Aberto noutro separador',
     open: 'Abrir',
