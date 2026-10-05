@@ -349,6 +349,28 @@ try {
   check(bands === '-/none true/none -/both anchored/none -/none true/none true/none -/both',
     `loaded from the autosave, the block after a band frame clears it, after an anchored one it does not (${bands})`);
 
+  // A borderless table split inside its cell under a footer taller than the bottom margin:
+  // the page-break mask draws no edge lines, and its gap stripe sits on the sheets' gap.
+  const cellLines = Array.from({ length: 70 }, (_, i) => block(words(`cell line ${i + 1}`)));
+  await page.evaluate(([d, f]) => {
+    localStorage.setItem('edentext-doc', JSON.stringify(d));
+    localStorage.setItem('edentext-footer', JSON.stringify(f));
+  }, [{ type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell',
+    attrs: { borderTop: 'none', borderRight: 'none', borderBottom: 'none', borderLeft: 'none' }, content: cellLines }] }] }] },
+  { type: 'doc', content: Array.from({ length: 6 }, (_, i) => block(words(`footer ${i + 1}`))) }]);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tiptap', { timeout: 15_000 });
+  await settle(page, true);
+  const mask = await page.evaluate(() => {
+    const stripe = document.querySelector('.page-gap-stripe');
+    const sheets = Array.from(document.querySelectorAll('.page-sheet'), (s) => s.getBoundingClientRect());
+    const top = stripe ? stripe.getBoundingClientRect().top + 1 : NaN;
+    return { lines: document.querySelectorAll('.table-break-band.lines').length, off: Math.min(...sheets.map((r) => Math.abs(r.bottom - top))) };
+  });
+  check(mask.lines === 0 && mask.off <= 1,
+    `a borderless table's page-break mask draws no lines and its gap on the sheets' (${mask.lines} lines, ${mask.off.toFixed(1)}px off)`);
+  await page.evaluate(() => localStorage.removeItem('edentext-footer'));
+
   // An index shows the rows it saved, as both word processors do, until it is updated.
   const heading = (t) => ({ type: 'heading', attrs: { level: 1 }, content: [words(t)] });
   await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [

@@ -104,6 +104,8 @@ export type TableBreakBand = {
   // own close/open lines there, so only the gap stripe is painted (a mask would double
   // them). False for in-cell splits.
   rowBreak: boolean;
+  // Whether the table draws borders: only then does the mask close and reopen it.
+  lines: boolean;
   left: number;       // content-area left (mask left)
   width: number;      // content-area width (mask width)
   marginBottom: number;
@@ -237,6 +239,16 @@ export function gridFromRuns(raw: string, pageHeight: number, base: Band = DEFAU
 // on its own paper (a landscape page amid portrait ones) shifts every page below it —
 // the uniform document is just the one-run case. Heights are stored as runs, "every
 // page from here on is this tall", so both lookups cost one pass over the sections.
+// Whether the table a leaf sits in draws any cell border — a borderless one has no
+// edges for a page-break band to close and reopen.
+function tableDrawsBorders(el: HTMLElement): boolean {
+  const cell = el.closest('table')?.querySelector('td, th');
+  if (!cell) return false;
+  const cs = getComputedStyle(cell);
+  return (['Top', 'Right', 'Bottom', 'Left'] as const).some((side) =>
+    cs.getPropertyValue(`border-${side.toLowerCase()}-style`) !== 'none' && parseFloat(cs.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0);
+}
+
 export class PageGrid {
   private runs: { from: number; height: number; left: number; band: Band }[];
 
@@ -1545,7 +1557,7 @@ export const PageBreaks = Extension.create({
             // Close/open bands for in-cell + between-rows table breaks. Keyed by the
             // rounded openY (the grouping id) → the unrounded openY (so the band lands
             // exactly on the page cycle) plus whether it's a between-rows break.
-            const tableBands = new Map<number, { openY: number; rowBreak: boolean }>();
+            const tableBands = new Map<number, { openY: number; rowBreak: boolean; lines: boolean }>();
             const leavesDebug: PageBreakDebugSnapshot['leaves'] = [];
             const placementsDebug: PageBreakDebugSnapshot['placements'] = [];
 
@@ -1893,8 +1905,10 @@ export const PageBreaks = Extension.create({
                 if (inBand && br.bandOpenY !== null) {
                   const key = Math.round(br.bandOpenY);
                   const rowBreak = br.row !== null;
+                  const lines = tableDrawsBorders(leaf.el);
                   const existing = tableBands.get(key);
-                  if (!existing) tableBands.set(key, { openY: br.bandOpenY, rowBreak });
+                  if (!existing) tableBands.set(key, { openY: br.bandOpenY, rowBreak, lines });
+                  else if (lines) existing.lines = true;
                   // An in-cell break sharing the boundary needs the full mask, so a
                   // band stays rowBreak only if every break at this key is one.
                   else if (!rowBreak) existing.rowBreak = false;
@@ -2139,17 +2153,23 @@ export const PageBreaks = Extension.create({
 
           // In-cell table breaks (all values in unscaled document px relative to
           // .tiptap's top). Editor.svelte renders the mask + gap overlay from these.
-          const bandSpan = vm.bottom + PAGE_GAP + vm.top;
-          const tableBreakBands = Array.from(tableBands, ([key, info]) => ({
-            key,
-            closeY: info.openY - bandSpan,
-            height: bandSpan,
-            rowBreak: info.rowBreak,
-            left: marginLeft,
-            width: contentWidth,
-            marginBottom: vm.bottom,
-            gap: PAGE_GAP,
-          }));
+          // The closing page's own content end and sheet bottom, which a footer taller
+          // than the bottom margin lifts above the document's margins.
+          const tableBreakBands = Array.from(tableBands, ([key, info]) => {
+            const closing = Math.max(1, placed.grid.pageAt(info.openY) - 1);
+            const closeY = Math.min(info.openY, placed.grid.contentBottomOf(closing));
+            return {
+              key,
+              closeY,
+              height: info.openY - closeY,
+              rowBreak: info.rowBreak,
+              lines: info.lines,
+              left: marginLeft,
+              width: contentWidth,
+              marginBottom: placed.grid.bottomOf(closing) - closeY,
+              gap: PAGE_GAP,
+            };
+          });
 
           // docHeight (document px) lets Editor.svelte size the scaled scroll footprint.
           // Announced only where the layout differs from the last one: every reader

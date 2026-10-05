@@ -890,7 +890,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   // Table page-break overlay: pageBreaks.ts reports (via pm-pagecount) where a continuous
   // table box crosses a page boundary, each as a band in doc px. Rendered in .band-layer
   // inside the scaled .paper — a mask hides borders in the margins, a stripe is the gap.
-  type BandStyle = { top: number; left: number; width: number; height: number };
+  type BandStyle = { top: number; left: number; width: number; height: number; lines: boolean };
   type GapStripeStyle = { top: number; width: number; height: number; background: string };
   let tableBandsDoc = $state<TableBreakBand[]>([]);
   let bandStyles = $state<BandStyle[]>([]);
@@ -914,7 +914,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       // The band spans the inter-page region (closeY through margin/gap/margin to the
       // next content-top), where pagination guarantees no content, so the mask can't eat
       // content. Matched to the table's content box (b.left/b.width) so the lines align.
-      return { top: b.closeY, left: b.left, width: b.width, height: b.height };
+      return { top: b.closeY, left: b.left, width: b.width, height: b.height, lines: b.lines };
     });
     // Full-page-width gap stripe: the dark page gap + its two edge lines at the surface
     // bottom (closeY + marginBottom). One element covers the whole gap → no seam; painted
@@ -1770,6 +1770,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
           {#each bandStyles as b}
             <div
               class="table-break-band"
+              class:lines={b.lines}
               style="top: {b.top}px; left: {b.left}px; width: {b.width}px; height: {b.height}px;"
             ></div>
           {/each}
@@ -2017,6 +2018,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     position: absolute;
     pointer-events: none;
     background: var(--color-page-bg);
+  }
+  .table-break-band.lines {
     border-top: 1px solid #000;
     border-bottom: 1px solid #000;
     /* Fill matches the table's content box so the close/open lines align with its
