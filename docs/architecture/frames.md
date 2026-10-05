@@ -25,6 +25,10 @@ nothing, since neither format's writer has a place for one standing beside text 
 exporters write it back as the file's own floating table (`w:tblpPr` via the package's `float`,
 ODF's `draw:frame`/`draw:text-box` around the table), not as a shape.
 
+A table never sits beside a float (`.tableWrapper` clears both sides): LibreOffice starts a
+DOCX table below a floating frame even where one would fit beside it (probed with a 5cm and a
+column-wide floating table), and a column-wide frame otherwise squeezed the table to 0px.
+
 ## A box in static HTML
 
 A box is inline and its content is blocks, and no `<p>` can hold those: the browser's parser breaks

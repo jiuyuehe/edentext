@@ -982,6 +982,9 @@
      margin-left/-right here (tableView.ts), which is what the export writes. */
   margin: 0;
   overflow-x: auto;
+  /* A table never sits beside a float: LibreOffice starts it below the frame (probed),
+     where a box beside a column-wide one squeezed the table to nothing. */
+  clear: both;
   /* The table's space above adds to the block above it, as a paragraph's does. */
   padding-top: var(--space-before);
 }
