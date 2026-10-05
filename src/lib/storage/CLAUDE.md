@@ -63,6 +63,7 @@ writes its own marker, so no two tabs race over one key.
 - **Document file:** `edentext-doc-file` — `{id, modified}`: the recent-files id of the file the document was last opened from or saved to, and its `lastModified` then (`documentName.ts`). A reload restores the handle from the recent store, so Save keeps writing there (asking for `readwrite` in the click); a file changed since asks before it is overwritten, declining goes to Save As. Gone with the handle once the recent list drops it.
 - **Document format:** `edentext-doc-format` — `'docx'` while the open document round-trips as .docx; absent = .odt (`documentName.ts`). Set by the format a file was opened in, and by the extension picked in Save As.
 - **Theme:** `edentext-theme` — `'light' | 'dark' | 'allBlack' | 'auto'`.
+- **Accent:** `edentext-accent` — one of `ACCENTS` (`theme.ts`); absent = `slate`, the logo's.
 - **Toolbar expanded:** `edentext-toolbar-expanded` — boolean string.
 - **Chrome:** `edentext-chrome` — `'modern' | 'ribbon'` ('classic' read as the modern island's legacy stored name); absent = ribbon.
 - **Ribbon collapsed:** `edentext-ribbon-collapsed` — boolean string; absent = expanded.
@@ -86,4 +87,4 @@ writes its own marker, so no two tabs race over one key.
 
 ## Themes (`theme.ts`, `styles/global.css`)
 
-Four modes: `light`, `dark`, `allBlack` (forces font colors white), `auto` (follows `prefers-color-scheme`). Applied by setting `data-theme` on `<html>`; CSS variables for each theme live in `global.css`. The sheet keeps its own pair through light and dark — white paper, **black** text, the colour LibreOffice and Word draw an uncoloured run in (the app's slate would also differ from a run the file colours `#000000`); only `allBlack` inverts it.
+Four modes: `light`, `dark`, `allBlack` (forces font colors white), `auto` (follows `prefers-color-scheme`). Applied by setting `data-theme` on `<html>`; CSS variables for each theme live in `global.css`. The sheet keeps its own pair through light and dark — white paper, **black** text, the colour LibreOffice and Word draw an uncoloured run in (the app's slate would also differ from a run the file colours `#000000`); only `allBlack` inverts it. A picked **accent** (Settings ▸ General) sets `data-accent` on `<html>`, which swaps `--brand-slate` and mixes the ribbon's accent shades from it; the slate keeps its hand-tuned shades and no attribute.

@@ -382,6 +382,29 @@
   --w-accent-soft: #212e39;
 }
 
+/* A picked accent replaces the logo's slate (`storage/theme.ts`); the ribbon's shades
+   are then mixed from it, as the hand-tuned ones above are for the slate. 'slate'
+   itself only ever names a swatch in Settings. */
+[data-accent='slate'] { --brand-slate: #4c6c8a; }
+[data-accent='blue'] { --brand-slate: #2f6aa8; }
+[data-accent='teal'] { --brand-slate: #2f7472; }
+[data-accent='green'] { --brand-slate: #4d7a52; }
+[data-accent='violet'] { --brand-slate: #6a5a92; }
+[data-accent='berry'] { --brand-slate: #8f4a6a; }
+[data-accent='graphite'] { --brand-slate: #5c6168; }
+[data-accent] {
+  --w-accent-dark: color-mix(in srgb, var(--brand-slate) 78%, black);
+  --w-accent-fill-open: var(--w-accent-dark);
+  --w-accent-soft: color-mix(in srgb, var(--brand-slate) 12%, white);
+}
+[data-accent]:is([data-theme='dark'], [data-theme='allBlack']) {
+  --w-accent: color-mix(in srgb, var(--brand-slate) 55%, white);
+  --w-accent-dark: color-mix(in srgb, var(--brand-slate) 75%, white);
+  --w-accent-fill: color-mix(in srgb, var(--brand-slate) 80%, black);
+  --w-accent-fill-open: var(--brand-slate);
+  --w-accent-soft: color-mix(in srgb, var(--brand-slate) 35%, var(--w-chrome));
+}
+
 /* Signature micro-interactions, shared across all toolbar components. */
 @keyframes menu-in {
   from { opacity: 0; transform: translateY(-5px); }

@@ -5,6 +5,7 @@ export type ThemeMode = 'light' | 'dark' | 'allBlack' | 'auto';
 export type ChromeMode = 'modern' | 'ribbon';
 
 const THEME_KEY = 'edentext-theme';
+const ACCENT_KEY = 'edentext-accent';
 const TOOLBAR_KEY = 'edentext-toolbar-expanded';
 const CHROME_KEY = 'edentext-chrome';
 const RIBBON_COLLAPSED_KEY = 'edentext-ribbon-collapsed';
@@ -124,4 +125,23 @@ function resolveMode(mode: ThemeMode): 'light' | 'dark' | 'allBlack' {
 
 export function applyTheme(mode: ThemeMode): void {
   document.documentElement.setAttribute('data-theme', resolveMode(mode));
+}
+
+// The chrome's accent colour; 'slate' is the logo's and stays the stored-nothing default.
+export const ACCENTS = ['slate', 'blue', 'teal', 'green', 'violet', 'berry', 'graphite'] as const;
+export type Accent = (typeof ACCENTS)[number];
+
+export function loadAccent(): Accent {
+  const saved = localStorage.getItem(ACCENT_KEY);
+  return (ACCENTS as readonly string[]).includes(saved ?? '') ? (saved as Accent) : 'slate';
+}
+
+export function saveAccent(accent: Accent): void {
+  if (accent === 'slate') localStorage.removeItem(ACCENT_KEY);
+  else localStorage.setItem(ACCENT_KEY, accent);
+}
+
+export function applyAccent(accent: Accent): void {
+  if (accent === 'slate') document.documentElement.removeAttribute('data-accent');
+  else document.documentElement.setAttribute('data-accent', accent);
 }

@@ -3,7 +3,7 @@
   import { wordCompletion, setWordCompletion } from '../storage/wordCompletion.svelte';
   import { grammarEnabled, setGrammarEnabled } from '../spell/grammar.svelte';
   import { numberRecognition, setNumberRecognition } from '../storage/tableOptions.svelte';
-  import type { ChromeMode, ThemeMode } from '../storage/theme';
+  import { ACCENTS, loadAccent, saveAccent, applyAccent, type Accent, type ChromeMode, type ThemeMode } from '../storage/theme';
   import { LOCALES, LOCALE_LABELS, isLocale } from '../i18n/config';
   import { t, locale, setLocale } from '../i18n/i18n.svelte';
   import Icon from './ribbon/Icon.svelte';
@@ -48,6 +48,13 @@
   let dialogEl = $state<HTMLDialogElement | null>(null);
   let section = $state<Section>('general');
   let retention = $state<Retention>(loadRetention());
+  let accent = $state<Accent>(loadAccent());
+
+  function pickAccent(a: Accent) {
+    accent = a;
+    saveAccent(a);
+    applyAccent(a);
+  }
   let wc = $derived(wordCompletion());
 
   $effect(() => {
@@ -95,6 +102,14 @@
               <button role="radio" aria-checked={themeMode === m} class:on={themeMode === m} onclick={() => onSelectTheme(m)}>
                 {#if m === 'dark'}<Icon name="themeDark" size={14} />{:else if m === 'light'}<Icon name="themeLight" size={14} />{:else}<span class="swatch {m}" aria-hidden="true"></span>{/if}{t().appearance[m]}
               </button>
+            {/each}
+          </div>
+        </div>
+        <div class="row">
+          <div class="info"><div class="name">{t().settings.accent}</div><div class="desc">{t().settings.accentHint}</div></div>
+          <div class="accents" role="radiogroup" aria-label={t().settings.accent}>
+            {#each ACCENTS as a (a)}
+              <button role="radio" aria-checked={accent === a} class:on={accent === a} data-accent={a} title={t().settings.accents[a]} aria-label={t().settings.accents[a]} onclick={() => pickAccent(a)}></button>
             {/each}
           </div>
         </div>
@@ -331,6 +346,9 @@
   .swatch { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--w-border-strong); }
   .swatch.allBlack { background: #000; }
   .swatch.auto { background: linear-gradient(135deg, #fff 50%, #2b2f36 50%); }
+  .accents { display: flex; flex-wrap: wrap; gap: 6px; }
+  .accents button { width: 22px; height: 22px; padding: 0; border: 2px solid var(--color-surface); border-radius: 50%; outline: 1px solid var(--w-border-strong); background: var(--brand-slate); cursor: pointer; }
+  .accents button.on { outline: 2px solid var(--color-text); }
 
   .choices { display: flex; flex-direction: column; gap: 6px; }
   .choice {
