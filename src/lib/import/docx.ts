@@ -3328,6 +3328,8 @@ function buildTable(tbl: Element, ctx: Ctx): Node | null {
     const row: Node = { type: 'tableRow', content: cells };
     const h = intAttr(fc(fc(tr, 'trPr'), 'trHeight'), W, 'val');
     if (h && h > 0) row.attrs = { rowHeight: Math.round(twipToPx(h)) };
+    const cs = fc(fc(tr, 'trPr'), 'cantSplit');
+    if (cs && onOff(cs)) row.attrs = { ...row.attrs, cantSplit: true };
     rows.push(row);
   }
   if (rows.length === 0) return null;

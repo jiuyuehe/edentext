@@ -371,6 +371,22 @@ try {
     `a borderless table's page-break mask draws no lines and its gap on the sheets' (${mask.lines} lines, ${mask.off.toFixed(1)}px off)`);
   await page.evaluate(() => localStorage.removeItem('edentext-footer'));
 
+  // A row that may not break and is taller than a page starts on a fresh one.
+  await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [
+    ...Array.from({ length: 5 }, (_, i) => block(words(`before ${i + 1}`))),
+    { type: 'table', content: [{ type: 'tableRow', attrs: { cantSplit: true }, content: [{ type: 'tableCell', content:
+      Array.from({ length: 70 }, (_, i) => block(words(`kept line ${i + 1}`))) }] }] }] });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tiptap', { timeout: 15_000 });
+  await settle(page, true);
+  const keptPage = await page.evaluate(() => {
+    const p = Array.from(document.querySelectorAll('.tiptap-host .tiptap td p')).find((e) => e.textContent === 'kept line 1');
+    const sheets = Array.from(document.querySelectorAll('.page-sheet'), (s) => s.getBoundingClientRect());
+    const top = p ? p.getBoundingClientRect().top : NaN;
+    return sheets.findIndex((r) => top >= r.top && top < r.bottom) + 1;
+  });
+  check(keptPage === 2, `a row that may not break, taller than a page, starts on the next one (page ${keptPage})`);
+
   // An index shows the rows it saved, as both word processors do, until it is updated.
   const heading = (t) => ({ type: 'heading', attrs: { level: 1 }, content: [words(t)] });
   await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [

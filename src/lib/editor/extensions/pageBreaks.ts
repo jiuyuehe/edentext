@@ -1245,6 +1245,18 @@ export const PageBreaks = Extension.create({
                 const cells = (Array.from(tr.children) as HTMLElement[]).filter(
                   c => c.tagName === 'TD' || c.tagName === 'TH',
                 );
+                // A row that may not break starts on a fresh page before it breaks there
+                // anyway (LibreOffice): a zero-height leaf forcing the row's own spacer.
+                if (tr.dataset.cantSplit === 'true') {
+                  leaves.push({
+                    el: tr,
+                    kind: 'atomic',
+                    naturalTop: naturalTopOf(tr),
+                    naturalHeight: 0,
+                    tableRow: { columns, wrapperEl, isFirstRow: !seenRealRow },
+                    forceBreakBefore: true,
+                  });
+                }
                 const baseline = cumulativeSpacerHeight;
                 let maxDelta = 0;
                 let rowStartSet = false;

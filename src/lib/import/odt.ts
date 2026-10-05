@@ -3422,6 +3422,7 @@ function convertTable(el: Element, ctx: Ctx): Node | null {
     const row: Node = { type: 'tableRow', content: cells };
     const heightCm = ctx.resolver.rowMinHeightCm(rowEl.getAttributeNS(NS.table, 'style-name'));
     if (heightCm != null && heightCm > 0) row.attrs = { rowHeight: Math.round(heightCm * PX_PER_CM) };
+    if (ctx.resolver.rowKeepTogether(rowEl.getAttributeNS(NS.table, 'style-name'))) row.attrs = { ...row.attrs, cantSplit: true };
     rows.push(row);
   };
 

@@ -1524,20 +1524,21 @@ function collectListItemStyles(node: TiptapNode, result: ParaStyle[], extras: Li
   }
 }
 
-// Collect each table row's explicit height (px → cm), in DFS order matching odf-kit's
-// <table:table-row> emission. rowHeight is unscaled px @96dpi (tableRow.ts), converted
-// to cm (px × 2.54 / 96). Rows without an explicit height yield null.
+// Collect each table row's own properties — its explicit height (px → cm) and whether it
+// may break across pages — as table-row-properties attributes, in DFS order matching
+// odf-kit's <table:table-row> emission. rowHeight is unscaled px @96dpi (tableRow.ts).
+// Rows with neither yield null.
 function collectTableRowHeights(node: TiptapNode, result: (string | null)[]): void {
   if (node.type === 'table') {
     for (const row of node.content ?? []) {
       if (row.type !== 'tableRow') continue;
       const h = row.attrs?.rowHeight;
-      if (typeof h === 'number' && h > 0) {
-        const cm = Math.round(((h * 2.54) / 96) * 1000) / 1000;
-        result.push(`${cm}cm`);
-      } else {
-        result.push(null);
-      }
+      const props = [
+        typeof h === 'number' && h > 0
+          ? `style:min-row-height="${Math.round(((h * 2.54) / 96) * 1000) / 1000}cm" style:use-optimal-row-height="false"` : '',
+        row.attrs?.cantSplit === true ? 'fo:keep-together="always"' : '',
+      ].filter(Boolean).join(' ');
+      result.push(props || null);
     }
     return;
   }
@@ -1546,9 +1547,9 @@ function collectTableRowHeights(node: TiptapNode, result: (string | null)[]): vo
   }
 }
 
-// odf-kit's TableBuilder has no row-height option, so post-process content.xml: each
-// <table:table-row> with a height gets an automatic style with style:min-row-height
-// (a minimum) + use-optimal-row-height="false". One heights[] entry per row, in order.
+// odf-kit's TableBuilder has no row options, so post-process content.xml: each
+// <table:table-row> with properties of its own gets an automatic style carrying them
+// (collectTableRowHeights). One heights[] entry per row, in order.
 function applyTableRowHeights(odtBytes: Uint8Array, heights: (string | null)[]): Uint8Array {
   if (heights.every(h => h === null)) return odtBytes;
 
@@ -1579,7 +1580,7 @@ function applyTableRowHeights(odtBytes: Uint8Array, heights: (string | null)[]):
   if (styleDefs.length === 0) return odtBytes;
 
   const newStyles = styleDefs.map(({ name, height }) =>
-    `<style:style style:name="${name}" style:family="table-row"><style:table-row-properties style:min-row-height="${height}" style:use-optimal-row-height="false"/></style:style>`,
+    `<style:style style:name="${name}" style:family="table-row"><style:table-row-properties ${height}/></style:style>`,
   ).join('\n');
 
   content = injectAutomaticStyles(content, `${newStyles}\n`);

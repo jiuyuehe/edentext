@@ -2760,6 +2760,7 @@ function tableToDocx(node: TiptapNode, contentWidthCm: number, num: Numbering, f
     }
     return new TableRow({
       height: typeof rh === 'number' && rh > 0 ? { value: pxToTwip(rh), rule: HeightRule.ATLEAST } : undefined,
+      ...(row.attrs?.cantSplit === true ? { cantSplit: true } : {}),
       // The flag marks a header row, whether the table asked for the repeat or only the
       // row's own cells say they head it — ODF spells both with one element.
       ...((repeatHeader && rowIndex === 0) || (row.content ?? []).some((c) => c.type === 'tableHeader')

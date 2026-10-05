@@ -469,6 +469,11 @@ export class StyleResolver {
     return Number.isFinite(v) && v > 0 ? v : null;
   }
 
+  // fo:keep-together="always" on a row: it may not break across pages.
+  rowKeepTogether(styleName: string | null): boolean {
+    return !!styleName && this.merged('table-row', styleName).misc['fo:keep-together'] === 'always';
+  }
+
   rowMinHeightCm(styleName: string | null): number | null {
     if (!styleName) return null;
     return lengthToCm(this.merged('table-row', styleName).misc['style:min-row-height']);
