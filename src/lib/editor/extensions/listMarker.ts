@@ -50,10 +50,60 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : nul
 
 const KEYS = ['fontFamily', 'fontWeight', 'fontStyle', 'fontSize', 'color'] as const;
 
+// The level's own label formatting (Word's w:lvl/w:rPr, ODF's text style on the level),
+// stored on the list as `markerFormat`: each field it sets outranks the first portion's.
+export function withOwnMarker(own: unknown, portion: MarkerFormat | null): MarkerFormat | null {
+  const o = own && typeof own === 'object' ? own as Partial<MarkerFormat> : null;
+  if (!o) return portion;
+  const out = Object.fromEntries(KEYS.map((key) => [key, str(o[key]) ?? portion?.[key] ?? null])) as unknown as MarkerFormat;
+  return KEYS.some((key) => out[key]) ? out : null;
+}
+
+// A level's text formatting as a marker's. A symbol font's glyphs are already mapped to
+// the character the bullet shows, so the family is left to the text's.
+export function markerFormatFromText(t: TextProps): Partial<MarkerFormat> | null {
+  const out: Partial<MarkerFormat> = {};
+  if (t.fontFamily && !/^(symbol|wingdings|webdings|opensymbol)/i.test(t.fontFamily)) out.fontFamily = t.fontFamily;
+  if (t.bold != null) out.fontWeight = t.bold ? 'bold' : 'normal';
+  if (t.italic) out.fontStyle = 'italic';
+  if (t.fontSizePt != null) out.fontSize = `${t.fontSizePt}pt`;
+  if (t.color) out.color = t.color;
+  return Object.keys(out).length ? out : null;
+}
+
+// Drops from every list's `markerFormat` what its items' first portions give anyway, so
+// a file's own markers stay put and a round trip adds nothing.
+export function pruneMarkerFormats(nodes: JsonNode[] | undefined, charProps?: CharStyleProps): void {
+  for (const n of nodes ?? []) {
+    const own = n.attrs?.markerFormat as Partial<MarkerFormat> | null | undefined;
+    if (own && typeof own === 'object') {
+      const portion = listMarkerFormat({ ...n, attrs: { ...n.attrs, markerFormat: null } }, charProps);
+      const kept = Object.fromEntries(KEYS.filter((key) => own[key] && own[key] !== portion?.[key]).map((key) => [key, own[key]]));
+      n.attrs!.markerFormat = Object.keys(kept).length ? kept : null;
+      if (!n.attrs!.markerFormat) delete n.attrs!.markerFormat;
+    }
+    pruneMarkerFormats(n.content, charProps);
+  }
+}
+
+// The pruning over a whole import: the body and every header/footer zone, against the
+// imported character styles a first portion may name.
+export function pruneImportedMarkers(result: { content: unknown; styles: StyleSheet; hfSections?: unknown[] } & Record<string, unknown>): void {
+  const charProps = charStyleProps(result.styles);
+  const zones = [result, ...(result.hfSections ?? [])].flatMap((set) =>
+    Object.values(set as Record<string, unknown>).filter((v): v is JsonNode => !!v && typeof v === 'object' && (v as JsonNode).type === 'doc'));
+  for (const doc of zones) pruneMarkerFormats(doc.content, charProps);
+}
+
 // The format the whole list agrees on (TipTap JSON), else null — a file carries
 // marker formatting per level, so only a uniform list can carry it. Left out, both
 // LibreOffice (first portion) and Word (paragraph mark) fall back to their own rule.
+// The list's own `markerFormat` goes over it.
 export function listMarkerFormat(list: JsonNode, charProps?: CharStyleProps): MarkerFormat | null {
+  return withOwnMarker(list.attrs?.markerFormat, portionMarkerFormat(list, charProps));
+}
+
+function portionMarkerFormat(list: JsonNode, charProps?: CharStyleProps): MarkerFormat | null {
   let common: MarkerFormat | null = null;
   for (const item of list.content ?? []) {
     if (item.type !== 'listItem') continue;
@@ -82,9 +132,10 @@ function markerStyle(format: MarkerFormat | null): string {
 
 export function listMarkerDecos(doc: ProseMirrorNode, charProps?: CharStyleProps): DecorationSet {
   const decos: Decoration[] = [];
-  doc.descendants((node, pos) => {
+  doc.descendants((node, pos, parent) => {
     if (node.type.name !== 'listItem') return;
-    decos.push(Decoration.node(pos, pos + node.nodeSize, { style: markerStyle(itemMarkerFormat(node, charProps)) }));
+    const format = withOwnMarker(parent?.attrs.markerFormat, itemMarkerFormat(node, charProps));
+    decos.push(Decoration.node(pos, pos + node.nodeSize, { style: markerStyle(format) }));
   });
   return DecorationSet.create(doc, decos);
 }
@@ -166,6 +217,15 @@ export const ListMarker = Extension.create<{ sheet: () => StyleSheet }>({
             },
             renderHTML: (attrs: Record<string, unknown>) =>
               typeof attrs.hanging === 'number' ? { 'data-hanging': String(attrs.hanging), style: `--list-hang: ${attrs.hanging}cm` } : {},
+          },
+          // The level's own label formatting, over the first portion's (withOwnMarker).
+          markerFormat: {
+            default: null,
+            parseHTML: (el: HTMLElement) => {
+              try { return JSON.parse(el.getAttribute('data-marker-format') ?? 'null'); } catch { return null; }
+            },
+            renderHTML: (attrs: Record<string, unknown>) =>
+              attrs.markerFormat ? { 'data-marker-format': JSON.stringify(attrs.markerFormat) } : {},
           },
           // What follows the label: a space or nothing (w:suff, ODF's label-followed-by)
           // instead of the tab to the text. null = the tab.

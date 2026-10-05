@@ -10,6 +10,7 @@ import { isAllowedUri } from '@tiptap/extension-link';
 import { FOLD_MARK_NAME } from '../storage/foldMarks';
 import { builtinStyleSheet, DEFAULT_STYLE, type ParaProps, type Style, type StyleSheet, type TextProps } from '../styles/styleSheet';
 import { DEFAULT_OUTLINE_LEVEL, MAX_OUTLINE_LEVELS, type OutlineNumbering } from '../styles/outlineNumbering';
+import { markerFormatFromText, pruneImportedMarkers } from '../editor/extensions/listMarker';
 import { MAX_LIST_LEVELS, type ListLevelStyle, type ListStyle } from '../styles/listStyles';
 import { HEADER_SHADE } from '../editor/extensions/tableHeaderRow';
 import { cropOf, fitInlineImage, framePx, stackRank } from '../editor/extensions/image';
@@ -355,7 +356,7 @@ export function importDocx(bytes: Uint8Array, convertedImages: ConvertedImages =
   const hasHeader = hfSections.some((s) => s.header || (s.differentFirstPage && s.headerFirst) || (s.differentOddEven && s.headerEven));
   const hasFooter = hfSections.some((s) => s.footer || (s.differentFirstPage && s.footerFirst) || (s.differentOddEven && s.footerEven));
 
-  return {
+  const result: OdtImportResult = {
     content: { type: 'doc', content: blocks },
     styles: collectStyleSheet(ctx),
     notes: docNoteSettings(files),
@@ -397,6 +398,8 @@ export function importDocx(bytes: Uint8Array, convertedImages: ConvertedImages =
     fonts: extractDocxFonts(files),
     warnings: [...warnings],
   };
+  pruneImportedMarkers(result as unknown as Parameters<typeof pruneImportedMarkers>[0]);
+  return result;
 }
 
 // Fonts embedded via word/fontTable.xml: each <w:font> may reference regular/bold/italic/
@@ -930,6 +933,8 @@ function makeListNode(ctx: Ctx, numId: number, ilvl: number, own: ItemIndent = E
     if (Math.abs(extra) > LIST_INDENT_EPS_CM) attrs.indent = extra;
   }
   if (def.rightAligned) attrs.markerAlign = 'right';
+  const marker = def.run ? markerFormatFromText(runTextProps(def.run)) : null;
+  if (marker) attrs.markerFormat = marker;
   const hang = own.hang ?? def.hangingTwip;
   if (hang != null && Math.abs(twipToCm(hang) - LIST_HANGING_CM) > LIST_INDENT_EPS_CM) attrs.hanging = round2(twipToCm(hang));
   if (def.suffix === 'space' || def.suffix === 'nothing') attrs.markerSuffix = def.suffix;

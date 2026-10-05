@@ -1,4 +1,5 @@
 import { strFromU8 } from 'fflate';
+import { markerFormatFromText, pruneImportedMarkers, type MarkerFormat } from '../editor/extensions/listMarker';
 import en from '../i18n/locales/en';
 import { StyleResolver, NS, WATERMARK_NAME, lengthToPt, lengthToCm, layerTextProps, langTagsOfProps, type PropMap } from './styleResolver';
 import { cjkDocFont, odfFromTag, tagFromOdf } from '../storage/documentLanguage';
@@ -1091,7 +1092,7 @@ export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = 
   const hasHeader = hf.header || headerFirst || headerEven;
   const hasFooter = hf.footer || footerFirst || footerEven;
 
-  return {
+  const result: OdtImportResult = {
     content: { type: 'doc', content: blocks },
     margins: geometry?.margins ?? null,
     orientation: geometry?.orientation ?? null,
@@ -1130,6 +1131,8 @@ export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = 
     props: odfDocProperties(files),
     warnings: [...warnings],
   };
+  pruneImportedMarkers(result as unknown as Parameters<typeof pruneImportedMarkers>[0]);
+  return result;
 }
 
 // The zones of a named master page — what a section past the first switches to.
@@ -3096,7 +3099,7 @@ function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, d
       if (bulletChar) attrs.bulletChar = bulletChar;
       if (indent != null) attrs.indent = indent;
       if (listLevelRightAligned(levelDef)) attrs.markerAlign = 'right';
-      Object.assign(attrs, listLevelLabel(levelDef, depth));
+      Object.assign(attrs, listLevelLabel(levelDef, depth), listLevelMarker(levelDef, ctx));
     }
     const node: Node = { type: 'bulletList', content: items };
     if (Object.keys(attrs).length) node.attrs = attrs;
@@ -3122,11 +3125,18 @@ function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, d
     if (listStyleType) attrs.listStyleType = listStyleType;
     if (indent != null) attrs.indent = indent;
     if (listLevelRightAligned(levelDef)) attrs.markerAlign = 'right';
-    Object.assign(attrs, listLevelLabel(levelDef, depth));
+    Object.assign(attrs, listLevelLabel(levelDef, depth), listLevelMarker(levelDef, ctx));
   }
   const node: Node = { type: 'orderedList', content: items };
   if (Object.keys(attrs).length) node.attrs = attrs;
   return node;
+}
+
+// The text style a level formats its label with, as the list's own marker format.
+function listLevelMarker(levelDef: Element | null, ctx: Ctx): { markerFormat?: Partial<MarkerFormat> } {
+  const name = levelDef?.getAttributeNS(NS.text, 'style-name');
+  const own = name ? markerFormatFromText(textPropsFromOdf(ctx.resolver.spanTextProps(name), ctx.resolver)) : null;
+  return own ? { markerFormat: own } : {};
 }
 
 // fo:text-align="end" on the level properties: the label is set against the far end of
