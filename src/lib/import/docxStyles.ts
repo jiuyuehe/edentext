@@ -204,6 +204,7 @@ export class DocxStyles {
   private ownContextual = new Map<string, boolean>(); // style's own w:pPr/w:contextualSpacing
   private ownKeepNext = new Map<string, boolean>(); // style's own w:pPr/w:keepNext
   private ownKeepLines = new Map<string, boolean>(); // style's own w:pPr/w:keepLines
+  private ownBreakBefore = new Map<string, boolean>(); // style's own w:pPr/w:pageBreakBefore
   private ownBidi = new Map<string, boolean>(); // style's own w:pPr/w:bidi
   private ownTabs = new Map<string, TabStop[]>(); // style's own w:pPr/w:tabs
   private ownCellMar = new Map<string, Element>(); // table style's own w:tblPr/w:tblCellMar
@@ -283,6 +284,8 @@ export class DocxStyles {
       if (kn) this.ownKeepNext.set(id, toggle(kn));
       const kl = ppr && firstChild(ppr, 'keepLines');
       if (kl) this.ownKeepLines.set(id, toggle(kl));
+      const pb = ppr && firstChild(ppr, 'pageBreakBefore');
+      if (pb) this.ownBreakBefore.set(id, toggle(pb));
       const bd = ppr && firstChild(ppr, 'bidi');
       if (bd) this.ownBidi.set(id, toggle(bd));
       const tabs = ppr && firstChild(ppr, 'tabs');
@@ -508,6 +511,15 @@ export class DocxStyles {
     const own = this.ownKeepNext.get(styleId);
     if (own != null) return own;
     return this.paragraphKeepNext(this.basedOn.get(styleId) ?? null, seen);
+  }
+
+  // w:pageBreakBefore along the w:basedOn chain: a chapter style often inherits it.
+  paragraphPageBreakBefore(styleId: string | null | undefined, seen = new Set<string>()): boolean {
+    if (!styleId || seen.has(styleId)) return false;
+    seen.add(styleId);
+    const own = this.ownBreakBefore.get(styleId);
+    if (own != null) return own;
+    return this.paragraphPageBreakBefore(this.basedOn.get(styleId) ?? null, seen);
   }
 
   // w:keepLines along the same chain (Word's heading styles carry this one too).

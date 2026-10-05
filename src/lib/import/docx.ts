@@ -1376,6 +1376,8 @@ function convertParagraph(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault:
   if (level && !kn && (directKn || !styleId || ctx.styles.definesParagraphStyle(styleId))) attrs.keepNext = false;
   const directKl = fc(ppr, 'keepLines');
   if (!level && (directKl ? onOff(directKl) : ctx.styles.paragraphKeepLines(styleId))) attrs.keepLines = true;
+  // A direct w:pageBreakBefore is read in blockAttrs; the style's rides the block too.
+  if ((kind === 'body' || kind === 'list') && !fc(ppr, 'pageBreakBefore') && ctx.styles.paragraphPageBreakBefore(styleId)) attrs.breakBefore = 'page';
   // "Don't hyphenate this paragraph" — only formatting where the document hyphenates
   // at all; below that switch it says what is already true.
   const directSah = fc(ppr, 'suppressAutoHyphens');
