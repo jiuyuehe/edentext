@@ -1121,6 +1121,7 @@ type TextBoxDocx = {
   stroke: string | null;
   strokeWidthPt: number;
   paddingCm: number;
+  paddingYCm: number | null;
   content: TiptapNode[];
 };
 
@@ -1156,6 +1157,7 @@ function textBoxDocxDescriptor(node: TiptapNode): TextBoxDocx {
     strokeWidthPt: typeof a.strokeWidthPt === 'number' && a.strokeWidthPt > 0 ? a.strokeWidthPt : 1,
     // The attr is only set where the box disagrees with the editor's own ring.
     paddingCm: typeof a.paddingCm === 'number' && a.paddingCm >= 0 ? a.paddingCm : TEXTBOX_PADDING_CM,
+    paddingYCm: typeof a.paddingYCm === 'number' && a.paddingYCm >= 0 ? a.paddingYCm : null,
     content: node.content ?? [],
   };
 }
@@ -1525,6 +1527,7 @@ function textBoxDrawingXml(box: TextBoxDocx, index: number, parts: TxbxParts): s
     ? `<a:ln w="${Math.round(box.strokeWidthPt * EMU_PER_PT)}"><a:solidFill><a:srgbClr val="${hexColor(box.stroke) ?? '000000'}"/></a:solidFill>${ends}</a:ln>`
     : '<a:ln><a:noFill/></a:ln>';
   const inset = Math.round(box.paddingCm * EMU_PER_CM);
+  const insetY = Math.round((box.paddingYCm ?? box.paddingCm) * EMU_PER_CM);
   // The box keeps the height it declares — LibreOffice's own DOCX export writes this for
   // the same frame, and read as spAutoFit it lays the text out detached from the shape
   // (probed: the text lands in the body, over whatever follows).
@@ -1554,7 +1557,7 @@ function textBoxDrawingXml(box: TextBoxDocx, index: number, parts: TxbxParts): s
     `${geom}${line ? '<a:noFill/>' : fill}${ln}</wps:spPr>` +
     body +
     `<wps:bodyPr rot="0" vert="${box.textVertical ? 'vert' : 'horz'}" wrap="square"` +
-    ` lIns="${inset}" tIns="${inset}" rIns="${inset}" bIns="${inset}" anchor="${box.textVAlign === 'middle' ? 'ctr' : box.textVAlign === 'bottom' ? 'b' : 't'}">${autofit}</wps:bodyPr>` +
+    ` lIns="${inset}" tIns="${insetY}" rIns="${inset}" bIns="${insetY}" anchor="${box.textVAlign === 'middle' ? 'ctr' : box.textVAlign === 'bottom' ? 'b' : 't'}">${autofit}</wps:bodyPr>` +
     `</wps:wsp>`;
   const graphic =
     `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +

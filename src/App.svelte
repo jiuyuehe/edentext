@@ -19,7 +19,7 @@
   import { getPageBreakDebug } from './lib/editor/extensions/pageBreaks';
   import { RECORDING } from './lib/editor/extensions/trackChanges';
   import { getColumnsFlowDebug } from './lib/editor/extensions/columnsFlow';
-  import { getTextBoxDebug } from './lib/editor/extensions/textBox';
+  import { getTextBoxDebug, withRenderedBoxHeights } from './lib/editor/extensions/textBox';
   import { getTableCellDebug } from './lib/editor/extensions/tableCellAlign';
   import { getFrameDebug } from './lib/editor/extensions/caption';
   import { getColorDebug } from './lib/utils/colorDebug';
@@ -1055,7 +1055,7 @@
   async function buildBytes(kind: DocumentFormat, json: TiptapNode): Promise<Uint8Array> {
     if (kind === 'docx') {
       const { buildDocx } = await import('./lib/export/docx');
-      return buildDocx(json, ...exportArgs());
+      return buildDocx(editor ? withRenderedBoxHeights(editor.view) as TiptapNode : json, ...exportArgs());
     }
     const { buildOdt } = await import('./lib/export/odt');
     return buildOdt(json, ...exportArgs());

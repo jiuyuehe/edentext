@@ -563,8 +563,8 @@ export function unnestBoxes(blocks: Node[], ctx: { warnings: Set<string> }): Nod
 }
 
 // A <draw:frame><draw:text-box> → a textBox node. The height is the text-box's
-// fo:min-height when present (our own export; height = minimum, content grows the
-// box), else the frame's computed svg:height (LibreOffice re-saves).
+// fo:min-height when present (height = minimum, content grows the box), else the
+// frame's svg:height, which LibreOffice keeps fixed and clips at.
 function convertTextBoxFrame(frame: Element, textBoxEl: Element, ctx: Ctx): Node {
   const attrs: Record<string, unknown> = {};
   // A floating frame that grows with its text (fo:min-width, no width) spans what its
@@ -575,14 +575,17 @@ function convertTextBoxFrame(frame: Element, textBoxEl: Element, ctx: Ctx): Node
   const wCm = lengthToCm(frame.getAttributeNS(NS.svg, 'width'))
     ?? (spans ? Math.max(minCm, Math.round((ctx.contentWidthCm - xCm) * 1000) / 1000) : minCm);
   if (wCm != null) attrs.width = framePx(cmToPx(wCm));
-  const hCm = lengthToCm(textBoxEl.getAttributeNS(NS.fo, 'min-height'))
-    ?? lengthToCm(frame.getAttributeNS(NS.svg, 'height'));
+  const minHCm = lengthToCm(textBoxEl.getAttributeNS(NS.fo, 'min-height'));
+  const hCm = minHCm ?? lengthToCm(frame.getAttributeNS(NS.svg, 'height'));
   if (hCm != null) attrs.height = framePx(cmToPx(hCm));
+  if (minHCm == null && hCm != null) attrs.fixedHeight = true;
   const gp = ctx.resolver.graphicProps(frame.getAttributeNS(NS.draw, 'style-name'));
   applyFrameRotationAndWrap(frame, attrs, gp, ctx.contentWidthCm, ctx.leftMarginCm);
   boxWrapAlign(gp, attrs);
-  const padCm = lengthToCm(gp['fo:padding']);
+  const padCm = lengthToCm(gp['fo:padding'] ?? gp['fo:padding-left']);
   if (padCm != null && Math.abs(padCm - TEXTBOX_PADDING_CM) > 0.01) attrs.paddingCm = Math.round(padCm * 1000) / 1000;
+  const topCm = lengthToCm(gp['fo:padding-top']);
+  if (topCm != null && Math.abs(topCm - (padCm ?? TEXTBOX_PADDING_CM)) > 0.01) attrs.paddingYCm = Math.round(topCm * 1000) / 1000;
   shapeStyleAttrs(gp, attrs, false);
   boxTextFlow(frame, ctx, attrs);
   return { type: 'textBox', attrs, content: textBoxContent(Array.from(textBoxEl.children), ctx, wCm) };

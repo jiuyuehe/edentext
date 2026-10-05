@@ -172,6 +172,18 @@ export function unhoist(node: any): any {
   return node;
 }
 
+// A .docx box keeps its extent: Word's one growing frame (a:spAutoFit) is drawn detached
+// by LibreOffice, so the export writes a box as tall as it renders and the import reads it
+// back fixed (textBox.ts withRenderedBoxHeights). DOCX legs compare without the flag.
+export function stripBoxGrowth(node: any): any {
+  if (node?.type === 'textBox' && node.attrs?.fixedHeight) {
+    delete node.attrs.fixedHeight;
+    if (!Object.keys(node.attrs).length) delete node.attrs;
+  }
+  for (const c of node?.content ?? []) stripBoxGrowth(c);
+  return node;
+}
+
 // A paragraph whose runs share one font legitimately comes back with that font also
 // on its attrs (the empty-line-height feature hoists it); ignore it on both sides.
 export function stripFontHoist(node: any): any {

@@ -1033,6 +1033,7 @@ function replaceBookmarks(node: TiptapNode, refs: CrossRefExport[]): TiptapNode 
 type TextBoxExport = {
   widthCm: number;
   heightCm: number;
+  fixedHeight: boolean;
   rotationDeg: number;
   wrap: WrapMode;
   wrapOffsetCm: number | null;
@@ -1044,6 +1045,7 @@ type TextBoxExport = {
   inFront: boolean;
   zIndex: number;
   paddingCm: number;
+  paddingYCm: number | null;
   shapeKind: ShapeKind;
   shapePath: string | null;
   shapeTextArea: TextArea | null;
@@ -1068,6 +1070,7 @@ function textBoxDescriptor(node: TiptapNode): TextBoxExport {
   return {
     widthCm: pxToCm(typeof a.width === 'number' && a.width > 0 ? a.width : 280),
     heightCm: pxToCm(typeof a.height === 'number' && a.height > 0 ? a.height : line ? 0 : 96),
+    fixedHeight: a.fixedHeight === true,
     rotationDeg: typeof a.rotation === 'number' ? a.rotation : 0,
     wrap: wrapAttr === 'left' || wrapAttr === 'right' || wrapAttr === 'topBottom' || wrapAttr === 'through' ? wrapAttr : 'inline',
     wrapOffsetCm: typeof a.wrapOffset === 'number' ? round3(a.wrapOffset) : null,
@@ -1079,6 +1082,7 @@ function textBoxDescriptor(node: TiptapNode): TextBoxExport {
     inFront: a.inFront === true,
     zIndex: frameRank(a.zIndex),
     paddingCm: typeof a.paddingCm === 'number' ? round3(a.paddingCm) : TEXTBOX_PADDING_CM,
+    paddingYCm: typeof a.paddingYCm === 'number' ? round3(a.paddingYCm) : null,
     shapeKind: isShapeKind(a.shapeKind) ? a.shapeKind : 'textbox',
     shapePath: typeof a.shapePath === 'string' && a.shapePath ? a.shapePath : null,
     shapeTextArea: asTextArea(a.shapeTextArea),
@@ -4786,6 +4790,7 @@ function textBoxGraphicStyle(box: TextBoxExport, index: number): string {
   return (
     `<style:style style:name="TbxFr${index + 1}" style:family="graphic"${parent}>` +
     `<style:graphic-properties ${fill} ${stroke}${arrows} fo:padding="${box.paddingCm}cm"` +
+    (box.paddingYCm != null ? ` fo:padding-top="${box.paddingYCm}cm" fo:padding-bottom="${box.paddingYCm}cm"` : '') +
     `${grow} draw:textarea-vertical-align="${box.textVAlign}"${vertMode}${wrap}/>${vertical}` +
     `</style:style>`
   );
@@ -4819,10 +4824,12 @@ function textBoxXml(box: TextBoxExport, inner: string, index: number): string {
   }
   if (box.shapeKind === 'textbox' && !box.shapePath) {
     // svg:height for consumers without auto-grow; fo:min-height is the real semantic
-    // (height = minimum, content grows the box) and wins on our own re-import.
+    // (height = minimum, content grows the box) and wins on our own re-import. A fixed
+    // box has the frame's height alone, as LibreOffice writes one that clips.
+    const grow = box.fixedHeight ? '' : ` fo:min-height="${box.heightCm}cm"`;
     return (
       `<draw:frame draw:name="TextBox${n}"${common} svg:height="${box.heightCm}cm"${transform}>` +
-      `<draw:text-box fo:min-height="${box.heightCm}cm">${inner}</draw:text-box></draw:frame>`
+      `<draw:text-box${grow}>${inner}</draw:text-box></draw:frame>`
     );
   }
   // A freeform is its own outline rather than a preset's: `non-primitive` plus the

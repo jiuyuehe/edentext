@@ -2861,8 +2861,15 @@ function convertWpsShape(wsp: Element, root: Element, isAnchor: boolean, ctx: Ct
       attrs.paddingCm = Math.round(padCm * 1000) / 1000;
     }
   }
+  // Word's own top/bottom inset is half its side one; only one that differs is kept.
+  const tIns = Number(bodyPr?.getAttribute('tIns') ?? NaN) / 360000;
+  const sideCm = (attrs.paddingCm as number | undefined) ?? TEXTBOX_PADDING_CM;
+  if (Number.isFinite(tIns) && tIns >= 0 && Math.abs(tIns - sideCm) > 0.01) attrs.paddingYCm = Math.round(tIns * 1000) / 1000;
 
   const txbxContent = nsChild(nsChild(wsp, WPS, 'txbx'), W, 'txbxContent');
+  // Only a:spAutoFit grows the shape with its text; without it the box keeps its extent
+  // and clips what overflows, in Word as in LibreOffice (probed).
+  if (txbxContent && attrs.height && !nsChild(bodyPr, A, 'spAutoFit')) attrs.fixedHeight = true;
   const blocks = txbxContent ? unnestBoxes(convertBlocks(Array.from(txbxContent.children), ctx, 'cell'), ctx) : [];
   return { type: 'textBox', attrs, content: blocks.length ? blocks : [{ type: 'paragraph' }] };
 }
@@ -2935,6 +2942,8 @@ function convertPict(pict: Element, ctx: Ctx): Node | null {
   if (kind !== 'textbox') attrs.shapeKind = kind;
   if (w) attrs.width = w;
   if (h) attrs.height = h;
+  // VML's counterpart of a:spAutoFit rides the text box's own style.
+  if (txbxContent && h && !/mso-fit-shape-to-text\s*:\s*t/.test(textbox?.getAttribute('style') ?? '')) attrs.fixedHeight = true;
 
   const fillAttr = shape.getAttribute('fillcolor');
   const fill = fillAttr ? normalizeColor(fillAttr) ?? null : null;

@@ -61,6 +61,7 @@ export interface TextBoxAttrs {
   wrapDist: number | null;    // cm of gap to the text beside it
   wrapAlign: string | null;   // 'center'/'right' = set against the middle/far end
   paddingCm: number;          // inset ring around the text (ODF fo:padding)
+  paddingYCm: number | null;  // its top and bottom where they differ (Word's tIns/bIns)
   shapeKind: ShapeKind;
   shapePath: string | null;   // a freeform's own outline, in the 0…100 box
   shapeTextArea: TextArea | null; // where its text goes, same box
@@ -69,6 +70,7 @@ export interface TextBoxAttrs {
   flipV: boolean;             // a line runs bottom-left → top-right instead
   textVertical: boolean;      // text runs top-to-bottom, right-to-left
   textVAlign: TextVAlign;     // where the text sits in a box taller than it is
+  fixedHeight: boolean;       // exactly `height` tall, clipping what overflows
   fillColor: string | null;
   strokeColor: string | null;
   strokeWidthPt: number;
@@ -178,7 +180,8 @@ export const TextBox = Node.create({
 
   addAttributes() {
     return {
-      // px @96dpi like the image; height is a min-height (content never clips).
+      // px @96dpi like the image; height is a min-height (content grows the box) unless
+      // `fixedHeight` says the box is that tall and clips the rest, as a word processor's is.
       width: {
         default: null,
         parseHTML: el => parsePx((el as HTMLElement).style.width),
@@ -186,7 +189,7 @@ export const TextBox = Node.create({
       },
       height: {
         default: null,
-        parseHTML: el => parsePx((el as HTMLElement).style.minHeight),
+        parseHTML: el => parsePx((el as HTMLElement).style.minHeight || (el as HTMLElement).style.height),
         renderHTML: () => ({}),
       },
       rotation: {
@@ -255,6 +258,11 @@ export const TextBox = Node.create({
         parseHTML: el => parseCmAttr((el as HTMLElement).getAttribute('data-padding')) ?? TEXTBOX_PADDING_CM,
         renderHTML: () => ({}),
       },
+      paddingYCm: {
+        default: null,
+        parseHTML: el => parseCmAttr((el as HTMLElement).getAttribute('data-padding-y')),
+        renderHTML: () => ({}),
+      },
       shapeKind: {
         default: 'textbox',
         parseHTML: el => {
@@ -310,6 +318,11 @@ export const TextBox = Node.create({
       },
       // Where the text sits in a box taller than the text: both formats anchor it
       // top, middle or bottom.
+      fixedHeight: {
+        default: false,
+        parseHTML: el => (el as HTMLElement).hasAttribute('data-fixed-height'),
+        renderHTML: () => ({}),
+      },
       textVAlign: {
         default: 'top' as TextVAlign,
         parseHTML: el => {
@@ -354,7 +367,7 @@ export const TextBox = Node.create({
     const stroke = normalizeColor(a.strokeColor);
     const style = [
       a.width ? `width:${a.width}px` : '',
-      a.height ? `min-height:${a.height}px` : '',
+      a.height ? (a.fixedHeight ? `height:${a.height}px;overflow:hidden` : `min-height:${a.height}px`) : '',
       // A polygon paints itself and a line is only its stroke, so the box behind
       // either of them stays bare.
       fill && !isDrawnShape(a) ? `background:${fill}` : '',
@@ -362,9 +375,9 @@ export const TextBox = Node.create({
         ? `border:${a.strokeWidthPt * PX_PER_PT}px solid ${stroke}` : '',
       a.shapeKind !== 'textbox' ? `border-radius:${shapeRadius(a.shapeKind)}` : '',
       a.rotation ? `transform:rotate(${a.rotation}deg)` : '',
-      `padding:${paddingPx(a.paddingCm).toFixed(2)}px`,
+      `padding:${ringCss(a)}`,
       a.textVAlign !== 'top'
-        ? `display:flex;flex-direction:column;justify-content:${a.textVAlign === 'middle' ? 'center' : 'flex-end'}` : '',
+        ? `display:flex;flex-direction:column;justify-content:${a.textVAlign === 'middle' ? 'safe center' : 'safe flex-end'}` : '',
     ].filter(Boolean).join(';');
     return ['div', mergeAttributes(HTMLAttributes, {
       'data-textbox': '',
@@ -383,10 +396,12 @@ export const TextBox = Node.create({
       ...(a.flipV ? { 'data-flip-v': 'true' } : {}),
       ...(a.textVertical ? { 'data-text-vertical': 'true' } : {}),
       ...(a.textVAlign !== 'top' ? { 'data-text-valign': a.textVAlign } : {}),
+      ...(a.fixedHeight ? { 'data-fixed-height': '' } : {}),
       ...(fill ? { 'data-fill': fill } : {}),
       ...(stroke ? { 'data-stroke': stroke } : {}),
       ...(a.strokeWidthPt !== 1 ? { 'data-stroke-width': String(a.strokeWidthPt) } : {}),
       ...(a.paddingCm !== TEXTBOX_PADDING_CM ? { 'data-padding': String(a.paddingCm) } : {}),
+      ...(a.paddingYCm != null ? { 'data-padding-y': String(a.paddingYCm) } : {}),
     }), 0];
   },
 
@@ -606,7 +621,7 @@ class TextBoxView {
 
     // Padding lives on the rotor, so the inset ring around the text is frame
     // (click-to-select) area rather than content.
-    this.rotor.style.padding = `${paddingPx(this.attrs().paddingCm).toFixed(2)}px`;
+    this.rotor.style.padding = ringCss(this.attrs());
     this.contentDOM = document.createElement('div');
     this.contentDOM.className = 'textbox-content';
     this.rotor.appendChild(this.contentDOM);
@@ -656,17 +671,30 @@ class TextBoxView {
     return a.wrap !== 'inline' && (a.wrapFromBody || a.wrapFromPage) && !!mount?.closest?.('.hf-zone');
   }
 
+  // A fixed box is exactly that tall and clips its overflow; any other grows with its text.
+  private applyHeight(h: number | null): void {
+    const fixed = this.attrs().fixedHeight && h != null;
+    this.rotor.style.minHeight = !fixed && h ? `${h}px` : '';
+    this.rotor.style.height = fixed ? `${h}px` : '';
+    // The content clips, not the rotor: the resize handles sit on the rotor's edge.
+    // A hair of tolerance, so a font's metrics a little taller than the file's never
+    // cut a glyph that fits there.
+    this.contentDOM.style.maxHeight = fixed ? '100%' : '';
+    this.contentDOM.style.overflow = fixed ? 'clip' : '';
+    this.contentDOM.style.overflowClipMargin = fixed ? '0.3em' : '';
+  }
+
   private applyAll(): void {
     const a = this.attrs();
     this.rotor.style.width = a.width ? `${a.width}px` : `${DEFAULT_WIDTH_PX}px`;
-    this.rotor.style.minHeight = a.height ? `${a.height}px` : '';
+    this.applyHeight(a.height);
     // A polygon shape paints its own fill and stroke, so the box behind it stays bare;
     // a line has no box at all, only the two endpoints it is drawn between.
     const poly = !!SHAPES[a.shapeKind]?.points || !!a.shapePath;
     const line = isLineKind(a.shapeKind);
     // The outline covers the padding box, so the frame's own ring moves to the text
     // where a polygon draws it — applyShapeInset adds it back in.
-    this.rotor.style.padding = poly || line ? '0' : `${paddingPx(a.paddingCm).toFixed(2)}px`;
+    this.rotor.style.padding = poly || line ? '0' : ringCss(a);
     const fill = normalizeColor(a.fillColor);
     const strokeColor = normalizeColor(a.strokeColor);
     this.rotor.style.background = !poly && !line && fill ? fill : 'transparent';
@@ -683,7 +711,8 @@ class TextBoxView {
     // Vertical anchor: the handles are absolute, so the rotor can flex its one child.
     this.rotor.style.display = a.textVAlign === 'top' ? '' : 'flex';
     this.rotor.style.flexDirection = 'column';
-    this.rotor.style.justifyContent = a.textVAlign === 'middle' ? 'center' : a.textVAlign === 'bottom' ? 'flex-end' : '';
+    // `safe`: text taller than a fixed box overflows from its top, as LibreOffice sets it.
+    this.rotor.style.justifyContent = a.textVAlign === 'middle' ? 'safe center' : a.textVAlign === 'bottom' ? 'safe flex-end' : '';
     this.resolvePreset();
     this.applyOutline();
     this.applyLine();
@@ -1065,7 +1094,7 @@ class TextBoxView {
       }
       moved = true;
       this.rotor.style.width = `${lastW}px`;
-      this.rotor.style.minHeight = `${lastH}px`;
+      this.applyHeight(lastH);
       this.applyShapeInset();
       this.fitWrapper();
       this.showBadge(lastW, lastH);
@@ -1177,6 +1206,27 @@ export type TextBoxDebugEntry = {
 
 // Every textBox node's attrs plus its live rendered fill/stroke, for the dev Debug
 // dump. Reads the .textbox-rotor's computed style via the view's DOM lookup.
+// The inset ring as CSS: its top and bottom where the file gives them apart.
+function ringCss(a: TextBoxAttrs): string {
+  const x = `${paddingPx(a.paddingCm).toFixed(2)}px`;
+  return a.paddingYCm != null ? `${paddingPx(a.paddingYCm).toFixed(2)}px ${x}` : x;
+}
+
+// The document with every growing box as tall as it renders. A .docx box keeps its extent
+// in Word and LibreOffice alike (a:spAutoFit makes LibreOffice draw the text detached,
+// probed), so the file has to carry the height the text has grown it to.
+export function withRenderedBoxHeights(view: EditorView): ReturnType<PMNode['toJSON']> {
+  const tr = view.state.tr;
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'textBox') return true;
+    const rotor = (view.nodeDOM(pos) as HTMLElement | null)?.querySelector?.<HTMLElement>('.textbox-rotor');
+    const h = rotor?.offsetHeight ?? 0;
+    if (!node.attrs.fixedHeight && h > (node.attrs.height ?? 0) + 0.5) tr.setNodeAttribute(pos, 'height', h);
+    return false;
+  });
+  return tr.doc.toJSON();
+}
+
 export function getTextBoxDebug(view: EditorView): TextBoxDebugEntry[] {
   const out: TextBoxDebugEntry[] = [];
   view.state.doc.descendants((node, pos) => {
