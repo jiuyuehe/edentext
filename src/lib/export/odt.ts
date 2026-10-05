@@ -1491,13 +1491,17 @@ type TableProps = { ml: number; mr: number; mt: number; mb: number; keepRows: bo
 function collectListItemStyles(node: TiptapNode, result: ParaStyle[], extras: ListItemExtra[][] = []): void {
   if (node.type === 'listItem') {
     const blocks = (node.content ?? []).filter(c => c.type === 'paragraph' || c.type === 'heading');
-    extras.push(blocks.slice(1).map(b => ({ style: paraStyleFromAttrs(b.attrs, false),
+    // A lone vertical margin takes its partner from the block's style, as a body
+    // paragraph's does (pairMargins), not 0.
+    const paired = (b: TiptapNode | undefined) => pairMargins(paraStyleFromAttrs(b?.attrs, false),
+      b?.type === 'heading' ? `Heading ${(b.attrs?.level as number) ?? 1}` : (b?.attrs?.styleName as string | undefined) ?? DEFAULT_STYLE);
+    extras.push(blocks.slice(1).map(b => ({ style: paired(b),
       level: b.type === 'heading' ? (b.attrs?.level as number) ?? 1 : null })));
     const firstPara = node.content?.find(c => c.type === 'paragraph');
     // replacePageBreaks skips list paragraphs (its sentinel would corrupt the SEG
     // rebuild), so the item's own break rides its style instead — as LibreOffice
     // writes it (probed: it keeps fo:break-before on a list item's paragraph).
-    result.push({ ...paraStyleFromAttrs(firstPara?.attrs, false),
+    result.push({ ...paired(firstPara),
       breakBefore: firstPara?.attrs?.breakBefore === 'page' });
     // Recurse into nested lists only (their listItems extend the DFS sequence).
     for (const child of node.content ?? []) {

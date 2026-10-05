@@ -1347,8 +1347,14 @@ function convertParagraph(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault:
   // header/footer paragraph carries none either, and bakes its Header/Footer style in.
   const baked = kind === 'cell' || kind === 'zone';
   const attrs = blockAttrs(ppr, kind, level, directJc || kind === 'zone' ? jcVal : null,
-    baked ? ctx.styles.paragraphSpacing(styleId, kind === 'cell' ? ctx.cellSpacing : undefined) : {},
+    baked || kind === 'list' ? ctx.styles.paragraphSpacing(styleId, kind === 'cell' ? ctx.cellSpacing : undefined) : {},
     bidi ?? ctx.pageRtl, kind === 'zone' ? null : styleJc);
+  // A list item carries no style name either and renders the default style's spacing,
+  // so its own style's spacing rides the block wherever the two differ.
+  if (kind === 'list') {
+    const def = blockAttrs(null, kind, level, null, ctx.styles.paragraphSpacing(ctx.styles.defaultParagraphStyle()));
+    for (const key of ['spaceBefore', 'spaceAfter', 'lineHeight']) if (attrs[key] === def[key]) delete attrs[key];
+  }
   applyContextualSpacing(el, ppr, ctx, styleId, attrs);
   // A direct left indent at or below 0 still overrides the style's own one.
   const ind = kind !== 'list' && !baked ? fc(ppr, 'ind') : null;
