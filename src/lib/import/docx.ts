@@ -223,7 +223,17 @@ function intAttr(el: Element | null, ns: string, name: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 function parseXml(xml: string): Document {
-  return parseImportXml(xml, 'docx');
+  const doc = parseImportXml(xml, 'docx');
+  // A content control around a row or a cell holds nothing a table walk reads but the
+  // w:tr / w:tc itself, so it is unwrapped where it stands.
+  for (const sdt of Array.from(doc.getElementsByTagNameNS(W, 'sdt'))) {
+    const parent = sdt.parentNode as Element | null;
+    if (parent?.namespaceURI !== W || (parent.localName !== 'tbl' && parent.localName !== 'tr')) continue;
+    const content = fc(sdt, 'sdtContent');
+    if (content) while (content.firstChild) parent.insertBefore(content.firstChild, sdt);
+    parent.removeChild(sdt);
+  }
+  return doc;
 }
 
 // '#RRGGBB' from a Word color (6-hex without #, or named). null for auto/empty.
