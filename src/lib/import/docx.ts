@@ -88,6 +88,7 @@ type Ctx = {
   contentWidthCm: number;
   // Left page margin (cm), the origin a page-relative frame offset is measured against.
   leftMarginCm: number;
+  rightMarginCm: number;
   // The section's own direction: a block declaring the same one is inheriting, not
   // formatted, so only a block that differs carries a `dir` attr.
   pageRtl: boolean;
@@ -273,7 +274,8 @@ export function importDocx(bytes: Uint8Array, convertedImages: ConvertedImages =
   const sectPr = fc(body, 'sectPr');
   const contentWidthCm = sectionContentWidthCm(sectPr);
   const leftMarginCm = twipToCm(intAttr(fc(sectPr, 'pgMar'), W, 'left') ?? 1440);
-  const ctx: Ctx = { styles, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), warnings, files, rels: parseRels(files['word/_rels/document.xml.rels']), imageCache: new Map(), convertedImages, listCounters: new Map(), headingNumPr: new Map(), usedListStyles: new Map(), contentWidthCm, leftMarginCm, pageRtl: sectPrRtl(sectPr), mainLang: docLangs.main, hyphenate: docSetting(files, 'autoHyphenation'), cellSpacing: {}, tblIndToText: tblIndIsToText(files), accents: themeAccents(themeDoc), themeColors: themeColors(themeDoc), openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentDefs: docxComments(files), bibSources: docxSources(files), citationStyle: docxCitationStyle(files), notes: [], noteParts: {
+  const rightMarginCm = twipToCm(intAttr(fc(sectPr, 'pgMar'), W, 'right') ?? 1440);
+  const ctx: Ctx = { styles, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), warnings, files, rels: parseRels(files['word/_rels/document.xml.rels']), imageCache: new Map(), convertedImages, listCounters: new Map(), headingNumPr: new Map(), usedListStyles: new Map(), contentWidthCm, leftMarginCm, rightMarginCm, pageRtl: sectPrRtl(sectPr), mainLang: docLangs.main, hyphenate: docSetting(files, 'autoHyphenation'), cellSpacing: {}, tblIndToText: tblIndIsToText(files), accents: themeAccents(themeDoc), themeColors: themeColors(themeDoc), openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentDefs: docxComments(files), bibSources: docxSources(files), citationStyle: docxCitationStyle(files), notes: [], noteParts: {
     footnote: noteParts(files, 'footnotes', 'footnote'),
     endnote: noteParts(files, 'endnotes', 'endnote'),
   }, noteBookmarks: new Map() };
@@ -301,6 +303,7 @@ export function importDocx(bytes: Uint8Array, convertedImages: ConvertedImages =
     const sect = g.sectPr ?? finalSectPr;
     ctx.contentWidthCm = sectionContentWidthCm(sect);
     ctx.leftMarginCm = twipToCm(intAttr(fc(sect, 'pgMar'), W, 'left') ?? 1440);
+    ctx.rightMarginCm = twipToCm(intAttr(fc(sect, 'pgMar'), W, 'right') ?? 1440);
     const inner = convertBlocks(g.els, ctx, 'body');
     // A section's own w:type says how it begins: a page-starting break (nextPage/odd/even,
     // or the default) puts its first block on a new page; continuous/nextColumn flow on.
@@ -2650,6 +2653,16 @@ function anchorOffsetX(anchor: Element, ctx: Ctx): number | null {
   return round2((off + base) / 360000);
 }
 
+// The column x of a frame centred on its positionH band, or null for a band the
+// editor has no width for (a character, a margin strip).
+function centreOffsetCm(anchor: Element, cx: number, ctx: Ctx): number | null {
+  const from = anchor.getElementsByTagNameNS(WP, 'positionH')[0]?.getAttribute('relativeFrom');
+  const room = ctx.contentWidthCm - cx / 360000;
+  if (from === 'margin' || from === 'column') return round2(room / 2);
+  if (from === 'page') return round2((room + ctx.rightMarginCm - ctx.leftMarginCm) / 2);
+  return null;
+}
+
 // Wrap mode and place are independent: the mode is what the file's wrap element says,
 // the place its position offsets. Only where neither names a side does the frame's own
 // x decide which half of the column it fills (text flows on one side of a CSS float).
@@ -2687,6 +2700,9 @@ function anchorWrap(anchor: Element, ctx: Ctx): { wrap: 'left' | 'right' | 'topB
   const wt = anchor.getElementsByTagNameNS(WP, 'wrapSquare')[0]?.getAttribute('wrapText');
   if (wt === 'right') return at('left'); // text on right ⇒ image on left
   if (wt === 'left') return at('right');
+  // A float has no middle: a frame centred on the page or the column keeps that x.
+  const half = align === 'center' && offsetCm == null ? centreOffsetCm(anchor, cx, ctx) : null;
+  if (half != null) return { ...at(half + cx / 720000 > ctx.contentWidthCm / 2 ? 'right' : 'left'), offsetCm: half };
   if (align === 'right' || align === 'outside') return at('right');
   if (align) return at('left');
   if (offsetCm == null) return at('left');
@@ -3972,7 +3988,7 @@ function convertHfPart(relId: string | null, ctx: Ctx, sect: Element | null): Hf
     ...ctx, zone: true, rels: parseRels(ctx.files[path.replace(/^word\/(.*)$/, 'word/_rels/$1.rels')]),
     openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentDefs: new Map(),
     listCounters: new Map(), cellSpacing: {},
-    contentWidthCm: sectionContentWidthCm(sect), leftMarginCm: twipToCm(intAttr(fc(sect, 'pgMar'), W, 'left') ?? 1440),
+    contentWidthCm: sectionContentWidthCm(sect), leftMarginCm: twipToCm(intAttr(fc(sect, 'pgMar'), W, 'left') ?? 1440), rightMarginCm: twipToCm(intAttr(fc(sect, 'pgMar'), W, 'right') ?? 1440),
   };
   const zone: HfDoc = { type: 'doc', content: convertBlocks(Array.from(root.children), zoneCtx, 'zone') };
   return hfIsEmpty(zone) ? null : zone;

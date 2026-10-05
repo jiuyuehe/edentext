@@ -10,7 +10,7 @@ import type { EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import { placeFromPage, placeInColumn, freeDragX } from './pageBreaks';
-import { HANDLES, MIN_SIZE_PX, clamp, parsePx, frameMargins, pageContentHeightPx, sinkToOffset, applyRunThrough, clearPagePlace, startFreeMove, droppedFrameAttrs, type WrapMode } from './image';
+import { HANDLES, MIN_SIZE_PX, clamp, parsePx, frameMargins, unstackFloat, pageContentHeightPx, sinkToOffset, applyRunThrough, clearPagePlace, startFreeMove, droppedFrameAttrs, type WrapMode } from './image';
 import { SHAPES, shapePath, linePaths, pathHeadPaths, arrowHeadPx, isShapeKind, isLineKind, outlineLayers, shadeColor, asShapePreset, asTextArea, type PathHeads, type ShapeKind, type DrawingMlPreset, type TextArea } from '../../utils/shapes';
 import type { ResolvedGeometry } from '../../utils/enhancedGeometry';
 import { cmToPx } from '../../storage/pageMargins';
@@ -918,6 +918,7 @@ class TextBoxView {
       // — and under a picture behind the text too (-1), which is the order LibreOffice
       // paints a cover page in; a box the file puts in front of the text sits above both.
       applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true, a.wrapFromBody === true, a.zIndex);
+      unstackFloat(d, a.wrap, a.wrapOffset);
       // Deferred: the frame has to be laid out before its own page can be read. Its
       // column only needs it in the document, so one already there lands at once.
       if (!a.wrapFromPage && !a.wrapFromBody && d.isConnected) placeInColumn(this.editor.view, d);

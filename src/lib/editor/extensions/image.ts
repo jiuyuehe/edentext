@@ -110,6 +110,29 @@ export function frameMargins(wrap: WrapMode, offsetCm: unknown, boxWidthPx: numb
   return `0 ${far} 0 ${gap}`;
 }
 
+// CSS queues floats of one side behind each other, so a later frame would sit beside an
+// earlier one rather than at its own x. Once laid out, pull it back to that x — measured
+// from the anchor's text edge, as frameMargins places a lone left float.
+export function unstackFloat(el: HTMLElement, side: 'left' | 'right', offsetCm: unknown): void {
+  if (typeof offsetCm !== 'number') return;
+  let prev = el.previousElementSibling;
+  while (prev && !(prev instanceof HTMLElement && prev.style.float === side)) prev = prev.previousElementSibling;
+  if (!prev) return;
+  requestAnimationFrame(() => {
+    const block = el.parentElement;
+    if (!block || !el.isConnected || el.style.float !== side) return;
+    const b = block.getBoundingClientRect();
+    const scale = b.width / (block.offsetWidth || 1);
+    const cs = getComputedStyle(block);
+    const want = b.left + (parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth) + cmToPx(offsetCm)) * scale;
+    const delta = (want - el.getBoundingClientRect().left) / scale;
+    if (Math.abs(delta) < 0.5) return;
+    const m = getComputedStyle(el);
+    if (side === 'left') el.style.marginLeft = `${parseFloat(m.marginLeft) + delta}px`;
+    else el.style.marginRight = `${parseFloat(m.marginRight) - delta}px`;
+  });
+}
+
 // What picking a wrap mode by hand drops: the offsets belong to the mode that was set,
 // and so do the coordinate systems they were measured in (the page corner, a fixed
 // page). `inFront` means something for run-through alone. Shared with textBox.ts.
@@ -793,6 +816,7 @@ class ImageView {
     if (wrap === 'left' || wrap === 'right') {
       d.style.float = wrap;
       d.style.margin = frameMargins(wrap, a.wrapOffset, this.boxWidth(), null, a.wrapDist);
+      unstackFloat(d, wrap, a.wrapOffset);
       this.sinkToOffset();
     } else if (wrap === 'topBottom' && (a.wrapAlign === 'left' || a.wrapAlign === 'right')) {
       // Sharing its band with the frame set against the other end (the importers only
