@@ -18,16 +18,12 @@ Measured on six such pictures: 3–7mm high before, all within tolerance.
 ## A floating table
 
 A table Word takes out of the flow (`w:tblpPr` — every cover-page layout has one) is a **frame
-holding nothing but that table**, which is how LibreOffice keeps one too: the blocks after it then
-start where the table does instead of below it, and text wraps beside it. The box's content
-expression is an alternation for exactly that reason — a table in a box is the whole content or
-nothing, since neither format's writer has a place for one standing beside text in a frame. Both
-exporters write it back as the file's own floating table (`w:tblpPr` via the package's `float`,
-ODF's `draw:frame`/`draw:text-box` around the table), not as a shape.
-
-A table never sits beside a float (`.tableWrapper` clears both sides): LibreOffice starts a
-DOCX table below a floating frame even where one would fit beside it (probed with a 5cm and a
-column-wide floating table), and a column-wide frame otherwise squeezed the table to 0px.
+holding nothing but that table**, as LibreOffice keeps one: the blocks after it start where the
+table does, and text wraps beside it — a *table* never does (`.tableWrapper` clears floats;
+LibreOffice starts one below a 5cm or a column-wide frame, probed). The box's content is an
+alternation for that reason: a table in a box is all of it or nothing, since neither writer has a
+place for one beside text in a frame. Both exporters write the file's own floating table back
+(`w:tblpPr` via the package's `float`, ODF's `draw:frame`/`draw:text-box`), not a shape.
 
 ## A box in static HTML
 
