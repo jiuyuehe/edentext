@@ -6,7 +6,8 @@ import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
 import Text from '@tiptap/extension-text';
 import { TextSelection } from '@tiptap/pm/state';
-import { TrackChanges, Insertion, Deletion, revisions } from '../../src/lib/editor/extensions/trackChanges';
+import { Fragment, Slice } from '@tiptap/pm/model';
+import { TrackChanges, Insertion, Deletion, revisions, trackedReplace } from '../../src/lib/editor/extensions/trackChanges';
 
 function editorOver(text: string) {
   const el = document.createElement('div');
@@ -51,6 +52,24 @@ describe('recording a replacement', () => {
     await replaceQuick(editor);
     editor.commands.acceptRevisions(true);
     expect(editor.state.doc.textContent).toBe('The slow fox');
+    editor.destroy();
+  });
+});
+
+describe('trackedReplace', () => {
+  it('records a replacement under its own author while recording is off', () => {
+    const el = document.createElement('div');
+    const editor = new Editor({
+      element: el,
+      extensions: [Document, Paragraph, Text, Insertion, Deletion, TrackChanges],
+      content: '<p>The quick fox</p>',
+    });
+    const { state, view } = editor;
+    view.dispatch(trackedReplace(state.tr, 5, 10, new Slice(Fragment.from(state.schema.text('slow')), 0, 0), 'AI'));
+    expect(revisions(editor.state.doc).map((r) => [r.kind, r.text, r.author]))
+      .toEqual([['deletion', 'quick', 'AI'], ['insertion', 'slow', 'AI']]);
+    editor.commands.rejectRevisions(true);
+    expect(editor.state.doc.textContent).toBe('The quick fox');
     editor.destroy();
   });
 });

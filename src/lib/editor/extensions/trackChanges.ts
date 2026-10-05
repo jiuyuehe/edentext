@@ -263,23 +263,11 @@ export const TrackChanges = Extension.create<{ recording: () => boolean; author:
           }
           if (!ranges.length) return true;
           const marked = state.tr;
-          const attrs = { id: newRevisionId(), author: options.author(), date: new Date().toISOString() };
+          const attrs = revisionAttrs(options.author());
           let any = false;
-          for (const [from, to] of ranges) {
-            for (const keep of keptRanges(state, from, to)) {
-              marked.addMark(keep[0], keep[1], state.schema.marks.deletion.create(attrs));
-              any = true;
-            }
-            // The author's own unaccepted insertion goes for real.
-            for (const own of [...ownInsertions(state, from, to)].reverse()) marked.delete(own[0], own[1]);
-          }
+          for (const [from, to] of ranges) any = markDeleted(marked, marked.mapping.map(from), marked.mapping.map(to), attrs) || any;
           if (swap) {
-            // The new content lands after the text it replaces, which stays struck out.
-            const at = marked.mapping.map(swap.to);
-            const before = marked.doc.content.size;
-            marked.replace(at, at, swap.slice);
-            const end = at + (marked.doc.content.size - before);
-            marked.addMark(at, end, state.schema.marks.insertion.create({ ...attrs, id: newRevisionId() }));
+            const end = insertTracked(marked, marked.mapping.map(swap.to), swap.slice, { ...attrs, id: newRevisionId() });
             marked.setSelection(TextSelection.near(marked.doc.resolve(end)));
             any = true;
           }
@@ -322,10 +310,44 @@ function isPureDelete(tr: Transaction, state: EditorState): boolean {
     });
 }
 
+function revisionAttrs(author: string) {
+  return { id: newRevisionId(), author, date: new Date().toISOString() };
+}
+
+// Strike [from,to) through as one change; a pending insertion inside goes for real.
+// Returns whether anything was marked.
+function markDeleted(tr: Transaction, from: number, to: number, attrs: Record<string, string>): boolean {
+  const kept = keptRanges(tr.doc, from, to);
+  for (const keep of kept) tr.addMark(keep[0], keep[1], tr.doc.type.schema.marks.deletion.create(attrs));
+  for (const own of [...ownInsertions(tr.doc, from, to)].reverse()) tr.delete(own[0], own[1]);
+  return kept.length > 0;
+}
+
+// The new content lands at `at` (after any text it replaces, which stays struck out),
+// marked as an insertion. Returns where it ends.
+function insertTracked(tr: Transaction, at: number, slice: Slice, attrs: Record<string, string>): number {
+  const before = tr.doc.content.size;
+  tr.replace(at, at, slice);
+  const end = at + (tr.doc.content.size - before);
+  tr.addMark(at, end, tr.doc.type.schema.marks.insertion.create(attrs));
+  return end;
+}
+
+/**
+ * A replacement recorded by `author` whether or not recording is on: [from,to) struck
+ * through, `slice` inserted after it. Either half may be empty.
+ */
+export function trackedReplace(tr: Transaction, from: number, to: number, slice: Slice | null, author: string): Transaction {
+  const start = tr.steps.length;
+  if (to > from) markDeleted(tr, from, to, revisionAttrs(author));
+  if (slice?.size) insertTracked(tr, tr.mapping.slice(start).map(to), slice, revisionAttrs(author));
+  return tr.setMeta(RECORDING, true);
+}
+
 // The parts of [from,to) that are not the author's own pending insertion — the ones a
 // delete turns into a deletion mark.
-function keptRanges(state: EditorState, from: number, to: number): [number, number][] {
-  const own = ownInsertions(state, from, to);
+function keptRanges(doc: PMNode, from: number, to: number): [number, number][] {
+  const own = ownInsertions(doc, from, to);
   const out: [number, number][] = [];
   let cursor = from;
   for (const [s, e] of own) {
@@ -336,9 +358,9 @@ function keptRanges(state: EditorState, from: number, to: number): [number, numb
   return out;
 }
 
-function ownInsertions(state: EditorState, from: number, to: number): [number, number][] {
+function ownInsertions(doc: PMNode, from: number, to: number): [number, number][] {
   const out: [number, number][] = [];
-  state.doc.nodesBetween(from, to, (node, pos) => {
+  doc.nodesBetween(from, to, (node, pos) => {
     if (!node.isText) return true;
     if (!node.marks.some((m) => m.type.name === 'insertion')) return false;
     out.push([Math.max(from, pos), Math.min(to, pos + node.nodeSize)]);

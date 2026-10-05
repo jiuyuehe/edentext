@@ -1,5 +1,7 @@
 import { Fragment, Slice } from '@tiptap/pm/model';
-import type { Node as PMNode, Schema } from '@tiptap/pm/model';
+import type { MarkType, Node as PMNode, Schema } from '@tiptap/pm/model';
+import type { EditorState } from '@tiptap/pm/state';
+import { inNote } from './extensions/notes';
 
 const LOCAL_IMAGE_SRC = /^(?:data:|idb:)/i;
 
@@ -87,4 +89,41 @@ export function plainPastedSpaces(slice: Slice): Slice {
   };
   const content = clean(slice.content);
   return changed ? new Slice(content, slice.openStart, slice.openEnd) : slice;
+}
+
+/** Every fitting fix a slice from outside gets before it lands at `state`'s selection. */
+export function fitPastedSlice(raw: Slice, state: EditorState): Slice {
+  const pasted = plainPastedSpaces(raw);
+  const slice = inNote(state) ? flattenToInline(pasted, state.schema) : unwrapPastedBoxes(pasted);
+  const localImages = dropRemoteImages(slice);
+  const textStyleType = state.schema.marks.textStyle;
+  if (!textStyleType) return localImages;
+  const cursorMarks = state.storedMarks ?? state.selection.$head.marks();
+  // Only an explicit font at the caret is carried over, each half of the pair on
+  // its own: with none, the pasted text inherits the paragraph's style, as it does
+  // in both word processors.
+  const attrs = cursorMarks.find(m => m.type === textStyleType)?.attrs ?? {};
+  const fonts = Object.fromEntries(['fontFamily', 'fontFamilyAsian'].filter((k) => attrs[k]).map((k) => [k, attrs[k] as string]));
+  if (!Object.keys(fonts).length) return localImages;
+  return new Slice(applyFontToFragment(localImages.content, textStyleType, fonts), localImages.openStart, localImages.openEnd);
+}
+
+function applyFontToFragment(frag: Fragment, textStyleType: MarkType, fonts: Record<string, string>): Fragment {
+  const nodes: PMNode[] = [];
+  frag.forEach((node: PMNode) => {
+    if (node.isText) {
+      const existingTS = node.marks.find(m => m.type === textStyleType);
+      const missing = Object.entries(fonts).filter(([k]) => !existingTS?.attrs[k]);
+      if (!missing.length) {
+        nodes.push(node);
+      } else {
+        const newAttrs = { ...(existingTS?.attrs ?? {}), ...Object.fromEntries(missing) };
+        const otherMarks = node.marks.filter(m => m.type !== textStyleType);
+        nodes.push(node.mark([...otherMarks, textStyleType.create(newAttrs)]));
+      }
+    } else {
+      nodes.push(node.copy(applyFontToFragment(node.content, textStyleType, fonts)));
+    }
+  });
+  return Fragment.fromArray(nodes);
 }

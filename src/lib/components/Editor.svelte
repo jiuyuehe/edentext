@@ -1,8 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack, flushSync } from 'svelte';
   import { Editor } from '@tiptap/core';
-  import { Slice, Fragment } from 'prosemirror-model';
-  import type { Node as PmNode, MarkType } from 'prosemirror-model';
   import { extensions } from '../editor/extensions';
   import { buildContextMenu, type MenuEntry, type SpellSection, type GrammarSection } from '../editor/contextMenuItems';
   import { spellErrorAt, spellLangAt } from '../editor/extensions/spellCheck';
@@ -21,8 +19,7 @@
   import TextBoxToolbar from './TextBoxToolbar.svelte';
   import type { WrapMode } from '../editor/extensions/image';
   import { findTextBox, type ShapeKind } from '../editor/extensions/textBox';
-  import { dropRemoteImages, unwrapPastedBoxes, flattenToInline, plainPastedSpaces } from '../editor/paste';
-  import { inNote } from '../editor/extensions/notes';
+  import { fitPastedSlice } from '../editor/paste';
   import { NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
   import { EditorView } from '@tiptap/pm/view';
   import ContextMenu from './ContextMenu.svelte';
@@ -1138,26 +1135,6 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     scheduleTableUi();
   }
 
-  function applyFontToFragment(frag: Fragment, textStyleType: MarkType, fonts: Record<string, string>): Fragment {
-    const nodes: PmNode[] = [];
-    frag.forEach((node: PmNode) => {
-      if (node.isText) {
-        const existingTS = node.marks.find(m => m.type === textStyleType);
-        const missing = Object.entries(fonts).filter(([k]) => !existingTS?.attrs[k]);
-        if (!missing.length) {
-          nodes.push(node);
-        } else {
-          const newAttrs = { ...(existingTS?.attrs ?? {}), ...Object.fromEntries(missing) };
-          const otherMarks = node.marks.filter(m => m.type !== textStyleType);
-          nodes.push(node.mark([...otherMarks, textStyleType.create(newAttrs)]));
-        }
-      } else {
-        nodes.push(node.copy(applyFontToFragment(node.content, textStyleType, fonts)));
-      }
-    });
-    return Fragment.fromArray(nodes);
-  }
-
   // --- Image insertion (drag-drop / paste); the toolbar button lives in
   // ToolbarExpanded.svelte. Shared sizing mirrors the export content-width math. ---
   function imageContentBoxPx(): { maxW: number; maxH: number } {
@@ -1326,24 +1303,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
             return true;
           },
         },
-        transformPasted(raw, view) {
-          // The direct prop wins over every plugin's, so the fitting fixes run here.
-          const pasted = plainPastedSpaces(raw);
-          const slice = inNote(view.state)
-            ? flattenToInline(pasted, view.state.schema)
-            : unwrapPastedBoxes(pasted);
-          const localImages = dropRemoteImages(slice);
-          const textStyleType = view.state.schema.marks.textStyle;
-          if (!textStyleType) return localImages;
-          const cursorMarks = view.state.storedMarks ?? view.state.selection.$head.marks();
-          // Only an explicit font at the caret is carried over, each half of the pair on
-          // its own: with none, the pasted text inherits the paragraph's style, as it does
-          // in both word processors.
-          const attrs = cursorMarks.find(m => m.type === textStyleType)?.attrs ?? {};
-          const fonts = Object.fromEntries(['fontFamily', 'fontFamilyAsian'].filter((k) => attrs[k]).map((k) => [k, attrs[k] as string]));
-          if (!Object.keys(fonts).length) return localImages;
-          return new Slice(applyFontToFragment(localImages.content, textStyleType, fonts), localImages.openStart, localImages.openEnd);
-        },
+        // The direct prop wins over every plugin's, so the fitting fixes run here.
+        transformPasted: (raw, view) => fitPastedSlice(raw, view.state),
       },
       onTransaction: ({ editor: e, transaction }) => {
         // Deferred: a blur tr arrives synchronously when a pane-layout switch tears

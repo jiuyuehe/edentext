@@ -170,7 +170,7 @@ function findMatches(doc: PmNode, re: RegExp | null, format?: FormatSpec): Match
 }
 
 // A replacement's own formatting, applied over the range it landed in.
-function applyFormat(tr: Transaction, schema: Schema, from: number, to: number, fmt: FormatSpec, sheet: StyleSheet): void {
+export function applyFormat(tr: Transaction, schema: Schema, from: number, to: number, fmt: FormatSpec, sheet: StyleSheet): void {
   for (const name of markNames(fmt)) {
     const type = schema.marks[name];
     if (type) tr.addMark(from, to, type.create());
