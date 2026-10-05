@@ -866,8 +866,14 @@ const EMPTY_ITEM_INDENT: ItemIndent = { left: null, hang: null };
 function listItemIndent(el: Element, ctx: Ctx): ItemIndent {
   const ppr = fc(el, 'pPr');
   const ind = fc(ppr, 'ind');
-  if (!ind) return EMPTY_ITEM_INDENT;
-  const charTwip = blockDefaults(ctx.styles.paragraphRun(styleIdOf(ppr, ctx)), null, false).fontSizePt * 20 / 100;
+  // Numbering the paragraph style brings is outranked by that style's own indent, which
+  // a direct w:numPr ranks below the level's again (probed in LibreOffice).
+  const styleId = styleIdOf(ppr, ctx);
+  const fromStyle = !fc(ppr, 'numPr') ? styleId : null;
+  const styleFirst = ctx.styles.styleFirstLineTwip(fromStyle);
+  const styled: ItemIndent = { left: ctx.styles.styleIndentTwip(fromStyle), hang: styleFirst != null ? -styleFirst : null };
+  if (!ind) return styled;
+  const charTwip = blockDefaults(ctx.styles.paragraphRun(styleId), null, false).fontSizePt * 20 / 100;
   const pick = (chars: string, twips: string) => {
     const c = intAttr(ind, W, chars);
     return c ? Math.round(c * charTwip) : intAttr(ind, W, twips);
@@ -875,8 +881,8 @@ function listItemIndent(el: Element, ctx: Ctx): ItemIndent {
   const hanging = pick('hangingChars', 'hanging');
   const first = pick('firstLineChars', 'firstLine');
   return {
-    left: pick('leftChars', 'left') ?? intAttr(ind, W, 'start'),
-    hang: hanging ?? (first != null ? -first : null),
+    left: pick('leftChars', 'left') ?? intAttr(ind, W, 'start') ?? styled.left,
+    hang: hanging ?? (first != null ? -first : null) ?? styled.hang,
   };
 }
 
