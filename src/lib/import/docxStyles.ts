@@ -53,6 +53,7 @@ export type RunProps = {
 export type LevelDef = {
   numFmt?: string; lvlText?: string; leftTwip?: number; hangingTwip?: number; start?: number;
   bulletFont?: string; rightAligned?: boolean; suffix?: string; run?: RunProps;
+  pStyle?: string; // the paragraph style the level belongs to (w:lvl/w:pStyle)
 };
 
 // Paragraph spacing from a w:pPr/w:spacing (only the attributes actually present, so
@@ -189,6 +190,8 @@ export class DocxStyles {
   private next = new Map<string, string | null>(); // w:next
   private memoOwn = new Map<string, RunProps>();
   private styleNum = new Map<string, { numId: number; ilvl: number }>();
+  private ownNumId = new Map<string, number>(); // style's own w:numPr/w:numId
+  private ownIlvl = new Map<string, number>(); // style's own w:numPr/w:ilvl
   private ownOutline = new Map<string, number>(); // style's own w:outlineLvl (heading marker)
   private ownAlign = new Map<string, string>(); // style's own w:pPr/w:jc
   private ownSpacing = new Map<string, ParaSpacing>(); // style's own w:pPr/w:spacing
@@ -270,6 +273,10 @@ export class DocxStyles {
       if (numPr) {
         const np = readNumPr(numPr);
         if (np) this.styleNum.set(id, np);
+        const n = firstChild(numPr, 'numId'), l = firstChild(numPr, 'ilvl');
+        const numId = n ? parseInt(wVal(n) ?? '', 10) : NaN, ilvl = l ? parseInt(wVal(l) ?? '', 10) : NaN;
+        if (Number.isFinite(numId)) this.ownNumId.set(id, numId);
+        if (Number.isFinite(ilvl)) this.ownIlvl.set(id, ilvl);
       }
       const ol = ppr && firstChild(ppr, 'outlineLvl');
       if (ol) { const n = parseInt(wVal(ol) ?? '', 10); if (Number.isFinite(n)) this.ownOutline.set(id, n); }
@@ -417,6 +424,7 @@ export class DocxStyles {
           else if (Number.isFinite(f)) def.hangingTwip = -f;
         }
         const suff = firstChild(lvl, 'suff'); if (suff) def.suffix = wVal(suff) ?? undefined;
+        const ps = firstChild(lvl, 'pStyle'); if (ps) def.pStyle = wVal(ps) ?? undefined;
         const rPr = firstChild(lvl, 'rPr'); if (rPr) def.run = parseRunProps(rPr);
         const jc = firstChild(lvl, 'lvlJc');
         if (jc && (wVal(jc) === 'right' || wVal(jc) === 'end')) def.rightAligned = true;
@@ -457,8 +465,22 @@ export class DocxStyles {
     return mergeRunProps(this.defaultsRun, this.styleOwn(pStyleId ?? this.defaultParaStyle));
   }
 
+  // w:numId and w:ilvl each inherit along the w:basedOn chain on their own; a level the
+  // chain leaves open is the one whose w:pStyle names the style, else level 0.
   styleNumPr(styleId: string | null | undefined): { numId: number; ilvl: number } | null {
-    return styleId ? this.styleNum.get(styleId) ?? null : null;
+    let numId: number | undefined, ilvl: number | undefined;
+    const seen = new Set<string>();
+    for (let s = styleId ?? null; s && !seen.has(s); s = this.basedOn.get(s) ?? null) {
+      seen.add(s);
+      numId ??= this.ownNumId.get(s);
+      ilvl ??= this.ownIlvl.get(s);
+    }
+    if (numId == null) return null;
+    if (ilvl == null) {
+      const abs = this.resolvedAbstract(numId);
+      for (const [l, def] of (abs ? this.abstractLevels.get(abs) : null) ?? []) if (styleId && def.pStyle === styleId) ilvl = l;
+    }
+    return { numId, ilvl: ilvl ?? 0 };
   }
 
   // The style's effective outline level (w:outlineLvl) along the w:basedOn chain. 0–8
