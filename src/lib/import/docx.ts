@@ -1485,7 +1485,7 @@ function convertParagraph(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault:
   if (blockLang && blockLang !== defaults.lang) attrs.lang = blockLang;
   if (blockLangAsian && blockLangAsian !== defaults.langAsian) attrs.langAsian = blockLangAsian;
   applyUniformRunFont(attrs, content);
-  sinkOffsetFrames(content);
+  sinkOffsetFrames(content, parseFloat(String(attrs.fontSize ?? '')) || defaults.fontSizePt);
 
   const node: Node = { type: level ? 'heading' : 'paragraph' };
   if (level) attrs.level = level;

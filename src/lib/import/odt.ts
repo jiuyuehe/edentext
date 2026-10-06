@@ -391,13 +391,15 @@ export function applyUniformRunFont(attrs: Record<string, unknown>, content: { t
   if (attrs.fontSize == null && size) attrs.fontSize = size;
 }
 
-// A top-and-bottom frame set below its paragraph's top sinks behind the paragraph's
-// text: a full-width float pushes every following line under itself, so the offset can
-// only be drawn as what stands above the frame — which is why frames go top to bottom.
-export function sinkOffsetFrames(content: { type: string; text?: string; attrs?: Record<string, unknown> }[]): void {
+// A top-and-bottom frame set below its paragraph's first line sinks behind the text: a
+// full-width float pushes every following line under itself, so the offset can only be
+// drawn as what stands above the frame. Higher up it overlaps the first line, which moves
+// below it, so it leads (`fontPt` sizes that line at single spacing).
+export function sinkOffsetFrames(content: { type: string; text?: string; attrs?: Record<string, unknown> }[], fontPt: number): void {
+  const lineCm = fontPt * 1.15 * 2.54 / 72;
   const sinks = (n: { type: string; attrs?: Record<string, unknown> }) =>
     (n.type === 'image' || n.type === 'textBox')
-    && n.attrs?.wrap === 'topBottom' && (n.attrs.wrapOffsetY as number) > 0;
+    && n.attrs?.wrap === 'topBottom' && (n.attrs.wrapOffsetY as number) >= lineCm;
   if (!content.some(sinks)) return;
   const frames = content.filter(sinks).sort((a, b) => (a.attrs!.wrapOffsetY as number) - (b.attrs!.wrapOffsetY as number));
   for (const f of frames) content.splice(content.indexOf(f), 1);
@@ -2104,7 +2106,7 @@ function convertParaLike(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault =
   for (const [k, v] of Object.entries(baked)) if (v != null) delete attrs[k];
   applyUniformRunFont(attrs, content);
   for (const [k, v] of Object.entries(baked)) if (v != null && attrs[k] == null) attrs[k] = v;
-  sinkOffsetFrames(content);
+  sinkOffsetFrames(content, lengthToPt(attrs.fontSize as string | undefined) ?? defaults.fontSizePt);
 
   const node: Node = { type: isHeading ? 'heading' : 'paragraph' };
   if (isHeading) attrs.level = level;

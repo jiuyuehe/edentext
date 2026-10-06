@@ -38,22 +38,28 @@ describe('a top-and-bottom frame’s offsets', () => {
 
   it('sinks a frame set below the paragraph top behind its text', () => {
     const content = [IMG({ wrap: 'topBottom', wrapOffsetY: 5.75 }), { type: 'text', text: 'hi' }];
-    sinkOffsetFrames(content);
+    sinkOffsetFrames(content, 12);
     expect(content.map((n: N) => n.type)).toEqual(['text', 'image']);
   });
 
   it('leaves a frame at the paragraph top, and one with no text to stand behind', () => {
     const flush = [IMG({ wrap: 'topBottom' }), { type: 'text', text: 'hi' }];
-    sinkOffsetFrames(flush);
+    sinkOffsetFrames(flush, 12);
     expect(flush.map((n: N) => n.type)).toEqual(['image', 'text']);
     const alone = [IMG({ wrap: 'topBottom', wrapOffsetY: 5.75 })];
-    sinkOffsetFrames(alone);
+    sinkOffsetFrames(alone, 12);
     expect(alone.map((n: N) => n.type)).toEqual(['image']);
+  });
+
+  it('leaves a frame that overlaps the first line, which moves below it', () => {
+    const content = [IMG({ wrap: 'topBottom', wrapOffsetY: 0.07 }), { type: 'text', text: 'hi' }];
+    sinkOffsetFrames(content, 10);
+    expect(content.map((n: N) => n.type)).toEqual(['image', 'text']);
   });
 
   it('stacks sunk frames top to bottom, whatever order the file wrote them in', () => {
     const content = [IMG({ wrap: 'topBottom', wrapOffsetY: 7.7 }), IMG({ wrap: 'topBottom', wrapOffsetY: 1 })];
-    sinkOffsetFrames(content);
+    sinkOffsetFrames(content, 12);
     expect(content.map((n: N) => n.attrs.wrapOffsetY)).toEqual([1, 7.7]);
   });
 });
