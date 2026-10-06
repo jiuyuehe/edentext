@@ -69,6 +69,7 @@ export interface TextBoxAttrs {
   shapePreset: DrawingMlPreset | null; // a DrawingML preset it stays, shapePath its snapshot
   arrowHeads: PathHeads | null; // the ends of that outline carrying an arrow head
   flipV: boolean;             // a line runs bottom-left → top-right instead
+  flipH: boolean;             // a line starts at the right, so its head ends on the left
   textVertical: boolean;      // text runs top-to-bottom, right-to-left
   textVAlign: TextVAlign;     // where the text sits in a box taller than it is
   fixedHeight: boolean;       // exactly `height` tall, clipping what overflows
@@ -315,6 +316,12 @@ export const TextBox = Node.create({
         parseHTML: el => (el as HTMLElement).getAttribute('data-flip-v') === 'true',
         renderHTML: () => ({}),
       },
+      // Which end of that diagonal a line starts at — Word's `flipH`, ODF's endpoint order.
+      flipH: {
+        default: false,
+        parseHTML: el => (el as HTMLElement).getAttribute('data-flip-h') === 'true',
+        renderHTML: () => ({}),
+      },
       // The text runs top-to-bottom, right-to-left instead of across (Word's
       // `w:bodyPr vert`, ODF's tb-rl writing mode on the frame's style).
       textVertical: {
@@ -400,6 +407,7 @@ export const TextBox = Node.create({
       ...(a.shapePreset ? { 'data-shape-preset': JSON.stringify(a.shapePreset) } : {}),
       ...(a.arrowHeads ? { 'data-arrow-heads': a.arrowHeads } : {}),
       ...(a.flipV ? { 'data-flip-v': 'true' } : {}),
+      ...(a.flipH ? { 'data-flip-h': 'true' } : {}),
       ...(a.textVertical ? { 'data-text-vertical': 'true' } : {}),
       ...(a.textVAlign !== 'top' ? { 'data-text-valign': a.textVAlign } : {}),
       ...(a.fixedHeight ? { 'data-fixed-height': '' } : {}),
@@ -737,7 +745,7 @@ class TextBoxView {
     const stroke = a.strokeWidthPt * PX_PER_PT;
     const headLen = arrowHeadPx(a.strokeWidthPt);
     // An outline's heads ride the same real-pixel layer, over the stretched outline.
-    const paths = linePaths(a.shapeKind, w, h, a.flipV, headLen)
+    const paths = linePaths(a.shapeKind, w, h, a.flipV, headLen, a.flipH)
       ?? (a.shapePath && a.arrowHeads && a.strokeColor
         ? { line: '', heads: pathHeadPaths(this.live?.geo.path || a.shapePath, w, h, a.arrowHeads, headLen) } : null);
     if (!paths) {

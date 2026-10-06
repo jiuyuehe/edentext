@@ -2854,8 +2854,12 @@ function convertWpsShape(wsp: Element, root: Element, isAnchor: boolean, ctx: Ct
   const heads = pathHeadsFor(head('headEnd'), head('tailEnd'));
   if (outline && heads && isOpenOutline(outline)) attrs.arrowHeads = heads;
   if (isLineKind(kind)) {
-    attrs.shapeKind = lineKindFor(head('headEnd'), head('tailEnd'));
-    if (xfrm?.getAttribute('flipV') === '1') attrs.flipV = true;
+    const [start, end] = [head('headEnd'), head('tailEnd')];
+    attrs.shapeKind = lineKindFor(start, end);
+    // The editor's one head is the end's: a line with the start's alone runs back.
+    const back = start && !end;
+    if ((xfrm?.getAttribute('flipV') === '1') !== back) attrs.flipV = true;
+    if ((xfrm?.getAttribute('flipH') === '1') !== back) attrs.flipH = true;
   }
 
   // Vertical text: every one of Word's top-to-bottom flows, the editor having the one

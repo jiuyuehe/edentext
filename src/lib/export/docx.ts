@@ -1115,6 +1115,7 @@ type TextBoxDocx = {
   shapePreset: DrawingMlPreset | null;
   arrowHeads: PathHeads | null;
   flipV: boolean;
+  flipH: boolean;
   textVertical: boolean;
   textVAlign: TextVAlign;
   fill: string | null;
@@ -1151,6 +1152,7 @@ function textBoxDocxDescriptor(node: TiptapNode): TextBoxDocx {
     shapePreset: typeof a.shapePath === 'string' && a.shapePath ? asShapePreset(a.shapePreset) : null,
     arrowHeads: a.arrowHeads === 'start' || a.arrowHeads === 'end' || a.arrowHeads === 'both' ? a.arrowHeads : null,
     flipV: a.flipV === true,
+    flipH: a.flipH === true,
     textVertical: a.textVertical === true,
     textVAlign: a.textVAlign === 'middle' || a.textVAlign === 'bottom' ? a.textVAlign : 'top',
     fill: typeof a.fillColor === 'string' && a.fillColor ? a.fillColor : null,
@@ -1549,7 +1551,7 @@ function textBoxDrawingXml(box: TextBoxDocx, index: number, parts: TxbxParts): s
     : `<a:prstGeom prst="${SHAPES[box.shapeKind].prst}"><a:avLst/></a:prstGeom>`;
   // Word draws the `line` preset down the frame's diagonal and flips it to reach the
   // other one; a line carries no fill and no text body.
-  const flip = (preset?.flipH ? ' flipH="1"' : '') + ((line && box.flipV) || preset?.flipV ? ' flipV="1"' : '');
+  const flip = ((line && box.flipH) || preset?.flipH ? ' flipH="1"' : '') + ((line && box.flipV) || preset?.flipV ? ' flipV="1"' : '');
   const body = line
     ? ''
     : `<wps:txbx><w:txbxContent>${txbxContentXml(box.content, parts)}</w:txbxContent></wps:txbx>`;

@@ -191,10 +191,12 @@ function headPath(x: number, y: number, dx: number, dy: number, len: number): st
  * in real pixels rather than the distorted 0…100 box a polygon uses — an arrow head
  * has to stay proportional to the pen however flat the frame is.
  */
-export function linePaths(kind: ShapeKind, w: number, h: number, flip: boolean, headLen: number): { line: string; heads: string[] } | null {
+export function linePaths(kind: ShapeKind, w: number, h: number, flip: boolean, headLen: number, flipH = false): { line: string; heads: string[] } | null {
   const heads = SHAPES[kind].line;
   if (!heads) return null;
-  const [x1, y1, x2, y2] = flip ? [0, h, w, 0] : [0, 0, w, h];
+  // From the top left corner, or from the one each flip moves the start to.
+  const [x1, y1] = [flipH ? w : 0, flip ? h : 0];
+  const [x2, y2] = [w - x1, h - y1];
   const len = Math.hypot(x2 - x1, y2 - y1) || 1;
   const dx = (x2 - x1) / len;
   const dy = (y2 - y1) / len;

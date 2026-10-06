@@ -9,6 +9,11 @@ describe('line shapes', () => {
     expect(linePaths('textbox', 200, 60, false, 10)).toBeNull();
   });
 
+  it('starts at the right where it is flipped across, its head ending on the left', () => {
+    expect(linePaths('lineArrow', 200, 60, false, 10, true)?.line).toBe('M 200,0 L 0,60');
+    expect(linePaths('lineArrow', 200, 60, false, 10, true)?.heads[0]).toContain('M 0,60');
+  });
+
   it('gives a head to the ends the kind names', () => {
     expect(linePaths('line', 100, 0, false, 10)?.heads).toHaveLength(0);
     expect(linePaths('lineArrow', 100, 0, false, 10)?.heads).toHaveLength(1);

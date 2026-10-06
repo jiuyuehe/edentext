@@ -1053,6 +1053,7 @@ type TextBoxExport = {
   shapePreset: DrawingMlPreset | null;
   arrowHeads: PathHeads | null;
   flipV: boolean;
+  flipH: boolean;
   textVertical: boolean;
   textVAlign: TextVAlign;
   fill: string | null;
@@ -1091,6 +1092,7 @@ function textBoxDescriptor(node: TiptapNode): TextBoxExport {
     shapePreset: typeof a.shapePath === 'string' && a.shapePath ? asShapePreset(a.shapePreset) : null,
     arrowHeads: a.arrowHeads === 'start' || a.arrowHeads === 'end' || a.arrowHeads === 'both' ? a.arrowHeads : null,
     flipV: a.flipV === true,
+    flipH: a.flipH === true,
     textVertical: a.textVertical === true,
     textVAlign: a.textVAlign === 'middle' || a.textVAlign === 'bottom' ? a.textVAlign : 'top',
     fill: typeof a.fillColor === 'string' && a.fillColor ? a.fillColor : null,
@@ -4821,9 +4823,10 @@ function textBoxXml(box: TextBoxExport, inner: string, index: number): string {
   // <draw:line> holds no text, and the editor draws none.
   if (isLineKind(box.shapeKind)) {
     const [y1, y2] = box.flipV ? [box.heightCm, 0] : [0, box.heightCm];
+    const [x1, x2] = box.flipH ? [box.widthCm, 0] : [0, box.widthCm];
     return (
       `<draw:line draw:name="Line${n}"${common.replace(/ svg:width="[^"]*"/, '')}` +
-      ` svg:x1="0cm" svg:y1="${y1}cm" svg:x2="${box.widthCm}cm" svg:y2="${y2}cm"/>`
+      ` svg:x1="${x1}cm" svg:y1="${y1}cm" svg:x2="${x2}cm" svg:y2="${y2}cm"/>`
     );
   }
   if (box.shapeKind === 'textbox' && !box.shapePath) {

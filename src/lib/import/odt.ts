@@ -791,14 +791,18 @@ function convertLine(el: Element, ctx: Ctx): Node | null {
   const at = (name: string) => lengthToCm(el.getAttributeNS(NS.svg, name)) ?? 0;
   const [x1, y1, x2, y2] = [at('x1'), at('y1'), at('x2'), at('y2')];
   const gp = ctx.resolver.graphicProps(el.getAttributeNS(NS.draw, 'style-name'));
-  const kind = lineKindFor(!!gp['draw:marker-start'], !!gp['draw:marker-end']);
+  const [start, end] = [!!gp['draw:marker-start'], !!gp['draw:marker-end']];
+  const kind = lineKindFor(start, end);
   const attrs: Record<string, unknown> = {
     shapeKind: kind,
     width: framePx(cmToPx(Math.abs(x2 - x1))),
     height: framePx(cmToPx(Math.abs(y2 - y1))),
   };
-  // The editor draws a line across its frame, so only the direction is left to keep.
-  if ((y2 - y1) * (x2 - x1) < 0) attrs.flipV = true;
+  // The editor draws a line across its frame from the corner its flips name; its one
+  // head is the end's, so a line with the start's alone runs back.
+  const back = start && !end;
+  if ((y2 < y1) !== back) attrs.flipV = true;
+  if ((x2 < x1) !== back) attrs.flipH = true;
   applyFrameRotationAndWrap(el, attrs, gp, ctx.contentWidthCm, ctx.leftMarginCm);
   boxWrapAlign(gp, attrs);
   shapeStyleAttrs(gp, attrs, true);
