@@ -31,7 +31,7 @@ Tests are jsdom Vitest files outside `src/`; `npm test` covers round trips, corp
 - Read the existing code and relevant local `CLAUDE.md` before changing files.
 - Follow the established architecture, naming and surrounding code style.
 - Prefer the smallest correct change; do not rewrite unrelated code or add dependencies without need.
-- Fix root causes rather than symptoms.
+- Fix root causes rather than symptoms: when a document renders, imports or exports wrongly, fix the general rule it exposes so any document is handled correctly, never that one document's shape at the risk of others.
 - Preserve persisted or externally consumed behaviour; add compatibility code only for a concrete need.
 - Run the test legs that the final change can affect.
 - Do not push unless requested.
@@ -54,9 +54,7 @@ Tests are jsdom Vitest files outside `src/`; `npm test` covers round trips, corp
 
 **Layout constants** — keep `pageBreaks.ts`, `Editor.svelte` and `editor.css` aligned (`PAGE_HEIGHT` 1123px, `PAGE_GAP` 20px and `--user-page-*`/`--user-margin-*`); see `docs/architecture/pagination.md`.
 
-**Browser testing** — use `playwright-core`, never `puppeteer`; see `docs/headless-testing.md`. Only the live app verifies rendering and NodeViews.
-
-**Test selection** — run each relevant leg once after its input is final: unit/Vitest for logic, LibreOffice for I/O, browser legs for rendering, parity for layout.
+**Browser testing** — use `playwright-core`, never `puppeteer`; see `docs/headless-testing.md`. Only the live app verifies rendering and NodeViews. **Test selection** — run each relevant leg once after its input is final: unit/Vitest for logic, LibreOffice for I/O, browser legs for rendering, parity for layout.
 
 **Naming** — components are `PascalCase.svelte`; `.ts` modules are `camelCase`; extensions are feature names such as `image.ts`.
 
