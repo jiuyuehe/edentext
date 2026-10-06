@@ -104,6 +104,8 @@ type Ctx = {
   accents: string[];
   // The whole colour scheme by slot name (accent1, tx2, …), which a shape's fill names.
   themeColors: Map<string, string>;
+  // The theme's line widths in pt, which a shape's wps:style lnRef picks by index.
+  themeLineWidths: number[];
   // Bookmarks open at this point of the walk (w:id → name). A range may start beside a
   // paragraph and end inside a later one, so the state outlives both walks.
   /** Bookmarks whose range is open, by w:id; `used` once a run has carried the name. */
@@ -275,7 +277,7 @@ export function importDocx(bytes: Uint8Array, convertedImages: ConvertedImages =
   const contentWidthCm = sectionContentWidthCm(sectPr);
   const leftMarginCm = twipToCm(intAttr(fc(sectPr, 'pgMar'), W, 'left') ?? 1440);
   const rightMarginCm = twipToCm(intAttr(fc(sectPr, 'pgMar'), W, 'right') ?? 1440);
-  const ctx: Ctx = { styles, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), warnings, files, rels: parseRels(files['word/_rels/document.xml.rels']), imageCache: new Map(), convertedImages, listCounters: new Map(), headingNumPr: new Map(), usedListStyles: new Map(), contentWidthCm, leftMarginCm, rightMarginCm, pageRtl: sectPrRtl(sectPr), mainLang: docLangs.main, hyphenate: docSetting(files, 'autoHyphenation'), cellSpacing: {}, compatMode: wordCompatMode(files), accents: themeAccents(themeDoc), themeColors: themeColors(themeDoc), openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentDefs: docxComments(files), bibSources: docxSources(files), citationStyle: docxCitationStyle(files), notes: [], noteParts: {
+  const ctx: Ctx = { styles, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), warnings, files, rels: parseRels(files['word/_rels/document.xml.rels']), imageCache: new Map(), convertedImages, listCounters: new Map(), headingNumPr: new Map(), usedListStyles: new Map(), contentWidthCm, leftMarginCm, rightMarginCm, pageRtl: sectPrRtl(sectPr), mainLang: docLangs.main, hyphenate: docSetting(files, 'autoHyphenation'), cellSpacing: {}, compatMode: wordCompatMode(files), accents: themeAccents(themeDoc), themeColors: themeColors(themeDoc), themeLineWidths: Array.from(themeDoc?.getElementsByTagNameNS(A, 'lnStyleLst')[0]?.children ?? [], (ln) => (Number(ln.getAttribute('w')) || 12700) / 12700), openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentDefs: docxComments(files), bibSources: docxSources(files), citationStyle: docxCitationStyle(files), notes: [], noteParts: {
     footnote: noteParts(files, 'footnotes', 'footnote'),
     endnote: noteParts(files, 'endnotes', 'endnote'),
   }, noteBookmarks: new Map() };
@@ -2744,7 +2746,7 @@ function setShapeStyleAttrs(attrs: Record<string, unknown>, fill: string | null,
 // <a:custGeom> read as the shape's own outline and text area: its guides resolved for
 // the shape's `w`×`h` size, each path a part in the space it declares (else that size),
 // arcs as curves. A segment or guide that won't resolve leaves the shape unsupported.
-function custGeomOutline(spPr: Element | null, w: number, h: number): ResolvedGeometry {
+function custGeomOutline(spPr: Element | null, w: number, h: number, flipH = false, flipV = false): ResolvedGeometry {
   const none: ResolvedGeometry = { path: '', textArea: null };
   const geom = nsChild(spPr, A, 'custGeom');
   const pathLst = nsChild(geom, A, 'pathLst');
@@ -2775,6 +2777,8 @@ function custGeomOutline(spPr: Element | null, w: number, h: number): ResolvedGe
         if (last.c !== 'Z') [x, y] = last.p.slice(-2);
         if (name === 'moveTo') [sx, sy] = [x, y];
       }
+      // A flip mirrors the outline in the shape's own box, before any rotation.
+      if (flipH || flipV) for (const cmd of cmds) if (cmd.c !== 'Z') cmd.p = cmd.p.map((n, i) => (i % 2 ? (flipV ? ph - n : n) : (flipH ? pw - n : n)));
       const d = fitPath(cmds, pw, ph);
       if (!d) return none;
       const shade = shadeFromDrawingMl(path.getAttribute('fill'));
@@ -2783,8 +2787,10 @@ function custGeomOutline(spPr: Element | null, w: number, h: number): ResolvedGe
     }
     if (!parts.length) return none;
     const rect = nsChild(geom, A, 'rect');
-    const area = rect && w && h ? [v(rect, 'l') / w, v(rect, 't') / h, v(rect, 'r') / w, v(rect, 'b') / h]
-      .map((n) => Math.round(n * 100000) / 1000) : null;
+    let area = rect && w && h ? [v(rect, 'l') / w, v(rect, 't') / h, v(rect, 'r') / w, v(rect, 'b') / h] : null;
+    if (area && flipH) area = [1 - area[2], area[1], 1 - area[0], area[3]];
+    if (area && flipV) area = [area[0], 1 - area[3], area[2], 1 - area[1]];
+    area = area?.map((n) => Math.round(n * 100000) / 1000) ?? null;
     return { path: joinOutlineParts(parts), textArea: asTextArea(area) };
   } catch {
     return none;
@@ -2819,7 +2825,7 @@ function convertWpsShape(wsp: Element, root: Element, isAnchor: boolean, ctx: Ct
   const ext = nsChild(xfrm, A, 'ext');
   const [ew, eh] = [intAttr(ext, '', 'cx') || cx || 0, intAttr(ext, '', 'cy') || cy || 0];
   const known = shapeFromPrst(prst);
-  const own = custGeomOutline(spPr, ew, eh);
+  const own = custGeomOutline(spPr, ew, eh, xfrm?.getAttribute('flipH') === '1', xfrm?.getAttribute('flipV') === '1');
   const preset = !own.path && prstGeom && !known ? presetOf(prstGeom, prst, xfrm) : null;
   const geo = preset ? presetGeometry(preset, ew, eh) : own;
   const outline = geo.path;
@@ -2857,12 +2863,23 @@ function convertWpsShape(wsp: Element, root: Element, isAnchor: boolean, ctx: Ct
     if (rank) attrs.zIndex = rank;
   }
 
-  const fill = drawingColor(nsChild(spPr, A, 'solidFill'), ctx) ?? null;
+  // What spPr leaves unsaid comes from the shape style's theme references (wps:style),
+  // index 0 meaning none — so a preset shape drawn with the theme keeps its fill and line.
+  const style = nsChild(wsp, WPS, 'style');
+  const ref = (name: string) => {
+    const el = nsChild(style, A, name);
+    return el && Number(el.getAttribute('idx')) > 0 ? el : null;
+  };
+  const FILLS = ['solidFill', 'noFill', 'gradFill', 'blipFill', 'pattFill', 'grpFill'];
+  const ownFill = Array.from(spPr?.children ?? []).some((c) => c.namespaceURI === A && FILLS.includes(c.localName));
+  const fill = drawingColor(nsChild(spPr, A, 'solidFill'), ctx) ?? (ownFill ? null : drawingColor(ref('fillRef'), ctx) ?? null);
   const ln = nsChild(spPr, A, 'ln');
-  const stroke = ln && !nsChild(ln, A, 'noFill')
-    ? drawingColor(nsChild(ln, A, 'solidFill'), ctx) ?? '#000000' : null;
+  const lnRef = ref('lnRef');
+  const stroke = (ln || lnRef) && !nsChild(ln, A, 'noFill')
+    ? drawingColor(nsChild(ln, A, 'solidFill'), ctx) ?? drawingColor(lnRef, ctx) ?? '#000000' : null;
   const lnW = intAttr(ln, '', 'w');
-  setShapeStyleAttrs(attrs, fill, stroke, lnW != null ? lnW / 12700 : null);
+  const refW = lnRef ? ctx.themeLineWidths[Number(lnRef.getAttribute('idx')) - 1] ?? null : null;
+  setShapeStyleAttrs(attrs, fill, stroke, lnW != null ? lnW / 12700 : refW);
   // A line's heads live on its <a:ln>, and they are what tells the three kinds apart;
   // Word reaches the frame's other diagonal by flipping it. An open outline keeps its own.
   const head = (name: string) => (nsChild(ln, A, name)?.getAttribute('type') ?? 'none') !== 'none';
