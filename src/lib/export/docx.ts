@@ -2857,7 +2857,8 @@ function indexFieldParagraphs(node: TiptapNode, kind: IndexKind, maxLevel: numbe
   }));
 }
 
-// A text box whose whole content is one table — the editor's floating table.
+// A text box whose whole content is one table — the editor's floating table. w:tblpPr
+// has no place for the frame's own outline or fill; the table's borders carry over.
 function floatingTableOf(node: TiptapNode): TiptapNode | null {
   if (node.type !== 'textBox' || node.content?.length !== 1) return null;
   return node.content[0].type === 'table' ? node.content[0] : null;

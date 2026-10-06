@@ -3144,8 +3144,11 @@ function floatingTableBox(tbl: Element, ctx: Ctx): Node | null {
     width: framePx(cmToPx(widthCm)),
     // The wrap names the side the frame sits on; text flows on the open one.
     wrap: xCm + widthCm / 2 <= outerCm / 2 ? 'left' : 'right',
-    // No ring of its own: the cells' own margins are the whole inset a table has.
+    // No ring of its own: the cells' own margins are the whole inset a table has. Nor
+    // an outline or a fill — only the table's own borders and shading are drawn.
     paddingCm: 0,
+    strokeColor: null,
+    fillColor: null,
   };
   if (Math.abs(xCm) > 0.01) attrs.wrapOffset = round2(xCm);
   const yCm = twipToCm(intAttr(pos, W, 'tblpY') ?? 0);
