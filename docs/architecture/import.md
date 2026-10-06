@@ -53,7 +53,9 @@ zero where the editor has no equivalent mode.
 Named list styles apply to the outer list; their levels determine bullet or number kind. Import
 the definition into the style registry instead of flattening it. A list item's own heading is
 chapter numbering, not a nested heading; a following heading remains nested content. Manual
-page breaks apply to list paragraphs but not table-cell paragraphs.
+page breaks apply to list paragraphs but not table-cell paragraphs. With `TabOverSpacing` on and
+`TabOverMargin` off, a `fo:break-before` drops the block's space above (an explicit 0), as
+LibreOffice does; the document's first block keeps it.
 
 Master-page changes open document sections. Read page setup, headers, footers, edge distances,
 first-page and left/right variants from the governing master, and calculate content width per
@@ -91,7 +93,9 @@ An ODF frame aligned `left`/`top` against the `page` is offset 0 from the page's
 
 Resolve table borders and conditional table-style areas before baking them into cells, because
 the editor registry does not retain file table styles. Honor compatibility mode when interpreting
-table indentation. A floating table becomes the text-box representation the schema supports.
+table indentation and page-top spacing (probed): a `w:br` page break drops the next block's space
+above; `pageBreakBefore` drops it from compatibility mode 15 on, but never for the document's first
+block or a section opener. Both become an explicit 0. A floating table becomes the text-box representation the schema supports.
 Resolve theme colours and the theme minor body font before falling back to editor defaults.
 
 Resolve linked numbering through numbering styles; otherwise a list may silently lose its level

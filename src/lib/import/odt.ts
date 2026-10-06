@@ -172,6 +172,8 @@ type Ctx = {
   // The page's own direction: a block declaring the same one is inheriting, not
   // formatted, so only a block that differs carries a `dir` attr.
   pageRtl: boolean;
+  // LibreOffice's Word 2013 layout (TabOverSpacing without TabOverMargin, settings.xml).
+  breakDropsSpace: boolean;
   // Master pages the body switches to, in order — one section each past the first.
   masterPages: string[];
   leadingMaster: string; // the master the document opens on: naming it first switches nothing
@@ -1003,6 +1005,13 @@ function odfSpacingAtPageStart(files: Record<string, Uint8Array>): boolean {
   return !/AddParaTableSpacingAtStart"[^>]*>false</.test(xml);
 }
 
+// The settings LibreOffice stores a Word 2013 document's layout in: the space above a
+// paragraph's own page break goes with TabOverSpacing unless TabOverMargin is on (probed).
+function odfBreakDropsSpace(files: Record<string, Uint8Array>): boolean {
+  const xml = files['settings.xml'] ? strFromU8(files['settings.xml']) : '';
+  return /TabOverSpacing"[^>]*>true</.test(xml) && !/TabOverMargin"[^>]*>true</.test(xml);
+}
+
 export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = new Map()): OdtImportResult {
   let files: Record<string, Uint8Array>;
   try {
@@ -1033,7 +1042,7 @@ export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = 
   const first = resolver.hasMasterPage(masters.leading) ? masters.leading : null;
   const geo = resolver.pageGeometry(first) ?? resolver.pageGeometry();
   const contentWidthCm = contentWidthOf(geo);
-  const ctx: Ctx = { resolver, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), usedListStyles: new Set(), warnings, seqRefNames: sequenceRefNames(body), files, imageCache: new Map(), convertedImages, contentWidthCm, docContentWidthCm: contentWidthCm, leftMarginCm: geo?.margins.left ?? 0, pageRtl: geo?.rtl ?? false, masterPages: [], leadingMaster: masters.leading ?? 'Standard', masterPageStarts: [], bodyBlocks: 0, openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentReplies: odfCommentReplies(body), revisions: odfRevisions(body), openInsertions: new Map(), notes: [], foldMarks: false };
+  const ctx: Ctx = { resolver, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), usedListStyles: new Set(), warnings, seqRefNames: sequenceRefNames(body), files, imageCache: new Map(), convertedImages, contentWidthCm, docContentWidthCm: contentWidthCm, leftMarginCm: geo?.margins.left ?? 0, pageRtl: geo?.rtl ?? false, breakDropsSpace: odfBreakDropsSpace(files), masterPages: [], leadingMaster: masters.leading ?? 'Standard', masterPageStarts: [], bodyBlocks: 0, openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentReplies: odfCommentReplies(body), revisions: odfRevisions(body), openInsertions: new Map(), notes: [], foldMarks: false };
   let blocks = convertBlocks(Array.from(body.children), ctx, 'body');
   if (blocks.length === 0) blocks.push({ type: 'paragraph' });
   pairAlignedFrames(blocks, Math.floor(cmToPx(contentWidthCm)));
@@ -2024,6 +2033,11 @@ function convertParaLike(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault =
     if (geo) { ctx.contentWidthCm = contentWidthOf(geo); ctx.leftMarginCm = geo.margins.left; }
   }
   const attrs = blockAttrs(paraProps, baseTextProps, defaults, kind);
+  // A paragraph breaking itself onto a page under LibreOffice's Word 2013 layout opens it
+  // without its space above (probed; a master page or the first page keeps it). It always
+  // sits there: a 0.
+  if (attrs.breakBefore === 'page' && !master && kind === 'body' && ctx.bodyBlocks > 0 && ctx.breakDropsSpace
+    && (lengthToPt(paraProps['fo:margin-top']) ?? 0) > 0) attrs.spaceBefore = 0;
   if (paraProps['style:contextual-spacing'] === 'true') applyContextualSpacing(el, styleName, attrs);
   if (master) {
     // Naming a master *is* a page break, even where the page already uses that one

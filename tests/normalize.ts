@@ -184,6 +184,16 @@ export function stripBoxGrowth(node: any): any {
   return node;
 }
 
+// The editor writes Word's 2013 layout, which opens a page a paragraph breaks itself onto
+// without its space above; the import reads that back as a 0. DOCX legs compare without it.
+export function stripBreakSpace(node: any): any {
+  if (node?.attrs?.breakBefore === 'page' && !node.attrs.sectionBreak && 'spaceBefore' in node.attrs) {
+    delete node.attrs.spaceBefore;
+  }
+  for (const c of node?.content ?? []) stripBreakSpace(c);
+  return node;
+}
+
 // A paragraph whose runs share one font legitimately comes back with that font also
 // on its attrs (the empty-line-height feature hoists it); ignore it on both sides.
 export function stripFontHoist(node: any): any {

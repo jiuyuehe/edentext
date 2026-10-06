@@ -99,7 +99,7 @@ type Ctx = {
   // The enclosing table style's w:pPr/w:spacing, applied to its cells' paragraphs.
   cellSpacing: ParaSpacing;
   // Whether w:tblInd is measured to the cell's text rather than the table's edge.
-  tblIndToText: boolean;
+  compatMode: number; // w:compatibilityMode, 0 for an old file that states none
   // theme1.xml's accent1..6, the colours a chart series names instead of an sRGB.
   accents: string[];
   // The whole colour scheme by slot name (accent1, tx2, …), which a shape's fill names.
@@ -275,7 +275,7 @@ export function importDocx(bytes: Uint8Array, convertedImages: ConvertedImages =
   const contentWidthCm = sectionContentWidthCm(sectPr);
   const leftMarginCm = twipToCm(intAttr(fc(sectPr, 'pgMar'), W, 'left') ?? 1440);
   const rightMarginCm = twipToCm(intAttr(fc(sectPr, 'pgMar'), W, 'right') ?? 1440);
-  const ctx: Ctx = { styles, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), warnings, files, rels: parseRels(files['word/_rels/document.xml.rels']), imageCache: new Map(), convertedImages, listCounters: new Map(), headingNumPr: new Map(), usedListStyles: new Map(), contentWidthCm, leftMarginCm, rightMarginCm, pageRtl: sectPrRtl(sectPr), mainLang: docLangs.main, hyphenate: docSetting(files, 'autoHyphenation'), cellSpacing: {}, tblIndToText: tblIndIsToText(files), accents: themeAccents(themeDoc), themeColors: themeColors(themeDoc), openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentDefs: docxComments(files), bibSources: docxSources(files), citationStyle: docxCitationStyle(files), notes: [], noteParts: {
+  const ctx: Ctx = { styles, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), warnings, files, rels: parseRels(files['word/_rels/document.xml.rels']), imageCache: new Map(), convertedImages, listCounters: new Map(), headingNumPr: new Map(), usedListStyles: new Map(), contentWidthCm, leftMarginCm, rightMarginCm, pageRtl: sectPrRtl(sectPr), mainLang: docLangs.main, hyphenate: docSetting(files, 'autoHyphenation'), cellSpacing: {}, compatMode: wordCompatMode(files), accents: themeAccents(themeDoc), themeColors: themeColors(themeDoc), openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentDefs: docxComments(files), bibSources: docxSources(files), citationStyle: docxCitationStyle(files), notes: [], noteParts: {
     footnote: noteParts(files, 'footnotes', 'footnote'),
     endnote: noteParts(files, 'endnotes', 'endnote'),
   }, noteBookmarks: new Map() };
@@ -657,7 +657,7 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
   let breakPending = false;
   const applyBreakBefore = (node: Node | undefined) => {
     if (node && SECTION_CARRIERS.has(node.type)) {
-      node.attrs = { ...(node.attrs ?? {}), breakBefore: 'page' };
+      node.attrs = { ...(node.attrs ?? {}), breakBefore: 'page', ...breakCharSpace(node) };
     }
   };
   // Table-of-contents field tracking (see scanTocField). A TOC node is emitted for the
@@ -978,6 +978,12 @@ function tableAsksForPage(tbl: Element): boolean {
   return !!pb && onOff(pb);
 }
 
+// A block a page break character moves to a new page starts it without its space above,
+// unlike one whose own pageBreakBefore does (probed in LibreOffice): that is an explicit 0.
+function breakCharSpace(node: Node): Record<string, number> {
+  return node.type === 'paragraph' || node.type === 'heading' ? { spaceBefore: 0 } : {};
+}
+
 // Split a converted body paragraph at run-level page breaks (PB_MARKER): each break
 // starts a new block via breakBefore: 'page'. A break at the paragraph's end reports
 // trailingBreak so the caller moves the NEXT block. Cells/lists just strip the markers.
@@ -999,7 +1005,7 @@ function splitParaAtPageBreaks(para: Node, kind: BlockKind): { blocks: Node[]; t
   const blocks = segs.map((seg, i) => {
     const node: Node = { type: para.type };
     const attrs = { ...(para.attrs ?? {}) };
-    if (i > 0) attrs.breakBefore = 'page';
+    if (i > 0) Object.assign(attrs, { breakBefore: 'page' }, breakCharSpace(node));
     if (Object.keys(attrs).length) node.attrs = attrs;
     if (seg.length) node.content = seg;
     return node;
@@ -1413,6 +1419,15 @@ function convertParagraph(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault:
   if (!level && (directKl ? onOff(directKl) : ctx.styles.paragraphKeepLines(styleId))) attrs.keepLines = true;
   // A direct w:pageBreakBefore is read in blockAttrs; the style's rides the block too.
   if ((kind === 'body' || kind === 'list') && !fc(ppr, 'pageBreakBefore') && ctx.styles.paragraphPageBreakBefore(styleId)) attrs.breakBefore = 'page';
+  // Word 2013's layout (compatibilityMode 15) opens the page a paragraph breaks itself onto
+  // without its space above; 14 keeps it, as a section start always does (all probed in
+  // LibreOffice). The block always sits at that page top, so this is an explicit 0.
+  let prev = el.previousElementSibling;
+  while (prev && prev.localName !== 'p' && prev.localName !== 'tbl') prev = prev.previousElementSibling;
+  // The document's first block keeps it, and so does one opening a section.
+  const opensSection = !prev || (prev.localName === 'p' && !!fc(fc(prev, 'pPr'), 'sectPr'));
+  if ((kind === 'body' || kind === 'list') && attrs.breakBefore === 'page' && ctx.compatMode >= 15 && !opensSection
+    && ((attrs.spaceBefore as number | undefined) ?? ctx.styles.paragraphSpacing(styleId).before ?? 0) > 0) attrs.spaceBefore = 0;
   // "Don't hyphenate this paragraph" — only formatting where the document hyphenates
   // at all; below that switch it says what is already true.
   const directSah = fc(ppr, 'suppressAutoHyphens');
@@ -3386,12 +3401,12 @@ function docxTableLook(tblPr: Element | null): string | null {
 // A table narrower than the text width: w:tblInd is its left indent, the grid (or
 // w:tblW) its width — the rest becomes the editor's right margin. Under the older
 // compatibility mode the indent is measured to the cell's *text*, so the table hangs its
-// left cell margin into the page margin (tblIndIsToText).
+// left cell margin into the page margin (compatMode below 15).
 function tableMargins(tbl: Element, weights: number[] | null, ctx: Ctx, leftPadCm: number): { marginLeft?: number; marginRight?: number } | null {
   const tblPr = fc(tbl, 'tblPr');
   const content = ctx.contentWidthCm;
   const dxa = (el: Element | null) => (el?.getAttributeNS(W, 'type') ?? 'dxa') === 'dxa' ? intAttr(el, W, 'w') : null;
-  const left = twipToCm(dxa(fc(tblPr, 'tblInd')) ?? 0) - (ctx.tblIndToText ? leftPadCm : 0);
+  const left = twipToCm(dxa(fc(tblPr, 'tblInd')) ?? 0) - (ctx.compatMode < 15 ? leftPadCm : 0);
   const declared = dxa(fc(tblPr, 'tblW'));
   const pct = tblWidthFraction(fc(tblPr, 'tblW'));
   const width = pct != null
@@ -3633,18 +3648,18 @@ function pushColumnRuns(inner: Node[], cols: { count: number; gapCm: number }, o
 // Word 2013 (compatibilityMode 15) made w:tblInd the table's own edge; before that it was
 // measured to the cell's text, so the table hangs its left cell margin into the page
 // margin. Probed against `soffice`, which follows the setting: the same table sits at the
-// margin under 15 and 2.1mm left of it under 14. No setting at all is an old file.
-function tblIndIsToText(files: Record<string, Uint8Array>): boolean {
+// margin under 15 and 2.1mm left of it under 14. No setting at all is an old file (0).
+function wordCompatMode(files: Record<string, Uint8Array>): number {
   const bytes = files['word/settings.xml'];
-  if (!bytes) return true;
+  if (!bytes) return 0;
   try {
     for (const el of Array.from(parseXml(strFromU8(bytes)).getElementsByTagNameNS(W, 'compatSetting'))) {
       if (el.getAttributeNS(W, 'name') !== 'compatibilityMode') continue;
       const n = parseInt(el.getAttributeNS(W, 'val') ?? '', 10);
-      return !Number.isFinite(n) || n < 15;
+      return Number.isFinite(n) ? n : 0;
     }
   } catch { /* an unreadable settings.xml is no setting */ }
-  return true;
+  return 0;
 }
 
 // Whether the document records revisions — settings.xml, like the two below (probed:
