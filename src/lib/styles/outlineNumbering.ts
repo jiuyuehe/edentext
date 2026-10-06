@@ -149,8 +149,10 @@ export function outlineCss(
     // text-indent inherits, and an inline block applies it to its own first line: the
     // hanging indent below would shrink the label's box by exactly what it hangs it out.
     const label = [`content: ${content}`, 'white-space: pre', 'display: inline-block', 'text-indent: 0'];
-    const gap = (own.tabCm ?? 0) - (indent + first);
-    if (gap > 0) label.push(`min-width: ${cm(gap)}`);
+    // A tab running to the level's indent runs to the paragraph's own instead, so the
+    // label fills whatever first line hangs out of it, a heading's direct one included.
+    if (own.tabCm != null && own.tabCm === indent) label.push(`min-width: calc(-1 * var(--indent-first, ${cm(first)}))`);
+    else if ((own.tabCm ?? 0) - (indent + first) > 0) label.push(`min-width: ${cm(own.tabCm! - indent - first)}`);
     label.push(...labelDecls(own.labelText ?? {}));
     rules.push(`${head}::before {\n  ${label.join(';\n  ')};\n}`);
   }

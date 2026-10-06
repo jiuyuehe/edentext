@@ -120,7 +120,8 @@ describe('chapter numbering', () => {
     expect(css).toMatch(/h1[^{]*\{\n[^}]*margin-left: calc\(var\(--sec-inset-left, 0px\) \+ 0\.762cm\)/);
     expect(css).toMatch(/h1[^{]*\{\n[^}]*text-indent: -0\.762cm/);
     // The stop the label's tab runs to is its minimum width; a wider label overruns it.
-    expect(css).toMatch(/h1[^{]*::before \{\n[^}]*min-width: 0\.762cm/);
+    // A tab to the level's indent runs to the heading's own hanging indent when it has one.
+    expect(css).toMatch(/h1[^{]*::before \{\n[^}]*min-width: calc\(-1 \* var\(--indent-first, -0\.762cm\)\)/);
     expect(css).toMatch(/h1[^{]*::before \{\n[^}]*font-size: 96pt/);
   });
 

@@ -218,7 +218,8 @@ export const Indent = Extension.create({
               const cm = Number(attributes.indentFirst);
               return {
                 'data-indent-first': String(cm),
-                style: `text-indent: ${cm}cm`,
+                // --indent-first lets a heading's number hang by this paragraph's indent.
+                style: `text-indent: ${cm}cm; --indent-first: ${cm}cm`,
               };
             },
           },
@@ -230,7 +231,7 @@ export const Indent = Extension.create({
             renderHTML: (attributes: Record<string, unknown>) => {
               if (attributes.indentFirstChars == null) return {};
               const n = Number(attributes.indentFirstChars);
-              return { 'data-indent-first-chars': String(n), style: `text-indent: calc(${n} * var(--char-unit, 1em))` };
+              return { 'data-indent-first-chars': String(n), style: `text-indent: calc(${n} * var(--char-unit, 1em)); --indent-first: calc(${n} * var(--char-unit, 1em))` };
             },
           },
         },
