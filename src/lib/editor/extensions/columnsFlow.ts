@@ -175,7 +175,6 @@ export const ColumnsFlow = Extension.create({
     // as long as the budget lasts. The join that undoes a split(pos) sits at pos + 1.
     const splitAt = new Set<number>();
     let decorations = DecorationSet.empty;
-    let lastDecoKey = '';
 
     const plugin = new Plugin<number>({
       key: flowKey,
@@ -236,10 +235,6 @@ export const ColumnsFlow = Extension.create({
         }
 
         function dispatchFlow(tr: Transaction): void {
-          // A split or join replaces the nodes the height decorations sit on, so
-          // ProseMirror drops them; the cache key would keep them from coming back
-          // and leave the fragment measuring its balanced height instead of its slot.
-          lastDecoKey = '';
           editorView.dispatch(tr.setMeta('addToHistory', false).setMeta(FLOW_TX, true));
         }
 
@@ -492,14 +487,14 @@ export const ColumnsFlow = Extension.create({
             items.push({ from: pos, to: pos + node.nodeSize, height: Math.round(height) });
           }
 
-          const key = items.map((d) => `${d.from}:${d.to}:${d.height}`).join('|');
-          if (key === lastDecoKey) return;
-          lastDecoKey = key;
+          // Against the live set, which edits map along: typing above a section moves its
+          // positions, not its height. A split or join drops the decorations it replaces.
+          const style = (height: number) => `height:${height}px;column-fill:auto;overflow:hidden`;
+          const key = items.map((d) => `${d.from}:${d.to}:${style(d.height)}`).join('|');
+          const live = decorations.find().map((d) => `${d.from}:${d.to}:${d.spec.block?.style}`).join('|');
+          if (key === live) return;
           decorations = items.length
-            ? DecorationSet.create(editorView.state.doc, items.map((d) =>
-                blockDeco(d.from, d.to, {
-                  style: `height:${d.height}px;column-fill:auto;overflow:hidden`,
-                })))
+            ? DecorationSet.create(editorView.state.doc, items.map((d) => blockDeco(d.from, d.to, { style: style(d.height) })))
             : DecorationSet.empty;
           // Re-render + let pageBreaks re-measure the new box heights.
           editorView.dispatch(
