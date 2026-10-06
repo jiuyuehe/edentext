@@ -43,9 +43,11 @@ export function blockLangOf(node: PmNode): DocumentLanguage | undefined {
 }
 
 // The misspelled words under `node`, whose content starts at `base` in the document.
-function wordDecos(node: PmNode, base: number, decos: Decoration[], blockLang?: DocumentLanguage): void {
+// A block's language holds for its own text only, never for the blocks after it.
+function wordDecos(node: PmNode, base: number, decos: Decoration[], outerLang?: DocumentLanguage): void {
+  let blockLang = outerLang;
   node.descendants((child, pos) => {
-    if (child.isTextblock) blockLang = blockLangOf(child) ?? blockLang;
+    if (child.isTextblock) blockLang = blockLangOf(child) ?? outerLang;
     if (!child.isText) return;
     const text = child.text ?? '';
     const code = langOf(child, blockLang);
