@@ -1,4 +1,5 @@
 import LinkBase from '@tiptap/extension-link';
+import { ReplaceStep } from '@tiptap/pm/transform';
 import { DEFAULT_SHORTCUTS } from '../shortcuts';
 import { autoCorrect } from '../../storage/autoCorrect.svelte';
 
@@ -30,6 +31,18 @@ export const Link = LinkBase.configure({
         renderHTML: (attrs: Record<string, unknown>) => (attrs.plain ? { 'data-plain': '' } : {}),
       },
     };
+  },
+  // Autolinking reads only typed or pasted text, and its changed-range walk is quadratic
+  // in steps: a format or language change across a long document took seconds in it.
+  addProseMirrorPlugins() {
+    const plugins = this.parent?.() ?? [];
+    for (const p of plugins) {
+      const append = p.spec.appendTransaction;
+      if (!append || !(p as unknown as { key: string }).key.startsWith('autolink')) continue;
+      p.spec.appendTransaction = (trs, oldState, newState) =>
+        trs.some((tr) => tr.steps.some((s) => s instanceof ReplaceStep)) ? append(trs, oldState, newState) : undefined;
+    }
+    return plugins;
   },
   addKeyboardShortcuts() {
     return {

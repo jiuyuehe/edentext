@@ -98,14 +98,16 @@ function recheckBlocks(doc: PmNode, set: DecorationSet, dirty: Range[]): Decorat
   return set.remove(stale).add(doc, decos);
 }
 
-// What a transaction touched, in its final document's positions.
+// What a transaction touched, in its final document's positions: one span around all of
+// it, carried through the maps once, since mapping each change through every later map is
+// quadratic in steps (seconds for a format change across a long document).
 export function changedRanges(tr: Transaction): Range[] {
-  const out: Range[] = [];
-  tr.mapping.maps.forEach((map, i) => {
-    const rest = tr.mapping.slice(i + 1);
-    map.forEach((_oldFrom, _oldTo, from, to) => out.push({ from: rest.map(from, -1), to: rest.map(to, 1) }));
-  });
-  return out;
+  let lo = Infinity, hi = -Infinity;
+  for (const map of tr.mapping.maps) {
+    if (lo <= hi) { lo = map.map(lo, -1); hi = map.map(hi, 1); }
+    map.forEach((_oldFrom, _oldTo, from, to) => { lo = Math.min(lo, from); hi = Math.max(hi, to); });
+  }
+  return lo <= hi ? [{ from: lo, to: hi }] : [];
 }
 
 // Squiggles are painted as CSS highlights, not inline decorations: Chromium's hyphenating

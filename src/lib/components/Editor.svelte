@@ -1262,6 +1262,9 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       element: hosts[0],
       extensions,
       content: saved || undefined,
+      // Nothing listens for TipTap's delete events, and computing them is quadratic in a
+      // transaction's steps: seconds after a format change across a long document.
+      enableCoreExtensions: { delete: false },
       editorProps: {
         // Our SpellCheck extension draws squiggles; turn off the browser's so
         // they don't double up.
