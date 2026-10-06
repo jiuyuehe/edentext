@@ -298,13 +298,14 @@ const saveAs = async (ext, retry = true) => {
 // The file the app saved, read back by the app's importer against the editor's document
 // (its paragraphs joined across a column or page merged, as the export merges them).
 const roundTrip = (bytes, ext) => ed(async ({ b64, ext }) => {
-  const [{ importOdt }, { importDocx }, { mergeJoinedParagraphsJson }, { normalize, firstDiff, stripFontHoist }, hfStore, { effectiveListLevel, defaultLevelBullet }] = await Promise.all([
+  const [{ importOdt }, { importDocx }, { mergeJoinedParagraphsJson }, { normalize, firstDiff, stripFontHoist, stripBoxGrowth, stripBreakSpace }, hfStore, { effectiveListLevel, defaultLevelBullet }, { withRenderedBoxHeights }] = await Promise.all([
     import('/src/lib/import/odt.ts'), import('/src/lib/import/docx.ts'), import('/src/lib/export/odt.ts'), import('/tests/normalize.ts'),
-    import('/src/lib/storage/headerFooter.ts'), import('/src/lib/styles/listStyles.ts')]);
+    import('/src/lib/storage/headerFooter.ts'), import('/src/lib/styles/listStyles.ts'), import('/src/lib/editor/extensions/textBox.ts')]);
   const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const res = ext === 'odt' ? importOdt(bin) : importDocx(bin);
   const editor = document.querySelector('.tiptap-host .tiptap').editor;
-  const json = editor.getJSON();
+  // A .docx carries each box as tall as it renders, read back fixed (normalize.ts).
+  const json = ext === 'docx' ? withRenderedBoxHeights(editor.view) : editor.getJSON();
   // What the importer suppresses as the style's own: a block attribute equal to what its
   // named style resolves to, and bold in a header cell.
   const { resolveStyle } = await import('/src/lib/styles/styleSheet.ts');
@@ -405,7 +406,7 @@ const roundTrip = (bytes, ext) => ed(async ({ b64, ext }) => {
     }
     return { ...n, content: out };
   };
-  const flat = (n) => stripFontHoist(normalize(ext === 'docx' ? flatLists(n) : n));
+  const flat = (n) => stripFontHoist(normalize(ext === 'docx' ? stripBreakSpace(stripBoxGrowth(flatLists(n))) : n));
   // The zones the app holds (its own storage is what it exports from) against the ones
   // the file gives back — a zone is no part of the document compared above.
   const { loadHfDoc, loadExtraHfSections, loadDifferentFirstPage, loadDifferentOddEven, hfIsEmpty, EMPTY_HF_SET } = hfStore;

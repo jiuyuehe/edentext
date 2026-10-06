@@ -43,6 +43,8 @@ jobs:
           cache: npm
       # libreoffice-math builds the formula objects both importers read back (without it
       # Writer drops every formula); poppler-utils rasterizes the render-consistency PDFs.
+      # The PPA's current release: Ubuntu's 24.2 drops a DOCX section opener's space above.
+      - run: sudo add-apt-repository -y ppa:libreoffice/ppa
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-math fonts-liberation poppler-utils
       - run: npm ci
       - run: npm run test:lo

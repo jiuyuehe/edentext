@@ -14,6 +14,7 @@ const ORDERED_DEFAULTS: Record<string, unknown> = {
   marginLeft: 0, marginRight: 0, marginTop: 0, marginBottom: 0, // a table's, once a command has touched them
   alt: '', inFront: false, paddingCm: 0.15, flipV: false, flipH: false, textVertical: false, textVAlign: 'top', // the editor's own picture and box defaults
   wrapFromPage: false,
+  cantSplit: false, fixedHeight: false, // tableRow.ts and textBox.ts defaults
   wrapFromBody: false,
   // index attrs the DOCX TOC field has no switch for come back at their defaults
   maxLevel: MAX_HEADING_LEVEL, leader: '.', citationStyle: 'key',
