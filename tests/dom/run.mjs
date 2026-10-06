@@ -387,6 +387,22 @@ try {
   });
   check(keptPage === 2, `a row that may not break, taller than a page, starts on the next one (page ${keptPage})`);
 
+  // Two left floats in one paragraph each sit at their own x: the later one, set left of
+  // where CSS queues it, is pulled back; its gap is cut at the column's edge.
+  await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [
+    block(frame({ wrap: 'left', wrapOffset: 5 }), frame({ wrap: 'left', wrapOffset: 0.5 }), words('text')),
+  ] });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tiptap', { timeout: 15_000 });
+  await settle(page, true);
+  const floatsX = await page.evaluate(() => {
+    const p = document.querySelector('.tiptap-host .tiptap > p');
+    const left = p.getBoundingClientRect().left;
+    return Array.from(p.querySelectorAll(':scope > .image-node'), (f) => Math.round(f.getBoundingClientRect().left - left));
+  });
+  check(Math.abs(floatsX[0] - 189) <= 1 && Math.abs(floatsX[1] - 19) <= 1,
+    `two left floats in one paragraph sit at their own x (${floatsX.join(', ')}px)`);
+
   // An index shows the rows it saved, as both word processors do, until it is updated.
   const heading = (t) => ({ type: 'heading', attrs: { level: 1 }, content: [words(t)] });
   await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [
