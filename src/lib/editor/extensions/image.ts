@@ -194,17 +194,38 @@ export function stackZ(inFront: boolean, rank: unknown, picture: boolean): strin
 }
 
 // A frame's rank among the stacking numbers its file part uses (ODF draw:z-index, DOCX
-// relativeHeight, which runs into the billions): both importers read it this way.
-const partRanks = new WeakMap<Document, Map<number, number>>();
+// relativeHeight, which runs into the billions): one above every lower-numbered frame
+// anchored within STACK_REACH paragraphs, so the few frames that can overlap keep their
+// order under stackZ's caps however many the part holds. Both importers read it this way.
+const STACK_REACH = 3;
+const partRanks = new WeakMap<Document, Map<Element, number>>();
 export function stackRank(el: Element, ns: string | null, attr: string): number {
   const doc = el.ownerDocument;
   let ranks = partRanks.get(doc);
   if (!ranks) {
-    const all = Array.from(doc.getElementsByTagName('*'), (e) => Number(e.getAttributeNS(ns, attr) ?? NaN));
-    ranks = new Map([...new Set(all.filter(Number.isFinite))].sort((a, b) => a - b).map((v, i) => [v, i]));
+    const paras = new Map<Element, number>();
+    const frames: { el: Element; v: number; at: number }[] = [];
+    for (const e of Array.from(doc.getElementsByTagName('*'))) {
+      // A paragraph inside a frame's text counts as its anchor's.
+      let p: Element | null = e.parentElement;
+      while (p && !paras.has(p)) p = p.parentElement;
+      if (!p && (e.localName === 'p' || e.localName === 'h')) paras.set(e, paras.size);
+      const v = Number(e.getAttributeNS(ns, attr) ?? NaN);
+      if (Number.isFinite(v)) frames.push({ el: e, v, at: p ? paras.get(p)! : paras.size });
+    }
+    frames.sort((a, b) => a.v - b.v);
+    ranks = new Map();
+    for (const [i, f] of frames.entries()) {
+      let r = 0;
+      for (let j = 0; j < i; j++) {
+        const g = frames[j];
+        if (g.v < f.v && Math.abs(g.at - f.at) <= STACK_REACH) r = Math.max(r, ranks.get(g.el)! + 1);
+      }
+      ranks.set(f.el, r);
+    }
     partRanks.set(doc, ranks);
   }
-  return ranks.get(Number(el.getAttributeNS(ns, attr) ?? NaN)) ?? 0;
+  return ranks.get(el) ?? 0;
 }
 
 // Whether a frame is out of the flow, where frames overlap and their order shows.

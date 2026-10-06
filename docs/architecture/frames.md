@@ -82,7 +82,7 @@ behind it every **picture paints over every shape** — probed against LibreOffi
 photo over the blocks a template layers under it whatever order the file names — with the page
 sheets at -200 (`PageSheetLayer`). Ties and ranks past the caps (20, 60) go by document order. The
 Arrange group's four buttons (`restackFrame`) move a frame within that layer and renumber all of
-them from 0. Imports rank the part's `draw:z-index` / `relativeHeight` values (`stackRank`); exports
+them from 0. Imports rank `draw:z-index` / `relativeHeight` among frames anchored nearby (`stackRank`); exports
 write the rank as it is, so it reads back as itself — LibreOffice renumbers every object on save.
 DOCX gives each frame its own `relativeHeight` (rank, then document order); LibreOffice 24.2 flips ties.
 
