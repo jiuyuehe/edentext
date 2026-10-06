@@ -3272,8 +3272,19 @@ function buildTable(tbl: Element, ctx: Ctx): Node | null {
   const look = docxTableLook(fc(tbl, 'tblPr'));
   const regStyle = !conds.size && named ? builtinTableStyles()[named] : undefined;
   const regLook = parseTableLook(look);
+  // w:gridBefore/w:gridAfter: grid columns a row leaves without a cell.
+  const gridSkip = (tr: Element, side: 'gridBefore' | 'gridAfter') => intAttr(fc(fc(tr, 'trPr'), side), W, 'val') ?? 0;
   const gridCols = useWeights?.length
-    ?? Math.max(1, ...trs.map((tr) => fcAll(tr, 'tc').reduce((n, tc) => n + (intAttr(fc(fc(tc, 'tcPr'), 'gridSpan'), W, 'val') ?? 1), 0)));
+    ?? Math.max(1, ...trs.map((tr) => fcAll(tr, 'tc').reduce((n, tc) => n + (intAttr(fc(fc(tc, 'tcPr'), 'gridSpan'), W, 'val') ?? 1),
+      gridSkip(tr, 'gridBefore') + gridSkip(tr, 'gridAfter'))));
+  // Where a row has no cell nothing is drawn: an empty cell without borders stands in, so
+  // the grid stays rectangular without a normalizer adding a bordered one.
+  const gap = (col: number, span: number): Node => {
+    const attrs: Record<string, unknown> = { colspan: span, rowspan: 1,
+      borderTop: 'none', borderBottom: 'none', borderLeft: 'none', borderRight: 'none' };
+    if (useWeights) attrs.colwidth = useWeights.slice(col, col + span);
+    return { type: 'tableCell', attrs, content: [{ type: 'paragraph' }] };
+  };
   for (let ri = 0; ri < trs.length; ri++) {
     const tr = trs[ri];
     // w:tblHeader says the same as ODF's <table:table-header-rows>: this row heads the
@@ -3281,7 +3292,8 @@ function buildTable(tbl: Element, ctx: Ctx): Node | null {
     const trHdr = fc(fc(tr, 'trPr'), 'tblHeader');
     const isHeaderRow = !!trHdr && onOff(trHdr);
     const cells: Node[] = [];
-    let col = 0;
+    const lead = Math.min(gridSkip(tr, 'gridBefore'), gridCols - 1);
+    let col = lead;
     for (const tc of fcAll(tr, 'tc')) {
       const tcPr = fc(tc, 'tcPr');
       const colspan = intAttr(fc(tcPr, 'gridSpan'), W, 'val') ?? 1;
@@ -3363,6 +3375,8 @@ function buildTable(tbl: Element, ctx: Ctx): Node | null {
       for (let c = col; c < col + colspan; c++) pending[c] = vMerge === 'restart' ? cell : null;
       col += colspan;
     }
+    if (cells.length && lead) cells.unshift(gap(0, lead));
+    if (cells.length && col < gridCols) cells.push(gap(col, gridCols - col));
     if (cells.length === 0) continue;
     const row: Node = { type: 'tableRow', content: cells };
     const h = intAttr(fc(fc(tr, 'trPr'), 'trHeight'), W, 'val');

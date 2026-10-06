@@ -95,7 +95,8 @@ Resolve table borders and conditional table-style areas before baking them into 
 the editor registry does not retain file table styles. Honor compatibility mode when interpreting
 table indentation and page-top spacing (probed): a `w:br` page break drops the next block's space
 above; `pageBreakBefore` drops it from compatibility mode 15 on, but never for the document's first
-block or a section opener. Both become an explicit 0. A floating table becomes the text-box representation the schema supports.
+block or a section opener. Both become an explicit 0. Grid columns a row leaves without a cell (`w:gridBefore`/`w:gridAfter`) become an empty borderless
+cell. A floating table becomes the text-box representation the schema supports.
 Resolve theme colours and the theme minor body font before falling back to editor defaults.
 
 Resolve linked numbering through numbering styles; otherwise a list may silently lose its level
