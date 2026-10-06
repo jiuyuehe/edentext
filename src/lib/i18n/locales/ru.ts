@@ -1223,6 +1223,7 @@ const ru: Messages = {
     hideExtraTools: 'Скрыть дополнительные инструменты',
   },
   status: {
+    busy: { loading: 'Загрузка документа…', updating: 'Обновление документа…', pdf: 'Создание PDF…' },
     pageOf: (current, total) => `Страница ${current} из ${total}`,
     words: (n) => `${n.toLocaleString('ru-RU')} ${plural(n, 'слово', 'слова', 'слов')}`,
     selectedOf: (sel, total) =>

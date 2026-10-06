@@ -1213,6 +1213,7 @@ const fr: Messages = {
     hideExtraTools: 'Masquer les outils supplémentaires',
   },
   status: {
+    busy: { loading: 'Chargement du document…', updating: 'Mise à jour du document…', pdf: 'Création du PDF…' },
     pageOf: (current, total) => `Page ${current} sur ${total}`,
     words: (n) => `${n.toLocaleString('fr-FR')} ${n === 1 ? 'mot' : 'mots'}`,
     selectedOf: (sel, total) =>

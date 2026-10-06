@@ -23,3 +23,4 @@ Read the focused architecture document for ribbon, pagination, frames, tables, f
 formulas, or notes before changing those areas.
 - Modal `<dialog>`s move by their `<h2>` title via `dragDialogs()` (`utils/dragWindow.ts`), modeless windows via `use:dragWindow`.
 - `SettingsDialog.svelte` (the ribbon's gear) gathers app-wide settings in side-bar sections, each control writing through the store that owns it; on/off rows use `Toggle.svelte`, a checkbox with `role="switch"`.
+- `BusyIndicator.svelte` (status bar) names a running task (opening a file, PDF export) at once, a layout pass after 300 ms (`isLayingOut`, not while typing); the first layout after start-up or an import still reads as loading.

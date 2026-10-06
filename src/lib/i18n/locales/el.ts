@@ -1224,6 +1224,7 @@ const el: Messages = {
     hideExtraTools: "Απόκρυψη πρόσθετων εργαλείων",
   },
   status: {
+    busy: { loading: 'Φόρτωση εγγράφου…', updating: 'Ενημέρωση εγγράφου…', pdf: 'Δημιουργία PDF…' },
     pageOf: (current: number, total: number) => `Σελίδα ${current} από ${total}`,
     words: (n: number) => `${n.toLocaleString('el-GR')} ${n === 1 ? 'λέξη' : 'λέξεις'}`,
     selectedOf: (sel: number, total: number) =>

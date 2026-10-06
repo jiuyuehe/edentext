@@ -1207,6 +1207,7 @@ const pt: Messages = {
     hideExtraTools: 'Ocultar ferramentas adicionais',
   },
   status: {
+    busy: { loading: 'A carregar o documento…', updating: 'A atualizar o documento…', pdf: 'A criar o PDF…' },
     pageOf: (current, total) => `Página ${current} de ${total}`,
     words: (n) => `${n.toLocaleString('pt-PT')} ${n === 1 ? 'palavra' : 'palavras'}`,
     selectedOf: (sel, total) =>

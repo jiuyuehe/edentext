@@ -1214,6 +1214,7 @@ const de: Messages = {
     hideExtraTools: 'Weitere Werkzeuge ausblenden',
   },
   status: {
+    busy: { loading: 'Dokument wird geladen…', updating: 'Dokument wird aktualisiert…', pdf: 'PDF wird erstellt…' },
     pageOf: (current, total) => `Seite ${current} von ${total}`,
     words: (n) => `${n.toLocaleString('de-DE')} ${n === 1 ? 'Wort' : 'Wörter'}`,
     selectedOf: (sel, total) =>

@@ -1223,6 +1223,7 @@ const en = {
     hideExtraTools: 'Hide extra tools',
   },
   status: {
+    busy: { loading: 'Loading document…', updating: 'Updating document…', pdf: 'Creating PDF…' },
     pageOf: (current: number, total: number) => `Page ${current} of ${total}`,
     words: (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? 'Word' : 'Words'}`,
     selectedOf: (sel: number, total: number) =>

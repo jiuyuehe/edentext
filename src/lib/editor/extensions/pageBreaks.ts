@@ -121,6 +121,12 @@ export function isPaginating(view: EditorView): boolean {
   return paginating.get(view)?.() ?? false;
 }
 
+const layingOut = new WeakMap<EditorView, () => boolean>();
+// True while a pass runs or is due next frame; one merely queued behind typing is not.
+export function isLayingOut(view: EditorView): boolean {
+  return layingOut.get(view)?.() ?? false;
+}
+
 export function getPageBreakDebug(view: EditorView): PageBreakDebugSnapshot | null {
   return debugAccessors.get(view)?.() ?? null;
 }
@@ -716,6 +722,7 @@ export const PageBreaks = Extension.create({
         let lastSnapshot: PageBreakDebugSnapshot | null = null;
 
         paginating.set(editorView, () => isUpdating || rafId !== null || idleTimer !== null);
+        layingOut.set(editorView, () => isUpdating || rafId !== null);
         debugAccessors.set(editorView, (): PageBreakDebugSnapshot | null => {
           const snap: PageBreakDebugSnapshot | null = lastSnapshot;
           if (snap === null) return null;
@@ -2304,6 +2311,7 @@ export const PageBreaks = Extension.create({
             if (rafId !== null) cancelAnimationFrame(rafId);
             debugAccessors.delete(editorView);
             paginating.delete(editorView);
+            layingOut.delete(editorView);
           },
         };
       },

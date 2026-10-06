@@ -57,6 +57,7 @@
   import { spellController } from './lib/spell/controller';
   import { setGrammarLanguage } from './lib/spell/grammar.svelte';
   import LanguagePicker from './lib/components/LanguagePicker.svelte';
+  import BusyIndicator, { type BusyTask } from './lib/components/BusyIndicator.svelte';
   import GrammarToggle from './lib/components/GrammarToggle.svelte';
   import UiLanguagePicker from './lib/components/UiLanguagePicker.svelte';
   import AboutDialog from './lib/components/AboutDialog.svelte';
@@ -628,6 +629,10 @@
   }
   let fileInput: HTMLInputElement | null = $state(null);
   let pdfBusy = $state(false);
+  // What the status bar's spinner names; a layout left running after it keeps the name.
+  let busyTask = $state<BusyTask | null>(null);
+  // The spinner is painted before a long synchronous step starts, or not until after it.
+  const painted = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
   let exportMenuOpen = $state(false);
   let saveFormatOpen = $state(false);
 
@@ -849,6 +854,8 @@
         if (!opened) return;
         ({ bytes, password } = opened);
       }
+      busyTask = 'loading';
+      await painted();
       const name = sourceName?.toLowerCase() ?? '';
       let isDocx = name.endsWith('.docx') || name.endsWith('.dotx');
       // A template is loaded for its content but never bound as the handle, so the
@@ -881,9 +888,12 @@
       }
 
       const hasContent = editor.state.doc.textContent.length > 0 || editor.state.doc.childCount > 1;
+      busyTask = null;
       if (hasContent && !confirm(t().dialogs.confirmReplace)) {
         return;
       }
+      busyTask = 'loading';
+      await painted();
 
       // Register the document's embedded fonts (and persist them for next reload) before
       // rendering, so its text shows in the right face and isn't flagged as missing below.
@@ -967,6 +977,7 @@
       collectFontFamilies(result.footerEven, fontSet);
       const missingFonts = await unavailableFonts(fontSet);
 
+      busyTask = null;
       const warnings = result.warnings.map(localizeImportMessage);
       if (missingFonts.length) warnings.push(t().importWarn.missingFonts(missingFonts.join(', ')));
       if (warnings.length) {
@@ -974,6 +985,7 @@
         alert(t().dialogs.openedWithLimitations(warnings.join('\n• ')));
       }
     } catch (err) {
+      busyTask = null;
       console.error('[import] Failed to open file:', err);
       alert(err instanceof Error ? localizeImportMessage(err.message) : t().dialogs.couldNotOpen);
     }
@@ -1172,6 +1184,8 @@
     if (!editor || pdfBusy) return;
     exportMenuOpen = false;
     pdfBusy = true;
+    busyTask = 'pdf';
+    await painted();
     try {
       const json = editor.getJSON() as TiptapNode;
       await exportPdf({
@@ -1189,6 +1203,7 @@
       reportLoadFailure(t().dialogs.couldNotExportPdf, err);
     } finally {
       pdfBusy = false;
+      busyTask = null;
     }
   }
 
@@ -1830,6 +1845,7 @@
       <GrammarToggle value={documentLanguage} other={documentLanguageOther} {editor} {tick} />
     </div>
     <div class="sb-right">
+    <BusyIndicator {editor} task={busyTask} />
     <div class="zoom-controls">
       <button class="zoom-btn" onclick={() => setZoom(zoom - 10)} disabled={zoom <= MIN_ZOOM} title={t().status.zoomOut}>−</button>
       <input
@@ -2575,7 +2591,9 @@
   .sb-right {
     flex: 1;
     display: flex;
+    align-items: center;
     justify-content: flex-end;
+    gap: 12px;
   }
 
   .zoom-controls {
