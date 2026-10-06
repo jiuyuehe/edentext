@@ -531,6 +531,9 @@ export const TabStops = Extension.create({
           // A read-only zone source is cloned per page, and its clones lay out their own
           // tabs (layOutZoneTabs) with the page's field values.
           if (isSplitPane(view) || !view.editable) return {};
+          // The first pass always dispatches, so a page recalc follows the load: without
+          // it WebKit took ~9s over a long document's first spell highlights (cause unknown).
+          let applied = false;
           const calculate = () => {
             rafId = null;
             let layout: TabLayout = { widths: [], breaks: [] };
@@ -540,7 +543,8 @@ export const TabStops = Extension.create({
             const { widths, breaks } = layout;
             // Compared with the live set, which edits have mapped along: typing moves every
             // later tab's position but no advance, and a replaced document has mapped it empty.
-            if (sameLayout(layout, tabStopsKey.getState(view.state)?.find() ?? [])) return;
+            if (applied && sameLayout(layout, tabStopsKey.getState(view.state)?.find() ?? [])) return;
+            applied = true;
             const decos: Decoration[] = widths.map((w) =>
               // margin-LEFT: the gap is the tab's own advance, so a caret placed after
               // the tab has to sit behind it. As margin-right it stayed at the old x

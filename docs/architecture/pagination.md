@@ -193,7 +193,7 @@ that alone was 55 ms per index on a 460-page file.
 **Layout constants** (must stay in sync between `pageBreaks.ts`, `Editor.svelte`, and `editor.css`):
 - `PAGE_HEIGHT = 1123px` (A4 portrait), `PAGE_GAP = 20px`, `CYCLE = PAGE_HEIGHT + PAGE_GAP = 1143px`.
 - Page height/width and margins are read **live** from CSS custom properties (`--user-page-height`, `--user-page-width`, `--user-margin-*`) so orientation/margin changes don't require new constants. `getCycle()` in `Editor.svelte` reads `--user-page-height` at runtime.
-- A margin/orientation change dispatches an empty `FORCE_PAGE_RECALC` meta-transaction (deferred via `requestAnimationFrame`, outside the Svelte effect flush, to avoid re-entrant binding updates) to trigger a re-paginate.
+- A margin/orientation change dispatches an empty `FORCE_PAGE_RECALC` meta-transaction (deferred via `requestAnimationFrame`, outside the Svelte effect flush, to avoid re-entrant binding updates) to trigger a re-paginate. The tab pass (`tabStops.ts`) dispatches its first layout unconditionally, which forces one more pass after a load. Without that pass, WebKit spent ~9s rendering the first spell-check highlights of a long document (probed in `test:dom`; neither a forced reflow nor a frame's delay before the check helped, cause unknown).
 
 ## Multi-column sections (`columns.ts` + `columnsFlow.ts`)
 
