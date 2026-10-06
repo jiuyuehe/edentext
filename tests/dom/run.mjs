@@ -388,22 +388,22 @@ try {
   check(keptPage === 2, `a row that may not break, taller than a page, starts on the next one (page ${keptPage})`);
 
   // In the larger-of spacing model a block's space above is a margin, outside the box the
-  // page break moves: a manual break must clear it too, or the page drops it.
+  // page break moves: a manual break must clear it too, less the space below the block before.
   await page.evaluate((d) => {
     localStorage.setItem('edentext-doc', JSON.stringify(d));
     localStorage.setItem('edentext-spacing-model', 'max');
-  }, { type: 'doc', content: [block(words('first page')),
+  }, { type: 'doc', content: [{ type: 'paragraph', attrs: { spaceAfter: 6 }, content: [words('first page')] },
     { type: 'paragraph', attrs: { breakBefore: 'page', spaceBefore: 24 }, content: [words('spaced page')] }] });
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('.tiptap', { timeout: 15_000 });
   await settle(page, true);
-  // Measured from the sheet's top: the default 2cm margin is 75.6px, the space 32px.
+  // Measured from the sheet's top: the default 2cm margin is 75.6px, the space 32 − 8px.
   const keptTop = await page.evaluate(() => {
     const sheets = Array.from(document.querySelectorAll('.page-sheet'), (s) => s.getBoundingClientRect().top);
     const r = Array.from(document.querySelectorAll('.tiptap-host .tiptap > p')).find((p) => p.textContent === 'spaced page').getBoundingClientRect().top;
     return r - sheets.filter((s) => s <= r + 1).pop();
   });
-  check(Math.abs(keptTop - (75.6 + 32)) <= 1.5, `a manual break keeps the space above in the larger-of model (${keptTop.toFixed(1)}px below the sheet top)`);
+  check(Math.abs(keptTop - (75.6 + 24)) <= 1.5, `a manual break keeps the space above in the larger-of model (${keptTop.toFixed(1)}px below the sheet top)`);
   await page.evaluate(() => localStorage.removeItem('edentext-spacing-model'));
 
   // Two left floats in one paragraph each sit at their own x: the later one, set left of

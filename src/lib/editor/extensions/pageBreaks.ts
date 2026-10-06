@@ -1590,11 +1590,11 @@ export const PageBreaks = Extension.create({
               let effectiveBottom = effectiveTop + leaf.naturalHeight;
               const page = grid.pageAt(effectiveTop);
               // The space a manual break keeps is a margin in the larger-of spacing model,
-              // outside the box the leaf is measured by: a leaf that far down is at the
-              // top, and the spacer clears it too.
+              // outside the box the leaf is measured by, less the space below the block
+              // before it, which LibreOffice still collapses with it (probed: 24 − 6pt → 18).
               const keeps = !!leaf.forceBreakBefore && spacingAtStart;
-              const kept = keeps && !leaf.inTableCell
-                ? parseFloat(getComputedStyle(leaf.el).marginTop) || 0 : 0;
+              const kept = keeps && !leaf.inTableCell ? Math.max(0,
+                (parseFloat(getComputedStyle(leaf.el).marginTop) || 0) - (leaves[i - 1]?.spaceAfter ?? 0)) : 0;
               // A section's first page uses its "first" reaches, every other page its
               // "rest" ones — page 1 is section 1's first page.
               if (leaf.sectionStart) {
