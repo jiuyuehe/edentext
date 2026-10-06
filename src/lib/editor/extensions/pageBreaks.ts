@@ -1589,13 +1589,19 @@ export const PageBreaks = Extension.create({
               let effectiveTop = leaf.naturalTop + cumulativeShift;
               let effectiveBottom = effectiveTop + leaf.naturalHeight;
               const page = grid.pageAt(effectiveTop);
+              // The space a manual break keeps is a margin in the larger-of spacing model,
+              // outside the box the leaf is measured by: a leaf that far down is at the
+              // top, and the spacer clears it too.
+              const keeps = !!leaf.forceBreakBefore && spacingAtStart;
+              const kept = keeps && !leaf.inTableCell
+                ? parseFloat(getComputedStyle(leaf.el).marginTop) || 0 : 0;
               // A section's first page uses its "first" reaches, every other page its
               // "rest" ones — page 1 is section 1's first page.
               if (leaf.sectionStart) {
                 // Where the section really begins: a forced break moves its first block to
                 // the next page, and that page is the one its "first" zones belong to.
                 const prevStart = grid.topOf(page) + reachAt(sectionIndex)[1];
-                const pushed = !!leaf.forceBreakBefore && i > 0 && effectiveTop > prevStart + 0.5;
+                const pushed = !!leaf.forceBreakBefore && i > 0 && effectiveTop - kept > prevStart + 0.5;
                 sectionIndex++;
                 sectionFirstPage = pushed ? page + 1 : page;
                 sectionFirstPages[sectionIndex] = sectionFirstPage;
@@ -1705,7 +1711,7 @@ export const PageBreaks = Extension.create({
               // A section held back for its own side skips the sheets between: its first
               // page is settled above, so the spacer reaches straight for that one.
               const skipTo = leaf.sectionStart && sectionFirstPage > page ? sectionFirstPage : 0;
-              const forced = skipTo > 0 || (!!leaf.forceBreakBefore && i > 0 && effectiveTop > contentStart + 0.5);
+              const forced = skipTo > 0 || (!!leaf.forceBreakBefore && i > 0 && effectiveTop - kept > contentStart + 0.5);
 
               if (forced) {
                 // The target page's own content start: a section beginning there brings
@@ -1715,7 +1721,7 @@ export const PageBreaks = Extension.create({
                 const target = pageContentStart(targetPage, nextTop, grid);
                 const { docPos, row } = leafSpacer(leaf);
                 breaks.push({
-                  height: target - effectiveTop,
+                  height: target + kept - effectiveTop,
                   docPos,
                   row,
                   bandOpenY: target,
@@ -1862,7 +1868,7 @@ export const PageBreaks = Extension.create({
               // even a manual break loses it. A line split doesn't: there the page starts
               // mid-block. `effectiveTop` still excludes this leaf's own push.
               if (
-                i > 0 && !leaf.inTableCell && !(leaf.forceBreakBefore && spacingAtStart) && (leaf.spaceAbove ?? 0) > 0.5
+                i > 0 && !leaf.inTableCell && !keeps && (leaf.spaceAbove ?? 0) > 0.5
                 && (breaks.some((b) => b.reason !== 'line-split')
                   || (breaks.length === 0 && Math.abs(effectiveTop - contentStart) < 0.5))
               ) {
