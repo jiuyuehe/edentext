@@ -1465,7 +1465,13 @@ export const PageBreaks = Extension.create({
           return leaves;
         }
 
+        // A pass that throws must not leave the layout marked running: no later pass
+        // would start, and the status would show the document loading for good.
         function calculate() {
+          try { layoutPass(); } catch (err) { isUpdating = false; throw err; }
+        }
+
+        function layoutPass() {
           rafId = null;
           if (isUpdating || !editorView.dom.isConnected) return;
           isUpdating = true;

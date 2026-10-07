@@ -87,8 +87,14 @@ export function loadExtraHfSections(): HfSet[] {
   }
 }
 
+// A full storage loses the zones as autosave loses the body, which warns about it; a
+// throw here would abort the rest of the effects that adopt an opened document.
+function store(key: string, json: string): void {
+  try { docStore.setItem(key, json); } catch (err) { console.error('[autosave] Could not save', key, err); }
+}
+
 export function saveExtraHfSections(sections: HfSet[]): void {
-  if (sections.length) docStore.setItem(EXTRA_KEY, JSON.stringify(sections));
+  if (sections.length) store(EXTRA_KEY, JSON.stringify(sections));
   else docStore.removeItem(EXTRA_KEY);
 }
 
@@ -171,7 +177,7 @@ export function loadHfDoc(zone: HfZone, variant: HfVariant = 'default'): HfDoc {
 
 export function saveHfDoc(zone: HfZone, doc: HfDoc, variant: HfVariant = 'default'): void {
   if (hfIsEmpty(doc)) docStore.removeItem(KEYS[zone][variant]);
-  else docStore.setItem(KEYS[zone][variant], JSON.stringify(doc));
+  else store(KEYS[zone][variant], JSON.stringify(doc));
 }
 
 type ZoneNode = { type?: string; content?: ZoneNode[]; attrs?: Record<string, unknown> };
