@@ -42,6 +42,18 @@ describe('an imported index', () => {
     expect(toc(importDocx(docx)).attrs.entries).toEqual(CACHED);
   });
 
+  it('leaves the text after the field end in the body, not in a row', () => {
+    const tail = zipSync({ 'word/document.xml': strToU8(`<?xml version="1.0"?>
+<w:document xmlns:w="${W}"><w:body>
+  <w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> TOC \\o "1-3" </w:instrText></w:r>
+    <w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Chapter</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>3</w:t></w:r></w:p>
+  <w:p><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t>After</w:t></w:r></w:p>
+</w:body></w:document>`) });
+    const blocks = importDocx(tail).content.content as any[];
+    expect(toc({ content: { content: blocks } }).attrs.entries).toEqual([{ text: 'Chapter', level: 1, page: 3 }]);
+    expect(blocks.at(-1)).toMatchObject({ type: 'paragraph', content: [{ type: 'text', text: 'After' }] });
+  });
+
   it('keeps them through ODF and DOCX', async () => {
     const doc: any = importDocx(docx).content;
     expect(toc(importOdt(await buildOdt(doc, MARGINS, 'portrait'))).attrs.entries).toEqual(CACHED);

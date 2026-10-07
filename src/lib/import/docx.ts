@@ -542,16 +542,19 @@ function cellFormulaOf(tc: Element): { formula: string; format: CellFormat | nul
   };
 }
 
-function scanTocField(p: Element, st: TocFieldState): { emit: boolean } {
+// `closedAt` is the index of the run whose end closes the TOC field: the runs after it
+// are the paragraph's own text again.
+function scanTocField(p: Element, st: TocFieldState): { emit: boolean; closedAt: number } {
   let emit = false;
-  for (const r of Array.from(p.getElementsByTagNameNS(W, 'r'))) {
+  let closedAt = -1;
+  for (const [ri, r] of Array.from(p.getElementsByTagNameNS(W, 'r')).entries()) {
     for (const c of Array.from(r.children)) {
       if (c.namespaceURI !== W) continue;
       if (c.localName === 'fldChar') {
         const t = c.getAttributeNS(W, 'fldCharType');
         if (t === 'begin') { st.fieldDepth++; st.instr[st.fieldDepth] = ''; }
         else if (t === 'end') {
-          if (st.tocDepth === st.fieldDepth) st.tocDepth = -1;
+          if (st.tocDepth === st.fieldDepth) { st.tocDepth = -1; closedAt = ri; }
           st.instr[st.fieldDepth] = '';
           st.fieldDepth = Math.max(0, st.fieldDepth - 1);
         }
@@ -564,7 +567,16 @@ function scanTocField(p: Element, st: TocFieldState): { emit: boolean } {
       }
     }
   }
-  return { emit };
+  return { emit, closedAt };
+}
+
+// The paragraph's runs up to and including run `at` (`head`) or only those after it.
+function splitRunsAt(p: Element, at: number, head: boolean): Element {
+  const copy = p.cloneNode(true) as Element;
+  Array.from(copy.getElementsByTagNameNS(W, 'r')).forEach((r, i) => {
+    if (head ? i > at : i <= at) r.parentNode?.removeChild(r);
+  });
+  return copy;
 }
 
 // docx-lib (and Word) wrap a TOC in a content control; detect it by its gallery type or
@@ -721,7 +733,11 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
           ...(index === 'bibliography' ? { citationStyle: ctx.citationStyle } : {}) } });
         continue;
       }
-      const { emit } = scanTocField(el, tocState);
+      const { emit, closedAt } = scanTocField(el, tocState);
+      // The paragraph the field ends in goes on as body text after the end.
+      const tail = closedAt >= 0 ? splitRunsAt(el, closedAt, false) : null;
+      const tailKept = !!tail && ['t', 'drawing', 'pict', 'object'].some((n) =>
+        Array.from(tail.getElementsByTagNameNS(W, n)).some((e) => n !== 't' || e.textContent));
       if (emit && kind === 'body') {
         flush();
         // The field carries no heading of its own — Word's sits in a separate paragraph.
@@ -743,25 +759,27 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
       }
       if (startedInToc || emit) {
         const into = kind === 'body' ? field.into : null;
-        const entry = into ? cachedIndexEntry(el, ctx, into.kind, into.pages) : null;
+        const row = closedAt >= 0 ? splitRunsAt(el, closedAt, true) : el;
+        const entry = into ? cachedIndexEntry(row, ctx, into.kind, into.pages) : null;
         if (entry) {
           into!.entries.push(entry);
           // The gap is the one of the section the rows land in, which Word wraps them in.
           const a = into!.node.attrs!;
           if (a.columns && a.columnGapCm == null && ctx.sectionCols?.count === a.columns) a.columnGapCm = ctx.sectionCols.gapCm;
         }
-        continue;
+        if (!tailKept) continue;
       }
-      const num = paragraphNum(el, ctx);
+      const src = tailKept ? tail! : el;
+      const num = paragraphNum(src, ctx);
       if (num) {
         breakPending = false; // a break before a list item can't be modeled; drop it
-        const para = splitParaAtPageBreaks(convertParagraph(el, ctx, 'list', boldByDefault), 'list').blocks[0];
+        const para = splitParaAtPageBreaks(convertParagraph(src, ctx, 'list', boldByDefault), 'list').blocks[0];
         while (stack.length && stack[stack.length - 1].ilvl > num.ilvl) closeTop();
         let top = stack[stack.length - 1];
         if (top && top.ilvl === num.ilvl && top.numId !== num.numId) { closeTop(); top = stack[stack.length - 1]; }
         // Only the item's own level takes its w:ind; the levels opened above it to reach
         // it have no item of their own to speak for them.
-        const own = listItemIndent(el, ctx);
+        const own = listItemIndent(src, ctx);
         while (stack.length === 0 || stack[stack.length - 1].ilvl < num.ilvl) {
           const ilvl = stack.length ? stack[stack.length - 1].ilvl + 1 : 0;
           stack.push({ ilvl, numId: num.numId,
@@ -778,7 +796,7 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
         targetList.content!.push({ type: 'listItem', content: [para] });
       } else {
         flush();
-        const { blocks, trailingBreak } = splitParaAtPageBreaks(convertParagraph(el, ctx, kind, boldByDefault), kind);
+        const { blocks, trailingBreak } = splitParaAtPageBreaks(convertParagraph(src, ctx, kind, boldByDefault), kind);
         if (breakPending) { applyBreakBefore(blocks[0]); breakPending = false; }
         out.push(...blocks);
         breakPending = trailingBreak;
