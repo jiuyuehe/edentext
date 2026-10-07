@@ -40,7 +40,7 @@
   import { recordChanges, setRecordChanges } from './lib/storage/trackChanges.svelte';
   import { DEFAULT_NOTE_SETTINGS } from './lib/storage/noteSettings';
   import { builtinStyleSheet, type StyleFamily } from './lib/styles/styleSheet';
-  import { loadHfDoc, saveHfDoc, loadHfDistances, saveHfDistances, loadDifferentFirstPage, saveDifferentFirstPage, loadDifferentOddEven, saveDifferentOddEven, hfIsEmpty, DEFAULT_HF_DISTANCES, loadExtraHfSections, saveExtraHfSections, type HfDoc, type HfZone, type HfDistances, type HfSet } from './lib/storage/headerFooter';
+  import { loadHfDoc, saveHfDoc, loadHfDistances, saveHfDistances, loadDifferentFirstPage, saveDifferentFirstPage, loadDifferentOddEven, saveDifferentOddEven, hfIsEmpty, DEFAULT_HF_DISTANCES, loadExtraHfSections, saveExtraHfSections, loadHfPictures, type HfDoc, type HfZone, type HfDistances, type HfSet } from './lib/storage/headerFooter';
   import { loadDocName, saveDocName, loadDocFormat, saveDocFormat, stripOdtExtension, sanitizeNameForFile, deriveFilename, filenameFor, loadDocProtected, saveDocProtected, loadDocFile, saveDocFile, type DocumentFormat } from './lib/storage/documentName';
   import { loadDocProperties, saveDocProperties, EMPTY_DOC_PROPERTIES, type DocProperties } from './lib/storage/docProperties';
   import { loadHyphenation, saveHyphenation } from './lib/storage/hyphenation';
@@ -136,6 +136,9 @@
   // Sections past the first; the layer edits them in place, section 1 stays the
   // per-zone state above.
   let extraHfSections: HfSet[] = $state(loadExtraHfSections().map((z) => repairZones(z)));
+  // Counts the zones replaced since start-up: their pictures come back from the image
+  // store afterwards, and only into the zones they were read for.
+  let zoneEpoch = 0;
   let hfEditor: Editor | null = $state(null);
   let hfActive: HfZone | null = $state(null);
   let hfTick: number = $state(0);
@@ -702,6 +705,7 @@
   // Reset every document side-car to its default; the $effects persist these.
   // Shared by New and New-from-template, which then assigns the template's own values.
   function resetDocumentState() {
+    zoneEpoch++;
     hfActive = null;
     headerDoc = null;
     footerDoc = null;
@@ -904,6 +908,7 @@
 
       loadContent(content); // onUpdate fires → autosave
       documentEpoch++;
+      zoneEpoch++;
       resetHistory();
       // Adopt the opened file's name as the document name (drives the save filename).
       if (sourceName) documentName = stripOdtExtension(sourceName).replace(/\.do[ct]x$/i, '');
@@ -1290,6 +1295,18 @@
   }
 
   onMount(() => {
+    void loadHfPictures().then((stored) => {
+      if (!stored || zoneEpoch !== 0 || hfActive) return;
+      const zones = repairZones(stored.zones);
+      headerDoc = zones.header;
+      footerDoc = zones.footer;
+      headerFirstDoc = zones.headerFirst;
+      footerFirstDoc = zones.footerFirst;
+      headerEvenDoc = zones.headerEven;
+      footerEvenDoc = zones.footerEven;
+      extraHfSections = stored.sections.map((z) => repairZones(z));
+      if (stored.missing) alert(t().dialogs.picturesNotRestored(stored.missing));
+    });
     // Re-register the restored document's embedded fonts so it renders in the right face;
     // FontFace load fires 'loadingdone', which Editor.svelte re-paginates on. A file opened
     // while the store was still reading has its own, and registering would replace them.

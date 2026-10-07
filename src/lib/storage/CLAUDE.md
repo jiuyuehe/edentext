@@ -79,7 +79,7 @@ writes its own marker, so no two tabs race over one key.
 - **Balanced spaces:** `edentext-balance-spaces` — `'true'`; absent = off.
 - **Recent fonts:** `edentext-recent-fonts` — JSON string array (ToolbarExpanded).
 - **Download hint shown:** `edentext-download-hint` — set by the first fallback download (`export/saveFile.ts`); the one-time "always ask where to save" hint.
-- **Header/footer:** `edentext-header` / `-footer` (HfDoc, a zone-schema doc of any blocks; refitted to the schema on load), `edentext-hf-distances`.
+- **Header/footer:** `edentext-header` / `-footer` (HfDoc, a zone-schema doc of any blocks; refitted to the schema on load), `edentext-hf-distances`. Their pictures and `edentext-hf-sections`' go to the image store too: a save writes at once, by key for pictures the store has confirmed and inline for the rest, then again by key once `putImages(…, false)` has them — keys it pins against this session's sweeps. The zones load synchronously, so `App.svelte` swaps their pictures back in afterwards (`loadHfPictures`), unless a reset or an opened file replaced the zones meanwhile.
 - **Styles:** `edentext-styles` — the style registry (`styles/sheet.svelte.ts`).
 - **Document properties:** `edentext-doc-properties` — title/subject/author/keywords/comments (`docProperties.ts`); the key is removed when every field is empty, so a fresh document writes nothing into `meta.xml`.
 - **AutoCorrect:** `edentext-autocorrect` — one flag per rule (`autoCorrect.ts`, reactive singleton in `autoCorrect.svelte.ts`), LibreOffice's defaults (all on).
