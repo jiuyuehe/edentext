@@ -664,6 +664,7 @@ const en = {
     insertLink: 'Link…',
     editLink: 'Edit Link…',
     removeLink: 'Remove Link',
+    copyLink: 'Copy Link',
     insertBookmark: 'Bookmark…',
     insertCrossRef: 'Cross-reference…',
     newComment: 'Comment…',

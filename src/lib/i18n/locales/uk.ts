@@ -665,6 +665,7 @@ const uk: Messages = {
     insertLink: 'Посилання…',
     editLink: 'Змінити посилання…',
     removeLink: 'Видалити посилання',
+    copyLink: 'Копіювати посилання',
     insertBookmark: 'Закладка…',
     insertCrossRef: 'Перехресне посилання…',
     newComment: 'Коментар…',

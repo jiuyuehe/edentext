@@ -655,6 +655,7 @@ const fr: Messages = {
     insertLink: 'Lien…',
     editLink: 'Modifier le lien…',
     removeLink: 'Supprimer le lien',
+    copyLink: 'Copier le lien',
     insertBookmark: 'Signet…',
     insertCrossRef: 'Renvoi…',
     newComment: 'Commentaire…',

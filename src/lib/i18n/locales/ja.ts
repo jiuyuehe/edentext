@@ -652,6 +652,7 @@ const ja: Messages = {
     insertLink: 'リンク…',
     editLink: 'リンクの編集…',
     removeLink: 'リンクの削除',
+    copyLink: 'リンクのコピー',
     insertBookmark: 'ブックマーク…',
     insertCrossRef: '相互参照…',
     newComment: 'コメント…',

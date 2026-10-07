@@ -665,6 +665,7 @@ const ru: Messages = {
     insertLink: 'Ссылка…',
     editLink: 'Изменить ссылку…',
     removeLink: 'Удалить ссылку',
+    copyLink: 'Копировать ссылку',
     insertBookmark: 'Закладка…',
     insertCrossRef: 'Перекрёстная ссылка…',
     newComment: 'Примечание…',

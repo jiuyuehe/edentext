@@ -649,6 +649,7 @@ const pt: Messages = {
     insertLink: 'Ligação…',
     editLink: 'Editar ligação…',
     removeLink: 'Remover ligação',
+    copyLink: 'Copiar ligação',
     insertBookmark: 'Marcador…',
     insertCrossRef: 'Referência…',
     newComment: 'Comentário…',

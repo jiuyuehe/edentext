@@ -651,6 +651,7 @@ const zhHant: Messages = {
     insertLink: '連結…',
     editLink: '編輯連結…',
     removeLink: '移除連結',
+    copyLink: '複製連結',
     insertBookmark: '書籤…',
     insertCrossRef: '交互參照…',
     newComment: '註解…',

@@ -651,6 +651,7 @@ const es: Messages = {
     insertLink: 'Enlace…',
     editLink: 'Editar el enlace…',
     removeLink: 'Quitar el enlace',
+    copyLink: 'Copiar el enlace',
     insertBookmark: 'Marcador…',
     insertCrossRef: 'Referencia cruzada…',
     newComment: 'Comentario…',

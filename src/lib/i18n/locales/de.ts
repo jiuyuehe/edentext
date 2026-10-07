@@ -656,6 +656,7 @@ const de: Messages = {
     insertLink: 'Link…',
     editLink: 'Link bearbeiten…',
     removeLink: 'Link entfernen',
+    copyLink: 'Link kopieren',
     insertBookmark: 'Textmarke…',
     insertCrossRef: 'Querverweis…',
     newComment: 'Kommentar…',

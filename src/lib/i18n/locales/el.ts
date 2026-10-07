@@ -665,6 +665,7 @@ const el: Messages = {
     insertLink: "Σύνδεση…",
     editLink: "Επεξεργασία σύνδεσης…",
     removeLink: "Κατάργηση σύνδεσης",
+    copyLink: 'Αντιγραφή σύνδεσης',
     insertBookmark: "Σελιδοδείκτης…",
     insertCrossRef: "Παραπομπή…",
     newComment: "Σχόλιο…",

@@ -650,6 +650,7 @@ const zhHans: Messages = {
     insertLink: '链接…',
     editLink: '编辑链接…',
     removeLink: '取消链接',
+    copyLink: '复制链接',
     insertBookmark: '书签…',
     insertCrossRef: '交叉引用…',
     newComment: '批注…',
