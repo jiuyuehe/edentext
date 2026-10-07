@@ -558,6 +558,28 @@ try {
   check(Math.abs(bdx - 50) <= 2 && Math.abs(bdy - 25) <= 2,
     `a text box out of the flow is dragged by its ring (moved ${bdx}/${bdy}, wanted 50/25)`);
 
+  // A line is dragged by its ends: the one grabbed follows the pointer past the other,
+  // which stays put. A box turned into a line leaves the text, so both ends are free.
+  await page.evaluate(() => {
+    const ed = document.querySelector('.tiptap').editor;
+    ed.chain().focus().insertTextBox().run();
+    ed.commands.setTextBoxAttrs({ shapeKind: 'lineArrow' });
+  });
+  await page.waitForSelector('.tiptap .textbox-node.textbox-is-line[data-wrap="through"] .textbox-line-end',
+    { state: 'visible', timeout: 15_000 });
+  const lineEnds = () => page.evaluate(() => [...document.querySelectorAll('.tiptap .textbox-is-line .textbox-line-end')]
+    .map((h) => { const r = h.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }));
+  const [startBefore, endBefore] = await lineEnds();
+  await page.mouse.move(startBefore.x, startBefore.y);
+  await page.mouse.down();
+  await page.mouse.move(endBefore.x + 40, endBefore.y + 30, { steps: 4 });
+  await page.mouse.up();
+  await settle(page, true);
+  const [startAfter, endAfter] = await lineEnds();
+  const near = (p, q, x, y) => Math.abs(p.x - q.x - x) <= 2 && Math.abs(p.y - q.y - y) <= 2;
+  check(near(endAfter, endBefore, 0, 0) && near(startAfter, endBefore, 40, 30),
+    `a line's start is dragged past its end (start ${Math.round(startAfter.x - endBefore.x)}/${Math.round(startAfter.y - endBefore.y)} from the end, wanted 40/30; end moved ${Math.round(endAfter.x - endBefore.x)}/${Math.round(endAfter.y - endBefore.y)})`);
+
   // The cross-reference window is modeless so the view can stay parked on the target
   // while a reference is picked. Restoring focus to the editor must therefore not scroll
   // the caret back into view: the document would move under the reader on every insert.

@@ -470,9 +470,16 @@ export const TextBox = Node.create({
           const found = findTextBox(state);
           if (!found) return false;
           if (dispatch) {
-            const tr = state.tr.setNodeMarkup(found.pos, undefined, { ...found.node.attrs, ...attrs });
-            // As in commit(): a selected frame stays selected, its toolbar with it.
-            if (state.selection instanceof NodeSelection) tr.setSelection(NodeSelection.create(tr.doc, found.pos));
+            const was = found.node.attrs as TextBoxAttrs;
+            // A box turned into a line leaves the text, in front of it: as LibreOffice
+            // draws a new line, and so that both its ends can be dragged anywhere.
+            const freed = attrs.shapeKind && isLineKind(attrs.shapeKind) && !isLineKind(was.shapeKind)
+              && was.wrap === 'inline' && !attrs.wrap
+              ? { wrap: 'through' as const, ...droppedFrameAttrs('through', true, was.wrap) } : {};
+            const tr = state.tr.setNodeMarkup(found.pos, undefined, { ...was, ...freed, ...attrs });
+            // As in commit(): a selected frame stays selected, its toolbar with it. A line
+            // holds no text, so the caret it had moves out onto the frame.
+            if (state.selection instanceof NodeSelection || isLineKind(attrs.shapeKind ?? was.shapeKind)) tr.setSelection(NodeSelection.create(tr.doc, found.pos));
             dispatch(tr);
           }
           return true;
@@ -620,6 +627,9 @@ class TextBoxView {
   private live: { key: string; geo: ResolvedGeometry } | null = null;
   // The line and its arrow heads, for the kinds that are two endpoints, not a box.
   private lineSvg: SVGSVGElement | null = null;
+  private lineEnds: HTMLElement[] = [];
+  // A line's geometry while one of its ends is dragged, over the node's own attrs.
+  private preview: Partial<TextBoxAttrs> | null = null;
   // Last text-area inset applied; guards the ResizeObserver feedback loop.
   private lastInset = '';
 
@@ -651,6 +661,13 @@ class TextBoxView {
     rot.className = 'image-rotate-handle';
     rot.addEventListener('mousedown', e => this.startRotate(e as MouseEvent));
     this.rotor.appendChild(rot);
+    // A line is grabbed by its two ends instead (CSS shows one set or the other).
+    this.lineEnds = (['start', 'end'] as const).map(end => {
+      const h = document.createElement('span');
+      h.className = 'image-resize-handle textbox-line-end';
+      h.addEventListener('mousedown', e => this.startEndpoint(e as MouseEvent, end));
+      return this.rotor.appendChild(h);
+    });
 
     this.dom.appendChild(this.rotor);
 
@@ -671,7 +688,7 @@ class TextBoxView {
   }
 
   private attrs(): TextBoxAttrs {
-    return this.node.attrs as TextBoxAttrs;
+    return (this.preview ? { ...this.node.attrs, ...this.preview } : this.node.attrs) as TextBoxAttrs;
   }
 
   // The frame's offsets, carrying a running free drag (see ImageView).
@@ -699,12 +716,14 @@ class TextBoxView {
 
   private applyAll(): void {
     const a = this.attrs();
-    this.rotor.style.width = a.width ? `${a.width}px` : `${DEFAULT_WIDTH_PX}px`;
-    this.applyHeight(a.height);
     // A polygon shape paints its own fill and stroke, so the box behind it stays bare;
     // a line has no box at all, only the two endpoints it is drawn between.
     const poly = !!SHAPES[a.shapeKind]?.points || !!a.shapePath;
     const line = isLineKind(a.shapeKind);
+    // A vertical line is a frame of no width, as a horizontal one is of no height.
+    this.rotor.style.width = `${line ? a.width ?? DEFAULT_WIDTH_PX : a.width || DEFAULT_WIDTH_PX}px`;
+    this.applyHeight(a.height);
+    this.dom.classList.toggle('textbox-is-line', line);
     // The outline covers the padding box, so the frame's own ring moves to the text
     // where a polygon draws it — applyShapeInset adds it back in.
     this.rotor.style.padding = poly || line ? '0' : ringCss(a);
@@ -763,11 +782,27 @@ class TextBoxView {
     // SVG a zero-high viewport, and that turns rendering off entirely — the stroke needs
     // one of its own, which it then overflows by half as it does in any flat frame.
     const vh = Math.max(h, stroke);
-    this.lineSvg.setAttribute('viewBox', `0 0 ${w} ${vh}`);
-    this.lineSvg.setAttribute('width', `${w}`);
+    const vw = Math.max(w, stroke);
+    this.lineSvg.setAttribute('viewBox', `0 0 ${vw} ${vh}`);
+    this.lineSvg.setAttribute('width', `${vw}`);
     this.lineSvg.setAttribute('height', `${vh}`);
     this.lineSvg.style.height = `${vh}px`;
+    if (isLineKind(a.shapeKind)) {
+      const [x1, y1] = [a.flipH ? w : 0, a.flipV ? h : 0];
+      [[x1, y1], [w - x1, h - y1]].forEach(([x, y], i) => {
+        this.lineEnds[i].style.left = `${x - 5}px`;
+        this.lineEnds[i].style.top = `${y - 5}px`;
+      });
+    }
     this.lineSvg.replaceChildren();
+    if (paths.line && isLineKind(a.shapeKind)) {
+      // Wide enough to grab a hairline, and the one thing a line is hit on.
+      const hit = document.createElementNS(SVG_NS, 'path');
+      hit.setAttribute('d', paths.line);
+      hit.setAttribute('stroke', 'transparent');
+      hit.setAttribute('stroke-width', String(Math.max(stroke, 10)));
+      this.lineSvg.appendChild(hit);
+    }
     if (paths.line) {
       const line = document.createElementNS(SVG_NS, 'path');
       line.setAttribute('d', paths.line);
@@ -890,7 +925,8 @@ class TextBoxView {
   // reserves the right space (same math as ImageView.applyLayout).
   private fitWrapper(size?: Size): void {
     const { w, h } = size ?? rotorSize(this.rotor);
-    if (!w || !h) return;
+    // A straight line may be flat either way; only the detached frame has neither.
+    if (isLineKind(this.attrs().shapeKind) ? !w && !h : !w || !h) return;
     // Out of the flow nothing is reserved and the offsets place the unrotated box, as
     // both formats do, so it turns about a centre that stays put.
     const rad = this.attrs().wrap === 'through' || this.pastZone() ? 0 : (this.attrs().rotation * Math.PI) / 180;
@@ -983,6 +1019,7 @@ class TextBoxView {
   // is un-rotated into the rotor's own axes) and zoom-aware.
   private isFrameHit(e: MouseEvent): boolean {
     if (this.outline) return this.outline.contains(e.target as globalThis.Node);
+    if (isLineKind(this.attrs().shapeKind)) return !!this.lineSvg?.contains(e.target as globalThis.Node);
     const r = this.rotor.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
@@ -1149,6 +1186,75 @@ class TextBoxView {
       win.removeEventListener('mousemove', move);
       win.removeEventListener('mouseup', finish);
       if (moved) this.commit({ rotation: lastDeg });
+    };
+    win.addEventListener('mousemove', move);
+    win.addEventListener('mouseup', finish);
+  }
+
+  // Drag one end of a line while the other stays put, as both word processors do. The
+  // frame is the two ends' bounding box and the flips say which corner starts; a rotated
+  // line's ends are rotated into it. Out of the flow the box's corner moves with them.
+  private startEndpoint(event: MouseEvent, end: 'start' | 'end'): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!this.editor.isEditable) return;
+    const a = this.attrs();
+    const w = a.width ?? DEFAULT_WIDTH_PX;
+    const h = a.height ?? DEFAULT_LINE_HEIGHT_PX;
+    const th = (a.rotation * Math.PI) / 180;
+    const turn = ([x, y]: number[]) => [
+      w / 2 + (x - w / 2) * Math.cos(th) - (y - h / 2) * Math.sin(th),
+      h / 2 + (x - w / 2) * Math.sin(th) + (y - h / 2) * Math.cos(th),
+    ];
+    const p0 = [a.flipH ? w : 0, a.flipV ? h : 0];
+    const ends = [turn(p0), turn([w - p0[0], h - p0[1]])];
+    const [moving, fixed] = end === 'start' ? [ends[0], ends[1]] : [ends[1], ends[0]];
+    const free = a.wrap === 'through' || this.pastZone();
+    const view = this.editor.view;
+    if (free) this.dragX = freeDragX(view, this.dom, a.wrapOffset);
+    const zoom = this.dom.getBoundingClientRect().width / this.dom.offsetWidth || 1;
+    const cm = (px: number) => Math.round((px * 2.54 * 1000) / 96) / 1000;
+    const sx = event.clientX;
+    const sy = event.clientY;
+    const win = this.dom.ownerDocument.defaultView ?? window;
+    let geo: Partial<TextBoxAttrs> | null = null;
+    let by = { x: 0, y: 0 };
+    this.resizing = true;
+
+    const move = (e: MouseEvent): void => {
+      if (!e.buttons) { finish(); return; }
+      let dx = moving[0] + (e.clientX - sx) / zoom - fixed[0];
+      let dy = moving[1] + (e.clientY - sy) / zoom - fixed[1];
+      if (e.shiftKey) {
+        const len = Math.hypot(dx, dy);
+        const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+        dx = len * Math.cos(ang);
+        dy = len * Math.sin(ang);
+      }
+      const p = [fixed[0] + dx, fixed[1] + dy];
+      const [s, t] = end === 'start' ? [p, fixed] : [fixed, p];
+      const nw = Math.round(Math.abs(t[0] - s[0]));
+      const nh = Math.round(Math.abs(t[1] - s[1]));
+      if (!nw && !nh) return;
+      geo = { width: nw, height: nh, flipH: s[0] > t[0], flipV: s[1] > t[1], rotation: 0 };
+      by = { x: cm(Math.min(s[0], t[0])), y: cm(Math.min(s[1], t[1])) };
+      this.preview = geo;
+      if (free) this.dragBy = by;
+      this.applyAll();
+      this.showBadge(nw, nh);
+    };
+    const finish = (): void => {
+      win.removeEventListener('mousemove', move);
+      win.removeEventListener('mouseup', finish);
+      this.badge.style.display = 'none';
+      this.resizing = false;
+      this.preview = null;
+      this.dragBy = null;
+      if (!geo) return;
+      const y = a.wrapOffsetY;
+      this.commit(free
+        ? { ...geo, wrapOffset: this.dragX + by.x, wrapOffsetY: (typeof y === 'number' ? y : 0) + by.y }
+        : geo);
     };
     win.addEventListener('mousemove', move);
     win.addEventListener('mouseup', finish);

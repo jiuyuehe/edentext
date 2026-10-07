@@ -290,7 +290,7 @@ describe('untrusted box drawing attributes', () => {
       content: [{ type: 'paragraph' }],
     }] });
     const svg = ed.view.dom.querySelector('.textbox-line')!;
-    expect(svg.querySelectorAll('path')).toHaveLength(1);
+    expect(svg.querySelectorAll(':not(path)')).toHaveLength(0);
     expect(svg.querySelector('#injected')).toBeNull();
     expect(svg.querySelector('[onload], [onclick]')).toBeNull();
     ed.destroy();

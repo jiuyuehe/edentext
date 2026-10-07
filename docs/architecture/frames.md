@@ -118,7 +118,7 @@ flips and ODF's endpoint order both come down to. A single head is always the en
 line headed at its start alone is read run back (both flips toggled): a callout arrow pointing left
 survives either format. Drawn in the frame's **real pixels** (`linePaths`), not the stretched 0…100
 box a polygon uses: an arrow head has to keep its shape however flat the frame is, and the head
-scales with the pen (`arrowHeadPx`, floored so a hairline still shows one).
+scales with the pen (`arrowHeadPx`, floored so a hairline still shows one). A selected line is dragged by its **two ends** (`startEndpoint`), the other staying put, Shift snapping to 45° and a rotation folded into the ends; in the text its corner stays at the anchor, so a box turned into a line leaves the text in front of it (`through`, as LibreOffice draws one).
 
 The three share their `odf`/`prst` names, because **the heads are what tell them apart**: both
 importers read the heads a file declares and `lineKindFor` names the kind, so a `straightConnector1`

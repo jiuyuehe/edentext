@@ -485,6 +485,13 @@
 .paper .tiptap .textbox-node.textbox-active .image-rotate-handle {
   display: block;
 }
+/* A line shows its two ends instead of a box: no frame, no box handles, no rotation. */
+.paper .tiptap .textbox-node:not(.textbox-is-line) .textbox-line-end,
+.paper .tiptap .textbox-node.textbox-is-line .image-resize-handle:not(.textbox-line-end),
+.paper .tiptap .textbox-node.textbox-is-line .image-rotate-handle {
+  display: none;
+}
+.paper .tiptap .textbox-line-end { cursor: crosshair; }
 .paper .tiptap .image-resize-nw { top: -5px; left: -5px; cursor: nwse-resize; }
 .paper .tiptap .image-resize-n  { top: -5px; left: 50%; margin-left: -5px; cursor: ns-resize; }
 .paper .tiptap .image-resize-ne { top: -5px; right: -5px; cursor: nesw-resize; }
@@ -560,23 +567,29 @@
   outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
+.paper .tiptap .textbox-node.textbox-is-line .textbox-rotor { outline: none; }
 /* Grab affordance on the frame edge (outside the text area). */
 .paper .tiptap .textbox-rotor {
   cursor: move;
 }
 /* A shape drawn as an outline is hit where it is painted, its text where the lines are:
    everywhere else on the shape grabs it, and the empty corners of its box hit the page. */
-.paper .tiptap .textbox-node.textbox-outlined,
-.paper .tiptap .textbox-outlined .textbox-rotor,
+.paper .tiptap .textbox-node:is(.textbox-outlined, .textbox-is-line),
+.paper .tiptap :is(.textbox-outlined, .textbox-is-line) .textbox-rotor,
 .paper .tiptap .textbox-outlined .textbox-content {
   pointer-events: none;
+}
+/* A line is hit along its stroke, widened by a transparent path of its own. */
+.paper .tiptap .textbox-is-line .textbox-line path {
+  pointer-events: stroke;
+  cursor: move;
 }
 .paper .tiptap .textbox-outlined .textbox-outline path {
   pointer-events: visible;
   cursor: move;
 }
 .paper .tiptap .textbox-outlined .textbox-content > *,
-.paper .tiptap .textbox-outlined :is(.image-resize-handle, .image-rotate-handle) {
+.paper .tiptap :is(.textbox-outlined, .textbox-is-line) :is(.image-resize-handle, .image-rotate-handle) {
   pointer-events: auto;
 }
 /* The outline of a shape CSS can't draw, behind the text. Such a frame carries no
