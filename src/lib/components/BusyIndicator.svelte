@@ -1,5 +1,5 @@
 <script module lang="ts">
-  export type BusyTask = 'loading' | 'pdf';
+  export type BusyTask = 'loading' | 'pdf' | 'print';
 </script>
 
 <script lang="ts">
@@ -9,7 +9,10 @@
   import { t } from '../i18n/i18n.svelte';
 
 
-  let { editor = null, task = null }: { editor?: Editor | null; task?: BusyTask | null } = $props();
+  // `progress`: the share of the task done (0…1), where the task can tell.
+  let { editor = null, task = null, progress = null }: {
+    editor?: Editor | null; task?: BusyTask | null; progress?: number | null;
+  } = $props();
 
   // A layout running this long without a break shows; a shorter one would only flicker.
   const SHOW_AFTER_MS = 300;
@@ -59,6 +62,10 @@
 <span class="busy" role="status" aria-live="polite">
   {#if label}
     <span class="spinner" aria-hidden="true"></span>{label}
+    {#if task && progress != null}
+      <span class="bar" aria-hidden="true"><span style:width="{Math.round(progress * 100)}%"></span></span>
+      {Math.round(progress * 100)} %
+    {/if}
   {/if}
 </span>
 
@@ -82,6 +89,21 @@
     border-radius: 50%;
     opacity: 0.7;
     animation: busy-spin 0.8s linear infinite;
+  }
+
+  .bar {
+    width: 60px;
+    height: 4px;
+    border-radius: 2px;
+    background: color-mix(in srgb, currentColor 20%, transparent);
+    overflow: hidden;
+  }
+
+  .bar > span {
+    display: block;
+    height: 100%;
+    background: currentColor;
+    opacity: 0.7;
   }
 
   @keyframes busy-spin {

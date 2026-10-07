@@ -1223,7 +1223,7 @@ const uk: Messages = {
     hideExtraTools: 'Сховати додаткові інструменти',
   },
   status: {
-    busy: { loading: 'Завантаження документа…', updating: 'Оновлення документа…', pdf: 'Створення PDF…' },
+    busy: { loading: 'Завантаження документа…', updating: 'Оновлення документа…', pdf: 'Створення PDF…', print: 'Підготовка до друку…' },
     pageOf: (current, total) => `Сторінка ${current} з ${total}`,
     words: (n) => `${n.toLocaleString('uk-UA')} ${plural(n, 'слово', 'слова', 'слів')}`,
     selectedOf: (sel, total) =>

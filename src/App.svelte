@@ -631,6 +631,7 @@
   let pdfBusy = $state(false);
   // What the status bar's spinner names; a layout left running after it keeps the name.
   let busyTask = $state<BusyTask | null>(null);
+  let busyProgress = $state<number | null>(null);
   // The spinner is painted before a long synchronous step starts, or not until after it.
   const painted = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
   let exportMenuOpen = $state(false);
@@ -1197,6 +1198,7 @@
         numPages,
         commentLabels: { heading: t().comments.title, onPage: t().comments.onPage },
         printMarkup: printMarkup(),
+        onProgress: (done) => { busyProgress = done; },
       });
     } catch (err) {
       console.error('[pdf] Export failed:', err);
@@ -1204,6 +1206,7 @@
     } finally {
       pdfBusy = false;
       busyTask = null;
+      busyProgress = null;
     }
   }
 
@@ -1214,6 +1217,8 @@
     if (!editor || pdfBusy) return;
     exportMenuOpen = false;
     pdfBusy = true;
+    busyTask = 'print';
+    await painted();
     try {
       const json = editor.getJSON() as TiptapNode;
       await printRaster({
@@ -1225,12 +1230,15 @@
         numPages,
         commentLabels: { heading: t().comments.title, onPage: t().comments.onPage },
         printMarkup: printMarkup(),
+        onProgress: (done) => { busyProgress = done; },
       });
     } catch (err) {
       console.error('[pdf] Print failed:', err);
       reportLoadFailure(t().dialogs.couldNotPrint, err);
     } finally {
       pdfBusy = false;
+      busyTask = null;
+      busyProgress = null;
     }
   }
 
@@ -1845,7 +1853,7 @@
       <GrammarToggle value={documentLanguage} other={documentLanguageOther} {editor} {tick} />
     </div>
     <div class="sb-right">
-    <BusyIndicator {editor} task={busyTask} />
+    <BusyIndicator {editor} task={busyTask} progress={busyProgress} />
     <div class="zoom-controls">
       <button class="zoom-btn" onclick={() => setZoom(zoom - 10)} disabled={zoom <= MIN_ZOOM} title={t().status.zoomOut}>−</button>
       <input

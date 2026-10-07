@@ -1210,7 +1210,7 @@ const ja: Messages = {
     hideExtraTools: '追加ツールを隠す',
   },
   status: {
-    busy: { loading: '文書を読み込んでいます…', updating: '文書を更新しています…', pdf: 'PDF を作成しています…' },
+    busy: { loading: '文書を読み込んでいます…', updating: '文書を更新しています…', pdf: 'PDF を作成しています…', print: '印刷を準備しています…' },
     pageOf: (current: number, total: number) => `${current}/${total} ページ`,
     words: (n: number) => `${n.toLocaleString('ja-JP')} 語`,
     selectedOf: (sel: number, total: number) =>

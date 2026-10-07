@@ -1209,7 +1209,7 @@ const zhHant: Messages = {
     hideExtraTools: '隱藏更多工具',
   },
   status: {
-    busy: { loading: '正在載入文件…', updating: '正在更新文件…', pdf: '正在建立 PDF…' },
+    busy: { loading: '正在載入文件…', updating: '正在更新文件…', pdf: '正在建立 PDF…', print: '正在準備列印…' },
     pageOf: (current: number, total: number) => `第 ${current} 頁，共 ${total} 頁`,
     words: (n: number) => `${n.toLocaleString('zh-TW')} 個字詞`,
     selectedOf: (sel: number, total: number) =>

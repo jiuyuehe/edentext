@@ -1208,7 +1208,7 @@ const zhHans: Messages = {
     hideExtraTools: '隐藏更多工具',
   },
   status: {
-    busy: { loading: '正在加载文档…', updating: '正在更新文档…', pdf: '正在创建 PDF…' },
+    busy: { loading: '正在加载文档…', updating: '正在更新文档…', pdf: '正在创建 PDF…', print: '正在准备打印…' },
     pageOf: (current: number, total: number) => `第 ${current} 页，共 ${total} 页`,
     words: (n: number) => `${n.toLocaleString('zh-CN')} 个字词`,
     selectedOf: (sel: number, total: number) =>

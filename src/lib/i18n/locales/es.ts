@@ -1209,7 +1209,7 @@ const es: Messages = {
     hideExtraTools: 'Ocultar las herramientas adicionales',
   },
   status: {
-    busy: { loading: 'Cargando documento…', updating: 'Actualizando documento…', pdf: 'Creando PDF…' },
+    busy: { loading: 'Cargando documento…', updating: 'Actualizando documento…', pdf: 'Creando PDF…', print: 'Preparando la impresión…' },
     pageOf: (current, total) => `Página ${current} de ${total}`,
     words: (n) => `${n.toLocaleString('es-ES')} ${n === 1 ? 'palabra' : 'palabras'}`,
     selectedOf: (sel, total) =>
