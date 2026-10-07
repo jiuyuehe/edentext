@@ -13,16 +13,25 @@ function headingEditor(): Editor {
   return editor;
 }
 
-// A list item opens with a paragraph; the wrap must not reach a heading through a text box.
+// A bullet keeps the heading in the item, as in LibreOffice; the wrap must not reach it
+// through a text box.
 describe('list toggle on a heading', () => {
   it('toggleBulletList', () => {
     const editor = headingEditor();
     editor.commands.toggleBulletList();
     const list = editor.state.doc.firstChild!;
     expect(list.type.name).toBe('bulletList');
-    expect(list.firstChild!.firstChild!.type.name).toBe('paragraph');
+    expect(list.firstChild!.firstChild!.type.name).toBe('heading');
     expect(JSON.stringify(editor.getJSON())).not.toContain('textBox');
     expect(editor.state.doc.textContent).toBe('Title');
+    // Enter at its end opens a bulleted paragraph; the bullet again lifts the heading out.
+    editor.commands.setTextSelection(8);
+    editor.commands.splitListItem('listItem');
+    expect(editor.state.doc.firstChild!.childCount).toBe(2);
+    expect(editor.state.doc.firstChild!.lastChild!.firstChild!.type.name).toBe('paragraph');
+    editor.commands.setTextSelection(4);
+    editor.commands.toggleBulletList();
+    expect(editor.state.doc.firstChild!.type.name).toBe('heading');
     editor.destroy();
   });
 

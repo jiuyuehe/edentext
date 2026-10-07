@@ -87,7 +87,7 @@ function outlineFor(key: OrderedListType): OutlineNumbering {
 // per-depth default cycle 1. → a. → i.), rendered as `data-list-style` on the <ol>:
 // editor.css maps it to the on-screen marker, export/odt.ts to style:num-format.
 // On a heading both commands set the document's chapter numbering instead, as a word
-// processor's numbering bound to the heading styles: a list item cannot hold a heading.
+// processor's numbering bound to the heading styles; a numbered DOCX heading reads back so.
 export const OrderedList = OrderedListBase.extend<{ headingNumbering: HeadingNumbering | null } & typeof OrderedListBase.options>({
   addOptions() {
     return { ...this.parent!(), headingNumbering: null };

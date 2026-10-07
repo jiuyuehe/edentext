@@ -159,6 +159,8 @@ function entryFromStyleElement(el: Element): StyleEntry {
   // the parent chain like one — a cell's number format is a reference to a data style.
   const dataStyle = el.getAttributeNS(NS.style, 'data-style-name');
   if (dataStyle) entry.misc['style:data-style-name'] = dataStyle;
+  const listStyle = el.getAttributeNS(NS.style, 'list-style-name');
+  if (listStyle) entry.misc['style:list-style-name'] = listStyle;
   return entry;
 }
 
@@ -243,6 +245,20 @@ export class StyleResolver {
       seen.add(cur);
       if (named.has(cur)) return cur;
       cur = this.styles.get(`${family}\0${cur}`)?.parent ?? null;
+    }
+    return null;
+  }
+
+  // The list style a paragraph style's named chain carries — numbering the style itself
+  // brings, as a heading style does for chapter numbering.
+  paraListStyle(styleName: string | null): string | null {
+    let cur = this.namedAncestor(styleName);
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const entry = this.styles.get(`paragraph\0${cur}`);
+      if (entry?.misc['style:list-style-name']) return entry.misc['style:list-style-name'];
+      cur = entry?.parent ?? null;
     }
     return null;
   }

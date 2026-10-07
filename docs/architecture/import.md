@@ -77,10 +77,15 @@ kept against the text column, which is how both exporters write it back.
 
 Use the default paragraph style and named style chain as the DOCX yardstick. Word's `Normal`
 maps to the registry default even if its display name differs. A heading can be identified by
-outline level as well as style name, and must never become a list item. WPS repeats the chapter
-numbering's `w:numPr` on every heading paragraph; that stays chapter numbering, and where the
-heading style carries none, the first heading of a level supplies it. Chapter numbering takes
-every list format, the CJK ones included.
+outline level as well as style name. WPS repeats the chapter numbering's `w:numPr` on every
+heading paragraph; that stays chapter numbering, and where the heading style carries none, the
+first heading of a level supplies it. Chapter numbering takes every list format, the CJK ones
+included. A heading becomes a list item only when the list is its own: a `w:numPr` naming
+another numbering than its style's, or a bullet where the style has none. In ODF, a `text:list`
+around headings is chapter numbering when it is the outline style, the list the heading's named
+style carries, or unnamed (`isChapterList`). LibreOffice's bullet on a heading puts the list on
+the automatic style alone, and that heading stays a heading in the item. A *numbered* list on a
+DOCX heading whose style has no numbering still reads as chapter numbering.
 
 A nonzero `w:beforeLines`/`w:afterLines` wins over `w:before`/`w:after`, as in Word, at 12pt a
 line. LibreOffice keeps the twips when both are written, which WPS does (`w:after="0"

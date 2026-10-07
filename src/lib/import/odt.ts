@@ -1370,13 +1370,13 @@ function convertBlocks(elements: Element[], ctx: Ctx, kind: BlockKind, boldByDef
         const block = hoistPageFrames(convertParaLike(el, ctx, kind, boldByDefault));
         if (block) out.push(block);
       } else if (el.localName === 'list') {
-        // A list wrapping only headings is ODF outline (chapter) numbering, not a real
-        // list — unwrap it to plain headings instead of empty nested list levels.
-        const headingEls = kind === 'body' ? outlineHeadingEls(el) : null;
+        // Chapter numbering wrapping only headings is no real list — unwrap it to plain
+        // headings instead of empty nested list levels.
+        const headingEls = kind === 'body' ? outlineHeadingEls(el, ctx.resolver) : null;
         if (headingEls) {
           for (const h of headingEls) out.push(convertParaLike(h, ctx, 'body'));
         } else {
-          const list = convertList(el, ctx, null, 1);
+          const list = convertList(el, ctx, null, 1, false, ROOT_ORDERED_CYCLE, !isChapterList(el, ctx.resolver));
           if (list) out.push(list);
         }
       } else if (el.localName === 'section') {
@@ -2009,9 +2009,9 @@ function convertParaLike(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault =
   const paraProps = resolver.paraProps(styleName);
   const baseTextProps = resolver.paraTextProps(styleName);
 
-  // A <text:h> that *is* the list item is chapter numbering — the numbered heading both
-  // word processors write — and stays a paragraph here; the editor numbers a chapter from
-  // its outline. One after the item's own paragraph is a heading nested in the item.
+  // A <text:h> that *is* an item of chapter numbering — the numbered heading both word
+  // processors write — stays a paragraph here; the editor numbers a chapter from its
+  // outline. `listHeading`: a heading after the item's paragraph, or in a real list.
   const isHeading = el.localName === 'h' && (kind !== 'list' || listHeading);
   let level = 1;
   if (isHeading) {
@@ -3006,9 +3006,6 @@ function formatPt(v: number): string {
 
 // ---- lists -----------------------------------------------------------------------
 
-// The heading elements of a <text:list> whose leaves are all headings (each list-item
-// holds only a text:h and/or nested such lists) — ODF outline/chapter numbering, not a
-// real list, so they import as plain headings. null when it's a genuine list.
 // The master governing the most body blocks, and the one the first paragraph starts on.
 // Mirrors convertBlocks' body-level dispatch: only a paragraph or heading can name one,
 // and '' is the file's own default.
@@ -3026,7 +3023,7 @@ function masterPagesOf(elements: Element[], resolver: StyleResolver): { dominant
         current = own ?? current;
         counts.set(current, (counts.get(current) ?? 0) + 1);
       } else if (el.namespaceURI === NS.text && el.localName === 'list') {
-        const headings = outlineHeadingEls(el);
+        const headings = outlineHeadingEls(el, resolver);
         if (headings) walk(headings);
       } else if (el.namespaceURI === NS.text && el.localName === 'section') {
         walk(Array.from(el.children));
@@ -3046,7 +3043,27 @@ function masterPagesOf(elements: Element[], resolver: StyleResolver): { dominant
   return { dominant: dominant || null, leading };
 }
 
-function outlineHeadingEls(listEl: Element): Element[] | null {
+// Whether a <text:list> around headings is chapter numbering rather than a list: it is
+// the outline style, the list a heading's named style carries, or no style at all. A list
+// on the heading alone is a real one — LibreOffice's bullet on a heading (probed).
+function isChapterList(listEl: Element, resolver: StyleResolver): boolean {
+  const name = listEl.getAttributeNS(NS.text, 'style-name');
+  if (!name || name === resolver.outlineStyle()?.getAttributeNS(NS.style, 'name')) return true;
+  for (const h of Array.from(listEl.getElementsByTagNameNS(NS.text, 'h'))) {
+    if (resolver.paraListStyle(h.getAttributeNS(NS.text, 'style-name')) === name) return true;
+  }
+  return false;
+}
+
+// The heading elements of a chapter-numbering <text:list> whose leaves are all headings
+// (each list-item holds only a text:h and/or nested such lists), so they import as plain
+// headings. null when it's a genuine list.
+function outlineHeadingEls(listEl: Element, resolver: StyleResolver): Element[] | null {
+  if (!isChapterList(listEl, resolver)) return null;
+  return headingLeaves(listEl);
+}
+
+function headingLeaves(listEl: Element): Element[] | null {
   const out: Element[] = [];
   for (const item of Array.from(listEl.children)) {
     if (item.namespaceURI !== NS.text || (item.localName !== 'list-item' && item.localName !== 'list-header')) continue;
@@ -3055,7 +3072,7 @@ function outlineHeadingEls(listEl: Element): Element[] | null {
       if (child.localName === 'h') {
         out.push(child);
       } else if (child.localName === 'list') {
-        const nested = outlineHeadingEls(child);
+        const nested = headingLeaves(child);
         if (!nested) return null;
         out.push(...nested);
       } else {
@@ -3069,7 +3086,8 @@ function outlineHeadingEls(listEl: Element): Element[] | null {
 // `inheritedStyleName`: a nested text:list usually carries no style-name of its own — the
 // outermost list's style governs, one level def per depth. `govMultilevel`: inside a
 // display-levels chain, so an explicit numbering here is never suppressed (null = rejoin).
-function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, depth: number, govMultilevel = false, baseCycle: OrderedCycle = ROOT_ORDERED_CYCLE): Node | null {
+// `keepHeadings`: the list is no chapter numbering, so a heading opening an item stays one.
+function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, depth: number, govMultilevel = false, baseCycle: OrderedCycle = ROOT_ORDERED_CYCLE, keepHeadings = false): Node | null {
   const styleName = el.getAttributeNS(NS.text, 'style-name') ?? inheritedStyleName;
   // A named list style travels as `listStyleName` on the outermost list; everything the
   // style's levels say stays in the registry, so no per-level attrs are derived.
@@ -3101,17 +3119,17 @@ function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, d
     const blocks: Node[] = [];
     for (const child of Array.from(item.children)) {
       if (child.namespaceURI === NS.text && (child.localName === 'p' || child.localName === 'h')) {
-        blocks.push(convertParaLike(child, ctx, 'list', false, blocks.length > 0));
+        blocks.push(convertParaLike(child, ctx, 'list', false, keepHeadings || blocks.length > 0));
       } else if (child.namespaceURI === NS.text && child.localName === 'list') {
-        const nested = convertList(child, ctx, styleName, depth + 1, inChain, childBaseCycle);
+        const nested = convertList(child, ctx, styleName, depth + 1, inChain, childBaseCycle, keepHeadings);
         if (nested) blocks.push(nested);
       } else if (child.namespaceURI === NS.table && child.localName === 'table') {
         ctx.warnings.add(WARN.nestedTables);
         blocks.push(...flattenTable(child, ctx));
       }
     }
-    // listItem requires a leading paragraph (e.g. an item holding only a sub-list).
-    if (blocks[0]?.type !== 'paragraph') blocks.unshift({ type: 'paragraph' });
+    // listItem opens with a paragraph or a heading (not e.g. only a sub-list).
+    if (blocks[0]?.type !== 'paragraph' && blocks[0]?.type !== 'heading') blocks.unshift({ type: 'paragraph' });
     items.push({ type: 'listItem', content: blocks });
   }
   if (items.length === 0) return null;

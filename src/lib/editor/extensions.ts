@@ -86,7 +86,7 @@ import { loadDocProperties } from '../storage/docProperties';
 import { Insertion, Deletion, TrackChanges } from './extensions/trackChanges';
 
 const CELL_CONTENT = '(paragraph | heading | bulletList | orderedList)+';
-const LIST_ITEM_CONTENT = 'paragraph (paragraph | heading | bulletList | orderedList)*';
+const LIST_ITEM_CONTENT = '(paragraph | heading) (paragraph | heading | bulletList | orderedList)*';
 
 export const extensions = [
   // columns has its own group so only the document (not cells/lists) admits it; the

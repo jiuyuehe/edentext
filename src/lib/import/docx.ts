@@ -885,17 +885,20 @@ function paragraphNum(el: Element, ctx: Ctx): { numId: number; ilvl: number } | 
   const ppr = fc(el, 'pPr');
   const numPr = fc(ppr, 'numPr');
   let np = numPr ? readNumPr(numPr) : null;
-  // A numbered heading is chapter numbering, never a list item — whether the numbering
-  // rides its style, the paragraph (WPS repeats it there) or both.
+  const ps = fc(ppr, 'pStyle');
+  const styleNp = ctx.styles.styleNumPr(ps ? wVal(ps) : null);
+  // A numbered heading is chapter numbering — whether the numbering rides its style, the
+  // paragraph (WPS repeats it there) or both — unless the paragraph names another list
+  // than its style, or a bullet where the style has none: a list on the heading itself.
   const level = headingLevelOf(ppr, ctx);
   if (level != null) {
-    if (np && np.numId !== 0 && !ctx.headingNumPr.has(level)) ctx.headingNumPr.set(level, np);
+    if (!np || np.numId === 0) return null;
+    const bullet = ctx.styles.level(np.numId, np.ilvl).numFmt === 'bullet';
+    if (styleNp && styleNp.numId !== 0 ? styleNp.numId !== np.numId : bullet) return np;
+    if (!ctx.headingNumPr.has(level)) ctx.headingNumPr.set(level, np);
     return null;
   }
-  if (!np) {
-    const ps = fc(ppr, 'pStyle');
-    np = ctx.styles.styleNumPr(ps ? wVal(ps) : null);
-  }
+  np ??= styleNp;
   return np && np.numId !== 0 ? np : null; // numId 0 = "no list"
 }
 

@@ -429,14 +429,15 @@ function replacePageBreaks(doc: TiptapNode): TiptapNode {
 }
 
 // odf-kit writes a list item's first paragraph and nothing else, so the item's further
-// blocks ride it SEG-separated; applyListItemBlocks re-emits them as their own.
+// blocks ride it SEG-separated, and an opening heading rides as that paragraph;
+// applyListItemBlocks re-emits them as their own.
 function mergeListItemBlocks(node: TiptapNode): TiptapNode {
   if (!node.content?.length) return node;
   const kids = node.content;
-  if (node.type === 'listItem' && kids[0]?.type === 'paragraph') {
+  if (node.type === 'listItem' && (kids[0]?.type === 'paragraph' || kids[0]?.type === 'heading')) {
     const extras = kids.slice(1).filter(b => b.type === 'paragraph' || b.type === 'heading');
-    if (extras.length) {
-      const first = { ...kids[0], content: [...(kids[0].content ?? []),
+    if (extras.length || kids[0].type === 'heading') {
+      const first = { ...kids[0], type: 'paragraph', content: [...(kids[0].content ?? []),
         ...extras.flatMap(e => [{ type: 'text', text: SEG }, ...(e.content ?? [])])] };
       const rest = kids.slice(1).filter(b => b.type !== 'paragraph' && b.type !== 'heading');
       return { ...node, content: [first, ...rest.map(mergeListItemBlocks)] };
@@ -1370,8 +1371,9 @@ type ParaStyle = {
   noSnap: boolean;
 };
 
-// A list item's blocks past its first: each one's own style, and its heading level.
-type ListItemExtra = { style: ParaStyle; level: number | null };
+// A list item's blocks, its first included: each one's own style, its heading level, and
+// whether a nested list comes before it.
+type ListItemExtra = { style: ParaStyle; level: number | null; afterList?: boolean };
 
 function paraStyleIsEmpty(s: ParaStyle): boolean {
   return s.align === null && s.spaceBefore === null && s.spaceAfter === null && s.lineHeight === null
@@ -1507,8 +1509,18 @@ function collectListItemStyles(node: TiptapNode, result: ParaStyle[], extras: Li
     // paragraph's does (pairMargins), not 0.
     const paired = (b: TiptapNode | undefined) => pairMargins(paraStyleFromAttrs(b?.attrs, false),
       b?.type === 'heading' ? `Heading ${(b.attrs?.level as number) ?? 1}` : (b?.attrs?.styleName as string | undefined) ?? DEFAULT_STYLE);
-    extras.push(blocks.slice(1).map(b => ({ style: paired(b),
-      level: b.type === 'heading' ? (b.attrs?.level as number) ?? 1 : null })));
+    const firstList = (node.content ?? []).findIndex(c => c.type === 'bulletList' || c.type === 'orderedList');
+    extras.push(blocks.map(b => ({ style: paired(b),
+      level: b.type === 'heading' ? (b.attrs?.level as number) ?? 1 : null,
+      afterList: firstList >= 0 && node.content!.indexOf(b) > firstList })));
+    // An opening heading is styled by applyListItemBlocks, which takes it out of the
+    // List_20_* paragraphs this list is matched against.
+    if (blocks[0]?.type === 'heading') {
+      for (const child of node.content ?? []) {
+        if (child.type === 'bulletList' || child.type === 'orderedList') collectListItemStyles(child, result, extras);
+      }
+      return;
+    }
     const firstPara = node.content?.find(c => c.type === 'paragraph');
     // replacePageBreaks skips list paragraphs (its sentinel would corrupt the SEG
     // rebuild), so the item's own break rides its style instead — as LibreOffice
@@ -1725,17 +1737,17 @@ function odfLookAttrs(look: TableLook): string {
 // emit as List_20_Bullet/Number. Rewrite content.xml to point those at automatic styles
 // that inherit the list style and add fo:text-align / fo:margin-top / fo:margin-bottom.
 // Split a list item's paragraph back into the blocks mergeListItemBlocks merged into it,
-// each with its own paragraph style. ponytail: they are re-emitted at the item's end, so
-// a block before a nested list lands after it.
+// each with its own paragraph style, in place: ahead of a nested list or at the item's end.
+// The walk still enters the nested items, in the order their extras were collected.
 function applyListItemBlocks(odtBytes: Uint8Array, extras: ListItemExtra[][] = []): Uint8Array {
   const files = unzipSync(odtBytes);
   const contentBytes = files['content.xml'];
   if (!contentBytes) return odtBytes;
   const content = strFromU8(contentBytes);
-  let out = '';
   let i = 0;
   let item = 0;
-  let touched = false;
+  // Replaced ranges [from, to) of content.xml, applied in order at the end.
+  const edits: { from: number; to: number; text: string }[] = [];
   // An extra block keeps its own alignment/spacing/line-height/box: a minted style
   // under the item's own, which is where the item's list formatting stays.
   const minted: string[] = [];
@@ -1752,25 +1764,19 @@ function applyListItemBlocks(odtBytes: Uint8Array, extras: ListItemExtra[][] = [
   };
   for (;;) {
     const at = content.indexOf('<text:list-item', i);
-    if (at < 0) { out += content.slice(i); break; }
+    if (at < 0) break;
     const own = extras[item++] ?? [];
     const pStart = content.indexOf('<text:p', at);
     const gt = pStart < 0 ? -1 : content.indexOf('>', pStart);
-    const pEnd = gt < 0 ? -1 : content.indexOf('</text:p>', gt);
-    if (pEnd < 0) { out += content.slice(i); break; }
-    const inner = content.slice(gt + 1, pEnd);
-    if (!inner.includes(SEG)) { out += content.slice(i, pEnd); i = pEnd; continue; }
-    // The item's own end, past every nested item.
-    let depth = 1;
-    let scan = pEnd;
-    while (depth > 0) {
-      const open = content.indexOf('<text:list-item', scan + 1);
-      const close = content.indexOf('</text:list-item>', scan + 1);
-      if (close < 0) break;
-      if (open >= 0 && open < close) { depth++; scan = open; } else { depth--; scan = close; }
-    }
+    // An empty item's paragraph may close itself.
+    const empty = gt > 0 && content[gt - 1] === '/';
+    const pEnd = gt < 0 ? -1 : empty ? gt + 1 : content.indexOf('</text:p>', gt);
+    if (pEnd < 0) break;
+    const inner = empty ? '' : content.slice(gt + 1, pEnd);
+    i = empty ? pEnd : pEnd + 9;
+    if (!inner.includes(SEG) && !own[0]?.level) continue;
     const [first, ...rest] = inner.split(SEG);
-    const attrs = content.slice(pStart + 7, gt);
+    const attrs = content.slice(pStart + 7, empty ? gt - 1 : gt);
     const itemStyle = /text:style-name="([^"]*)"/.exec(attrs)?.[1] ?? 'Standard';
     // A heading stays one: ODF holds <text:h> in a list item, and it is where a numbered
     // heading lives. Its own style is the level's, not the item's list paragraph style.
@@ -1782,13 +1788,30 @@ function applyListItemBlocks(odtBytes: Uint8Array, extras: ListItemExtra[][] = [
         : level ? ` text:style-name="${parent}"` : attrs;
       return `<${tag}${named}${level ? ` text:outline-level="${level}"` : ''}>${e}</${tag}>`;
     };
-    out += content.slice(i, gt + 1) + first + '</text:p>'
-      + content.slice(pEnd + 9, scan)
-      + rest.map(blockFor).join('');
-    i = scan;
-    touched = true;
+    const placed = rest.map((e, n) => ({ html: blockFor(e, n + 1), after: !!own[n + 1]?.afterList }));
+    edits.push({ from: pStart, to: i,
+      text: (own[0]?.level ? blockFor(first, 0) : `${content.slice(pStart, gt + 1)}${first}</text:p>`)
+        + placed.filter(b => !b.after).map(b => b.html).join('') });
+    const after = placed.filter(b => b.after).map(b => b.html).join('');
+    if (after) {
+      // The item's own end, past every nested item.
+      let depth = 1;
+      let scan = i;
+      while (depth > 0) {
+        const open = content.indexOf('<text:list-item', scan + 1);
+        const close = content.indexOf('</text:list-item>', scan + 1);
+        if (close < 0) break;
+        if (open >= 0 && open < close) { depth++; scan = open; } else { depth--; scan = close; }
+      }
+      edits.push({ from: scan, to: scan, text: after });
+    }
   }
-  if (!touched) return odtBytes;
+  if (!edits.length) return odtBytes;
+  edits.sort((a, b) => a.from - b.from);
+  let out = '';
+  let from = 0;
+  for (const e of edits) { out += content.slice(from, e.from) + e.text; from = e.to; }
+  out += content.slice(from);
   files['content.xml'] = strToU8(minted.length ? injectAutomaticStyles(out, minted.join('')) : out);
   return zipSync(files, { level: 6 });
 }
@@ -5581,11 +5604,11 @@ export async function buildOdt(docJson: TiptapNode, margins: PageMargins = DEFAU
   collectNestedListFixes(raw, nestedFixes, listStyleRepoints);
   numberedOdt = applyNestedListTypes(numberedOdt, nestedFixes);
 
+  // Read before the merge, which folds the extras in and turns an opening heading into
+  // the item's paragraph.
   const listStyles: ParaStyle[] = [];
-  collectListItemStyles(raw, listStyles);
-  // The extras' own styles come from before the merge, which is what folded them in.
   const listExtraStyles: ListItemExtra[][] = [];
-  collectListItemStyles(unmerged, [], listExtraStyles);
+  collectListItemStyles(unmerged, listStyles, listExtraStyles);
   // Blocks first: the extras' own styles then parent to the item's list style, not to
   // the LP# the pass below mints for the item's first paragraph.
   const styledLists = applyListItemStyles(applyListItemBlocks(numberedOdt, listExtraStyles), listStyles);
