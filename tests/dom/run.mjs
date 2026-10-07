@@ -710,11 +710,14 @@ try {
     return input?.disabled && !input.checked;
   }, null, { timeout: 5_000 }).then(() => true).catch(() => false);
   check(paragraphToggleOff, 'a non-English paragraph disables and clears the grammar toggle');
-  // Harper reads German as broken English; the block language is what keeps it out.
-  await page.waitForFunction(() => CSS.highlights.get('grammar-error')?.size > 0,
+  // Harper reads German as broken English; the block language is what keeps it out. The
+  // wait is on the outcome itself: the marks from before the language change still stand
+  // until the re-check clears them.
+  const countPerPara = () => [...document.querySelectorAll('.tiptap-host .tiptap > p')].map((p) =>
+    [...CSS.highlights.get('grammar-error') ?? []].filter((r) => p.contains(r.startContainer)).length);
+  await page.waitForFunction(`(${countPerPara})()[0] > 0 && (${countPerPara})()[1] === 0`,
     null, { timeout: 30_000 }).catch(() => {});
-  const perPara = await page.evaluate(() => [...document.querySelectorAll('.tiptap-host .tiptap > p')].map((p) =>
-    [...CSS.highlights.get('grammar-error') ?? []].filter((r) => p.contains(r.startContainer)).length));
+  const perPara = await page.evaluate(countPerPara);
   check(perPara[0] > 0 && perPara[1] === 0, `only the English paragraph is grammar-checked (${JSON.stringify(perPara)})`);
 
   // The default can be Portuguese while an English paragraph still gets grammar checks.
