@@ -1299,6 +1299,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
           },
           paste: (view, event) => {
             const e = event as ClipboardEvent;
+            // Word processors add a picture of copied text; the text itself wins.
+            if (e.clipboardData?.getData('text/plain').trim()) return false;
             const files = imageFilesFrom(e.clipboardData);
             if (!files.length) return false;
             e.preventDefault();
