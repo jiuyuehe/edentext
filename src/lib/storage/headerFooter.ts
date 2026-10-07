@@ -8,6 +8,7 @@ import type { Orientation } from './pageOrientation';
 import type { NoteNumFormat } from './noteSettings';
 import { docKey, docStore, volatile } from './docScope';
 import { stashImages, putImages, restoreImages, isStored, IDB_SRC } from './imageStore';
+import { warnStorageFull } from './autosave';
 
 export type HfZone = 'header' | 'footer';
 export type HfVariant = 'default' | 'first' | 'even';
@@ -93,14 +94,14 @@ const latest = new Map<string, object>();
 
 // Pictures go to the image store as the body's do (imageStore.ts). The write is at once,
 // naming the pictures the store has confirmed and keeping the others inline until it has.
-// A full storage loses the zones as autosave loses the body, which warns about it; a
-// throw here would abort the rest of the effects that adopt an opened document.
+// A full storage loses the zones as it loses the body, under the same warning; a throw
+// here would abort the rest of the effects that adopt an opened document.
 function store(key: string, each: EachDoc): void {
   const token = {};
   latest.set(key, token);
   const write = () => {
     const json = volatile ? each((d) => d) : each((d) => d && (stashImages(d, isStored).json as HfDoc));
-    try { docStore.setItem(key, JSON.stringify(json)); } catch (err) { console.error('[autosave] Could not save', key, err); }
+    try { docStore.setItem(key, JSON.stringify(json)); } catch (err) { warnStorageFull(key, err); }
   };
   write();
   if (volatile) return;

@@ -1255,6 +1255,8 @@ const de: Messages = {
     couldNotPrintPdf: 'Druck als PDF nicht möglich.',
     autosaveQuota:
       'Das Dokument ist zu groß, um automatisch gespeichert zu werden (Speicherlimit des Browsers erreicht). Das passiert meist bei großen eingebetteten Bildern. Speichere es lokal, um deine Arbeit zu sichern.',
+    autosaveQuotaOthers:
+      'Der Speicher des Browsers ist voll, das Dokument wird nicht mehr automatisch gespeichert. Lösche ältere Dokumente unter Datei ▸ Zuletzt benutzte Dokumente, oder speichere es lokal, um deine Arbeit zu sichern.',
     openSnapshot: (when: string) =>
       `Das Dokument konnte nicht geladen werden. Stattdessen die vom Editor gesicherte Fassung von ${when} öffnen?`,
     documentNotLoaded:

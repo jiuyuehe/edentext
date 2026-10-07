@@ -1254,6 +1254,8 @@ const fr: Messages = {
     couldNotPrintPdf: 'Impossible d’imprimer au format PDF.',
     autosaveQuota:
       'Le document est trop volumineux pour être enregistré automatiquement (limite de stockage du navigateur atteinte). Cela se produit généralement avec de grandes images incorporées. Enregistrez-le localement pour conserver votre travail.',
+    autosaveQuotaOthers:
+      'Le stockage du navigateur est plein : le document n\'est plus enregistré automatiquement. Supprimez d\'anciens documents dans Fichier ▸ Documents récents, ou enregistrez-le localement pour conserver votre travail.',
     openSnapshot: (when) =>
       `Le document n’a pas pu être chargé. Ouvrir plutôt la version conservée par l’éditeur à ${when} ?`,
     documentNotLoaded:

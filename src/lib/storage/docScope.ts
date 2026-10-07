@@ -225,6 +225,11 @@ function labelOf(id: string): string {
   return name || firstText(storedDoc(id) ?? {}).slice(0, 80);
 }
 
+/** Whether this browser keeps a document besides this tab's. */
+export function otherDocumentsStored(): boolean {
+  return Object.keys(markers()).some((id) => id !== docId && storedDoc(id) !== null);
+}
+
 /** Every document this browser keeps, most recently used first; an empty one only while open. */
 export async function listDocuments(): Promise<BrowserDocument[]> {
   await pruning;

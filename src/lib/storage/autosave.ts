@@ -1,7 +1,7 @@
 import { t, locale } from '../i18n/i18n.svelte';
 import { stashImages, putImages, restoreImages, isStored } from './imageStore';
 import { keepSnapshot, listSnapshots, readSnapshot } from './snapshots';
-import { docKey, docStore, volatile } from './docScope';
+import { docKey, docStore, volatile, otherDocumentsStored } from './docScope';
 import type { Schema } from '@tiptap/pm/model';
 
 const STORAGE_KEY = docKey('edentext-doc');
@@ -91,13 +91,20 @@ function store(json: object, warn = true): boolean {
     return true;
   } catch (err) {
     if (!warn) return false;
-    console.error('[autosave] Could not save the document:', err);
-    if (!quotaWarned) {
-      quotaWarned = true;
-      alert(t().dialogs.autosaveQuota);
-    }
+    warnStorageFull(STORAGE_KEY, err);
     return false;
   }
+}
+
+/**
+ * One warning for every part of the document that did not fit. Where other documents
+ * share the storage, deleting them is the way out, so the warning says where they are.
+ */
+export function warnStorageFull(key: string, err: unknown): void {
+  console.error('[autosave] Could not save', key, err);
+  if (quotaWarned) return;
+  quotaWarned = true;
+  alert(otherDocumentsStored() ? t().dialogs.autosaveQuotaOthers : t().dialogs.autosaveQuota);
 }
 
 if (typeof document !== 'undefined') {
