@@ -64,9 +64,10 @@ wrap one in a text box to fit a note's inline content) — and a **cell's conten
 says the same (`CELL_CONTENT`, `extensions.ts`), since a command's refusal is not the only
 way one gets in; a selection stops at the notes' boundary (`clampToSide`); the notes
 plugin's repairs ride the history event they follow. An anchor that lands where a note
-cannot live — inside a note, or inside a text box, which a list toggle can pull one into —
-is dropped by `strayRefs`, and its note goes with it: Word writes no note in a shape's
-text, so the `.docx` lost both silently.
+cannot live — inside a note, or inside a text box — is dropped by `strayRefs`, and its note
+goes with it: Word writes no note in a shape's text, so the `.docx` lost both silently.
+ProseMirror never **invents** a text box: `textBox.ts` reports required attributes, which its
+wrap and fit search skips — else a list toggle on a heading wrapped it as list › paragraph › box.
 Blocks wrapped into a columns section lose a manual page break: pagination breaks a
 fragment as a whole, so nothing there honours one — and only DOCX could write it.
 

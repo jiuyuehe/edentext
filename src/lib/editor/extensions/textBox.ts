@@ -180,6 +180,12 @@ export const TextBox = Node.create({
   draggable: true,
   selectable: true,
 
+  // A box is only placed on purpose. ProseMirror's wrap and fit search skips a type with
+  // required attributes; without this it reached a heading through a box (heading → list).
+  onBeforeCreate() {
+    this.editor.schema.nodes.textBox.hasRequiredAttrs = () => true;
+  },
+
   addAttributes() {
     return {
       // px @96dpi like the image; height is a min-height (content grows the box) unless
