@@ -106,10 +106,10 @@
   let numPages: number = $state(1);
   let aboutOpen = $state(false);
   let styleManagerOpen = $state(false);
-  let styleManagerFamily = $state<StyleFamily>('paragraph');
+  let styleManagerFamily = $state<StyleFamily | 'outline'>('paragraph');
   let noteOptionsOpen = $state(false);
 
-  function openStyleManager(family: StyleFamily) {
+  function openStyleManager(family: StyleFamily | 'outline') {
     styleManagerFamily = family;
     styleManagerOpen = true;
   }
@@ -1451,6 +1451,7 @@
       onManageStyles={openStyleManager}
       onManageTableStyles={() => openStyleManager('table')}
       onNoteOptions={() => (noteOptionsOpen = true)}
+      onHeadingNumbering={() => openStyleManager('outline')}
       onEditZone={(zone) => (hfActive = zone)}
       onFind={openFind}
       {namePlaceholder}

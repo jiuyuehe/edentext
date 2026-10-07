@@ -80,6 +80,7 @@
     onManageStyles,
     onManageTableStyles,
     onNoteOptions,
+    onHeadingNumbering,
     onEditZone,
     onFind,
     namePlaceholder = '',
@@ -124,6 +125,7 @@
     onManageStyles?: (family: StyleFamily) => void;
     onManageTableStyles?: (family: StyleFamily) => void;
     onNoteOptions?: () => void;
+    onHeadingNumbering?: () => void;
     onEditZone?: (zone: HfZone | null) => void;
     onFind?: (mode: 'find' | 'replace') => void;
     namePlaceholder?: string;
@@ -517,7 +519,7 @@
     {:else if tab === 'layout'}
       <LayoutTab {editor} {tick} {hfActive} bind:pageMargins bind:pageOrientation bind:pageFormat bind:extraHfSections bind:hyphenate bind:pageNumbering bind:pageDecor bind:lineNumbering bind:foldMarks onParagraphDialog={() => (paragraphDialogOpen = true)} />
     {:else if tab === 'references'}
-      <ReferencesTab {editor} {tick} {hfActive} {onNoteOptions} />
+      <ReferencesTab {editor} {tick} {hfActive} {onNoteOptions} {onHeadingNumbering} />
     {:else if tab === 'review'}
       <ReviewTab {editor} {tick} {documentLanguage} {documentLanguageOther} {onLanguage} {onAutoCorrect} {onNewComment} />
     {:else if tab === 'view'}

@@ -5,6 +5,7 @@
 import { builtinStyleSheet, DEFAULT_STYLE, mergeStoredSheet, STYLE_SHEET_VERSION, type Style, type StyleFamily, type StyleSheet } from './styleSheet';
 import type { TableStyle } from './tableStyles';
 import type { ListStyle } from './listStyles';
+import type { OutlineNumbering } from './outlineNumbering';
 import { docKey, docStore } from '../storage/docScope';
 
 const STORAGE_KEY = docKey('edentext-styles');
@@ -87,6 +88,11 @@ export function renameListStyle(from: string, to: string): void {
   delete list[from];
   list[to] = { ...style, name: to, builtin: undefined };
   setStyleSheet({ ...current, list });
+}
+
+// The chapter numbering; null switches it off.
+export function setOutline(outline: OutlineNumbering | null): void {
+  setStyleSheet({ ...current, outline });
 }
 
 // Rename a style and re-point everything that referenced it (children, next-styles).

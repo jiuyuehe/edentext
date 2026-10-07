@@ -94,6 +94,9 @@ at every height. A flex row cannot reserve width in part of its height, so it mo
   picture/shape and Table Layout contextual tabs, which are open anyway when you caption
   something. Each mounts its own `CaptionDialog`; it reads the caret for its category, so the
   copies need no props of their own.
+- **Heading Numbering sits in the table-of-contents group** (LibreOffice keeps it under
+  Tools): it opens the style manager on its Chapters tab, since the numbering is part of
+  the document's style sheet.
 - **Each wrapper names the menu it owns.** One shared open-menu id means every `clickOutside`
   sees every mousedown; without the id each wrapper would close a sibling's open menu, and the
   click on one of its rows would never land.

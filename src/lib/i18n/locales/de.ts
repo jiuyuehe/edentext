@@ -209,7 +209,11 @@ const de: Messages = {
     newName: 'Vorlage',
     // Short forms for the manager's tab strip; the long names above still label
     // the gallery sections.
-    tabs: { paragraph: 'Absatz', character: 'Zeichen', table: 'Tabelle', list: 'Liste' },
+    tabs: { paragraph: 'Absatz', character: 'Zeichen', table: 'Tabelle', list: 'Liste', outline: 'Kapitel' },
+    outline: {
+      number: 'Nummer', none: 'Keine', before: 'Davor', after: 'Dahinter',
+      sublevels: 'Ebenen anzeigen', indent: 'Texteinzug (cm)', decimal: '1, 1.1, 1.1.1', off: 'Nummerierung entfernen',
+    },
     tableStyles: 'Tabellenvorlagen',
     listStyles: 'Listenformatvorlagen',
     manageListStyles: 'Listenformatvorlagen verwalten…',
@@ -1149,6 +1153,7 @@ const de: Messages = {
     toc: 'Inhaltsverzeichnis',
     tocOptions: 'Optionen',
     tocUpdate: 'Aktualisieren',
+    headingNumbering: 'Kapitelnummerierung',
     tocUpdateTitle: 'Alle Verzeichnisse aktualisieren',
     tocUpdateChoose: 'Wählen Sie eine der folgenden Optionen aus:',
     tocUpdatePages: 'Nur Seitenzahlen aktualisieren',

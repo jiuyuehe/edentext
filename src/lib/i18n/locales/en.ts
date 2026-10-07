@@ -217,7 +217,11 @@ const en = {
     newName: 'Style',
     // Short forms for the manager's tab strip; the long names above still label
     // the gallery sections.
-    tabs: { paragraph: 'Paragraph', character: 'Character', table: 'Table', list: 'List' },
+    tabs: { paragraph: 'Paragraph', character: 'Character', table: 'Table', list: 'List', outline: 'Chapters' },
+    outline: {
+      number: 'Number', none: 'None', before: 'Before', after: 'After',
+      sublevels: 'Show sublevels', indent: 'Text indent (cm)', decimal: '1, 1.1, 1.1.1', off: 'Remove numbering',
+    },
     tableStyles: 'Table styles',
     listStyles: 'List styles',
     manageListStyles: 'Manage list styles…',
@@ -1166,6 +1170,7 @@ const en = {
     citation: 'Citation',
     tocOptions: 'Options',
     tocUpdate: 'Update',
+    headingNumbering: 'Heading Numbering',
     tocUpdateTitle: 'Update all indexes',
     tocUpdateChoose: 'Choose one of the following options:',
     tocUpdatePages: 'Update page numbers only',

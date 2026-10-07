@@ -4,7 +4,8 @@
   import AlignButton from './AlignButton.svelte';
   import { orderedTypesFor, type OrderedListType } from '../utils/orderedListTypes';
   import { BULLET_TYPES } from '../utils/bulletListTypes';
-  import { effectiveOrderedTypeAt } from '../editor/extensions/orderedList';
+  import { effectiveOrderedTypeAt, inChapterHeading } from '../editor/extensions/orderedList';
+  import { outlineIsEmpty } from '../styles/outlineNumbering';
   import { listStyleNameAt } from '../editor/extensions/listStyle';
   import { formatOrdinal, orderedTypeDef } from '../utils/orderedListTypes';
   import type { ListStyle } from '../styles/listStyles';
@@ -104,7 +105,9 @@
   let isUnderline  = $derived(tick >= 0 && !!editor?.isActive('underline'));
   let isStrike     = $derived(tick >= 0 && !!editor?.isActive('strike'));
   let isBulletList = $derived(tick >= 0 && !!editor?.isActive('bulletList'));
-  let isOrderedList= $derived(tick >= 0 && !!editor?.isActive('orderedList'));
+  // On a heading the button stands for the chapter numbering it switches.
+  let isOrderedList = $derived(tick >= 0 && !!editor
+    && (editor.isActive('orderedList') || (inChapterHeading(editor.state) && !outlineIsEmpty(sheet.outline))));
 
   // Effective numbering at the cursor's list level — explicit attr, inherited
   // multilevel chain, or the depth default (null when not in an ordered list).

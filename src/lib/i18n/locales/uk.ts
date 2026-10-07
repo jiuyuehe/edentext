@@ -218,7 +218,11 @@ const uk: Messages = {
     newName: 'Стиль',
     // Short forms for the manager's tab strip; the long names above still label
     // the gallery sections.
-    tabs: { paragraph: 'Абзац', character: 'Символ', table: 'Таблиця', list: 'Список' },
+    tabs: { paragraph: 'Абзац', character: 'Символ', table: 'Таблиця', list: 'Список', outline: 'Розділи' },
+    outline: {
+      number: 'Номер', none: 'Немає', before: 'Перед', after: 'Після',
+      sublevels: 'Показати підрівні', indent: 'Відступ тексту (см)', decimal: '1, 1.1, 1.1.1', off: 'Вилучити нумерацію',
+    },
     tableStyles: 'Стилі таблиць',
     listStyles: 'Стилі списків',
     manageListStyles: 'Керування стилями списків…',
@@ -1166,6 +1170,7 @@ const uk: Messages = {
     citation: 'Посилання на джерело',
     tocOptions: 'Параметри',
     tocUpdate: 'Оновити',
+    headingNumbering: 'Нумерація заголовків',
     tocUpdateTitle: 'Оновити всі покажчики',
     tocUpdateChoose: 'Виберіть один із таких варіантів:',
     tocUpdatePages: 'Оновити лише номери сторінок',

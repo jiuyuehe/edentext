@@ -218,7 +218,11 @@ const el: Messages = {
     newName: "Στυλ",
     // Short forms for the manager's tab strip; the long names above still label
     // the gallery sections.
-    tabs: { paragraph: "Παράγραφος", character: "Χαρακτήρας", table: "Πίνακας", list: "Λίστα" },
+    tabs: { paragraph: "Παράγραφος", character: "Χαρακτήρας", table: "Πίνακας", list: "Λίστα", outline: "Κεφάλαια" },
+    outline: {
+      number: "Αριθμός", none: "Κανένα", before: "Πριν", after: "Μετά",
+      sublevels: "Εμφάνιση υποεπιπέδων", indent: "Εσοχή κειμένου (cm)", decimal: "1, 1.1, 1.1.1", off: "Κατάργηση αρίθμησης",
+    },
     tableStyles: "Στυλ πίνακα",
     listStyles: "Στυλ λίστας",
     manageListStyles: "Διαχείριση στυλ λίστας…",
@@ -1167,6 +1171,7 @@ const el: Messages = {
     citation: "Παραπομπή",
     tocOptions: "Επιλογές",
     tocUpdate: "Ενημέρωση",
+    headingNumbering: "Αρίθμηση επικεφαλίδων",
     tocUpdateTitle: "Ενημέρωση όλων των ευρετηρίων",
     tocUpdateChoose: "Επιλέξτε μία από τις ακόλουθες επιλογές:",
     tocUpdatePages: "Ενημέρωση μόνο των αριθμών σελίδας",

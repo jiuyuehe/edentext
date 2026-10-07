@@ -218,7 +218,11 @@ const ru: Messages = {
     newName: 'Стиль',
     // Short forms for the manager's tab strip; the long names above still label
     // the gallery sections.
-    tabs: { paragraph: 'Абзац', character: 'Знак', table: 'Таблица', list: 'Список' },
+    tabs: { paragraph: 'Абзац', character: 'Знак', table: 'Таблица', list: 'Список', outline: 'Главы' },
+    outline: {
+      number: 'Номер', none: 'Нет', before: 'Перед', after: 'После',
+      sublevels: 'Показать подуровни', indent: 'Отступ текста (см)', decimal: '1, 1.1, 1.1.1', off: 'Удалить нумерацию',
+    },
     tableStyles: 'Стили таблиц',
     listStyles: 'Стили списков',
     manageListStyles: 'Управление стилями списков…',
@@ -1166,6 +1170,7 @@ const ru: Messages = {
     citation: 'Ссылка на источник',
     tocOptions: 'Параметры',
     tocUpdate: 'Обновить',
+    headingNumbering: 'Нумерация заголовков',
     tocUpdateTitle: 'Обновить все указатели',
     tocUpdateChoose: 'Выберите один из следующих вариантов:',
     tocUpdatePages: 'Обновить только номера страниц',

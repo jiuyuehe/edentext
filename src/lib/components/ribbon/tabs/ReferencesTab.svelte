@@ -13,11 +13,12 @@
   import { HEADING_LEVELS } from '../../../styles/headings';
   import { CITATION_STYLES, isCitationStyle, type CitationStyle } from '../../../utils/citationStyle';
 
-  let { editor, tick, hfActive = null, onNoteOptions }: {
+  let { editor, tick, hfActive = null, onNoteOptions, onHeadingNumbering }: {
     editor: Editor | null;
     tick: number;
     hfActive?: HfZone | null;
     onNoteOptions?: () => void;
+    onHeadingNumbering?: () => void;
   } = $props();
 
   // The levels button drives a table of contents only — a caption index has one level.
@@ -149,6 +150,15 @@
     title={t().ribbon.tocUpdateTitle}
     disabled={!hasIndex}
     onclick={() => (updateOpen = true)}
+  />
+  <RibbonButton
+    variant="big"
+    icon="headingNumbering"
+    cmd="headingNumbering"
+    label={t().ribbon.headingNumbering}
+    title={t().ribbon.headingNumbering}
+    disabled={!onHeadingNumbering}
+    onclick={() => onHeadingNumbering?.()}
   />
 </RibbonGroup>
 

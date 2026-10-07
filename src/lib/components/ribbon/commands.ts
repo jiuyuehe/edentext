@@ -110,6 +110,7 @@ export const RIBBON_COMMANDS: RibbonCommand[] = [
   ...INDEX_KINDS.map((k) => c('references', `toc-${k}`, (m) => m.ribbon.indexes[k], 'toc')),
   c('references', 'tocOptions', (m) => m.ribbon.tocOptions),
   c('references', 'tocUpdate', (m) => m.ribbon.tocUpdate),
+  c('references', 'headingNumbering', (m) => m.ribbon.headingNumbering),
   c('references', 'footnote', (m) => m.toolbarExpanded.insertFootnote),
   c('references', 'endnote', (m) => m.toolbarExpanded.insertEndnote),
   c('references', 'noteOptions', (m) => m.ribbon.noteOptions),

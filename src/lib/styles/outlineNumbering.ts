@@ -37,6 +37,13 @@ export const DEFAULT_OUTLINE_LEVEL: OutlineLevel = {
   format: 'none', prefix: '', suffix: '', displayLevels: 1, start: 1,
 };
 
+// 1 / 1.1 / 1.1.1: every level decimal, showing its parents, a space before the title.
+export function decimalOutline(): OutlineNumbering {
+  return Array.from({ length: MAX_OUTLINE_LEVELS }, (_, i) => ({
+    format: '1', prefix: '', suffix: ' ', displayLevels: i + 1, start: 1,
+  }));
+}
+
 export function outlineLevelAt(outline: OutlineNumbering | null | undefined, level: number): OutlineLevel | null {
   const l = outline?.[level - 1];
   return l && l.format !== 'none' ? l : null;

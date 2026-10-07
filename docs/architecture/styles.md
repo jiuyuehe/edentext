@@ -81,6 +81,12 @@ The visible label and table-of-contents label use the same counting rules. ODF w
 definition as an outline style; DOCX writes matching numbering referenced by heading styles.
 Keep the heading level explicit so import does not mistake a numbered heading for a list item.
 
+The style manager's Chapters tab edits it level by level (`setOutline`); its preset
+`decimalOutline` is 1 / 1.1 / 1.1.1 with a space as the suffix. Its one indent field sets
+indent, hanging first line and tab together, the only label position DOCX can state.
+The numbering button on a heading switches it as well, as a word processor's multilevel
+list bound to the heading styles does (`orderedList.ts`).
+
 **A run in a taller face does raise the line.** A run whose own font or character style
 sets a `--natural-line` takes the paragraph's line-height expression with that value
 (`editor.css`), so the tallest run sizes the line as in both word processors, and a

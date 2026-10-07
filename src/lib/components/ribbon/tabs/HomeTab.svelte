@@ -15,7 +15,8 @@
   import { clipboardCommand, readClipboard } from '../../../editor/contextMenuItems';
   import { BULLET_TYPES } from '../../../utils/bulletListTypes';
   import { formatOrdinal, orderedTypeDef, orderedTypesFor, type OrderedListType } from '../../../utils/orderedListTypes';
-  import { effectiveOrderedTypeAt } from '../../../editor/extensions/orderedList';
+  import { effectiveOrderedTypeAt, inChapterHeading } from '../../../editor/extensions/orderedList';
+  import { outlineIsEmpty } from '../../../styles/outlineNumbering';
   import { listStyleNameAt } from '../../../editor/extensions/listStyle';
   import type { ListStyle } from '../../../styles/listStyles';
   import { isInHeaderCell } from '../../../editor/extensions/tableHeaderRow';
@@ -66,7 +67,9 @@
   let isSuper = $derived(tick >= 0 && !!editor?.isActive('superscript'));
   let isSub = $derived(tick >= 0 && !!editor?.isActive('subscript'));
   let isBulletList = $derived(tick >= 0 && !!editor?.isActive('bulletList'));
-  let isOrderedList = $derived(tick >= 0 && !!editor?.isActive('orderedList'));
+  // On a heading the button stands for the chapter numbering it switches.
+  let isOrderedList = $derived(tick >= 0 && !!editor
+    && (editor.isActive('orderedList') || (inChapterHeading(editor.state) && !outlineIsEmpty(sheet.outline))));
   let align = $derived(tick >= 0 && editor ? (['left', 'center', 'right', 'justify'].find((a) => editor!.isActive({ textAlign: a })) ?? '') : '');
 
   let fontColor = $derived(tick >= 0 && editor ? uniformMarkColor(editor.state, 'textStyle') : null);
