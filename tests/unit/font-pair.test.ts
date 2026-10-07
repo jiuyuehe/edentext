@@ -1,7 +1,7 @@
 // The western/asian font pair: a run, a paragraph and a style each carry both fonts,
 // rendered as two variables that inherit on their own, so a run naming one keeps the
 // other from its paragraph.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { Editor } from '@tiptap/core';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
@@ -16,10 +16,16 @@ import { TextSelection } from '@tiptap/pm/state';
 
 type N = any;
 
+// Destroyed after each test, or the DOM observer fires after jsdom is gone.
+const editors: Editor[] = [];
+afterEach(() => { while (editors.length) editors.pop()!.destroy(); });
+
 function makeEditor(content: N) {
   const el = document.createElement('div');
   document.body.appendChild(el);
-  return new Editor({ element: el, extensions: [Document, Paragraph, Text, TextStyle, FontFamily, BlockFontSize], content });
+  const editor = new Editor({ element: el, extensions: [Document, Paragraph, Text, TextStyle, FontFamily, BlockFontSize], content });
+  editors.push(editor);
+  return editor;
 }
 
 const run = (text: string, attrs: Record<string, string>): N =>

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { Editor } from '@tiptap/core';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
@@ -9,7 +9,10 @@ import { OrderedList } from '../../src/lib/editor/extensions/orderedList';
 import { decimalOutline, type OutlineNumbering } from '../../src/lib/styles/outlineNumbering';
 
 // The numbering button on a heading numbers the chapters instead of wrapping the heading
-// in a list item, which cannot start with one.
+// in a list item. Each editor is destroyed, or its DOM observer fires after jsdom is gone.
+const editors: Editor[] = [];
+afterEach(() => { while (editors.length) editors.pop()!.destroy(); });
+
 function setup() {
   let outline: OutlineNumbering | null = null;
   const editor = new Editor({
@@ -17,6 +20,7 @@ function setup() {
       OrderedList.configure({ headingNumbering: { get: () => outline, set: (o) => { outline = o; } } })],
     content: '<h1>Chapter</h1><p>Body</p>',
   });
+  editors.push(editor);
   return { editor, outline: () => outline };
 }
 
