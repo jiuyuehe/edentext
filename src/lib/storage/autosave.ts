@@ -2,6 +2,7 @@ import { t, locale } from '../i18n/i18n.svelte';
 import { stashImages, putImages, restoreImages, isStored } from './imageStore';
 import { keepSnapshot, listSnapshots, readSnapshot } from './snapshots';
 import { docKey, docStore, volatile } from './docScope';
+import type { Schema } from '@tiptap/pm/model';
 
 const STORAGE_KEY = docKey('edentext-doc');
 // Set while a stored document is being handed to the editor, cleared once the editor
@@ -24,6 +25,27 @@ let chain: Promise<void> = Promise.resolve();
 // the user once so a failed autosave isn't silent, and swallow the throw so the
 // debounced timer doesn't surface an unhandled error.
 let quotaWarned = false;
+
+type DocJson = { type?: string; attrs?: Record<string, unknown>; marks?: DocJson[]; content?: DocJson[] } & Record<string, unknown>;
+
+/**
+ * The document without the attributes that hold their schema default: a paragraph
+ * spells out some thirty, mostly null, and loading fills each one back in.
+ */
+export function withoutDefaults(json: DocJson, schema: Schema): DocJson {
+  const trim = (n: DocJson, spec: Record<string, { default?: unknown }> | undefined): DocJson => {
+    const out: DocJson = { ...n };
+    if (n.attrs && spec) {
+      const attrs = Object.fromEntries(Object.entries(n.attrs).filter(([k, v]) => !(k in spec && spec[k].default === v)));
+      if (Object.keys(attrs).length) out.attrs = attrs;
+      else delete out.attrs;
+    }
+    if (n.marks) out.marks = n.marks.map((m) => trim(m, schema.marks[m.type!]?.spec.attrs));
+    if (n.content) out.content = n.content.map((c) => trim(c, schema.nodes[c.type!]?.spec.attrs));
+    return out;
+  };
+  return trim(json, schema.nodes[json.type!]?.spec.attrs);
+}
 
 // With nothing to be stored, there is nothing to write: no copy, no pictures, no versions.
 export function saveDocument(json: () => object): void {

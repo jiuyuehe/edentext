@@ -36,7 +36,7 @@ import { DEFAULT_LINE_NUMBERING, type LineNumbering } from '../storage/lineNumbe
 import { DEFAULT_LINE_GRID, type LineGrid } from '../storage/lineGrid';
 import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   import Ruler from './Ruler.svelte';
-  import { saveDocument, loadDocument, markDocumentLoaded } from '../storage/autosave';
+  import { saveDocument, loadDocument, markDocumentLoaded, withoutDefaults } from '../storage/autosave';
   import { IDB_SRC } from '../storage/imageStore';
   import { applyMarginVars, cmToPx, PX_PER_CM, DEFAULT_MARGINS, type PageMargins } from '../storage/pageMargins';
   import { DEFAULT_TAB_INTERVAL_CM } from '../storage/tabInterval';
@@ -1329,7 +1329,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
         scheduleCaretPage();
       },
       onUpdate: ({ editor: e, transaction }) => {
-        saveDocument(() => e.getJSON());
+        saveDocument(() => withoutDefaults(e.getJSON(), e.schema));
         const ui = transaction.getMeta('uiEvent');
       },
       onFocus: () => {
