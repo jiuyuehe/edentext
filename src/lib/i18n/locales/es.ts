@@ -1249,7 +1249,7 @@ const es: Messages = {
     couldNotPrint: 'No se ha podido imprimir.',
     couldNotPrintPdf: 'No se ha podido imprimir a PDF.',
     autosaveQuota:
-      'El documento es demasiado grande para guardarlo automáticamente (se ha alcanzado el límite de almacenamiento del navegador). Suele ocurrir con imágenes incrustadas grandes. Guárdelo como archivo .odt para conservar su trabajo.',
+      'El documento es demasiado grande para guardarlo automáticamente (se ha alcanzado el límite de almacenamiento del navegador). Suele ocurrir con imágenes incrustadas grandes. Guárdelo localmente para conservar su trabajo.',
     openSnapshot: (when) =>
       `El documento no se ha podido cargar. ¿Abrir en su lugar la versión que el editor guardó a las ${when}?`,
     documentNotLoaded:

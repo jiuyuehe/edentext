@@ -1263,7 +1263,7 @@ const en = {
     couldNotPrint: 'Could not print.',
     couldNotPrintPdf: 'Could not print to PDF.',
     autosaveQuota:
-      'The document is too large to save automatically (browser storage limit reached). This usually happens with large embedded images. Save it as an .odt file to keep your work.',
+      'The document is too large to save automatically (browser storage limit reached). This usually happens with large embedded images. Save it locally to keep your work.',
     openSnapshot: (when: string) =>
       `The document could not be loaded. Open the version the editor kept at ${when} instead?`,
     documentNotLoaded:

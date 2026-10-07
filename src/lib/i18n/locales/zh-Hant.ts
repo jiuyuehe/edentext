@@ -1248,7 +1248,7 @@ const zhHant: Messages = {
     couldNotPrint: '無法列印。',
     couldNotPrintPdf: '無法列印為 PDF。',
     autosaveQuota:
-      '文件過大，無法自動儲存（已達瀏覽器儲存空間上限）。這通常是因為內嵌了大張圖片。請另存為 .odt 檔案以保留您的成果。',
+      '文件過大，無法自動儲存（已達瀏覽器儲存空間上限）。這通常是因為內嵌了大張圖片。請將其儲存到本機以保留您的成果。',
     openSnapshot: (when: string) => `文件無法載入。要改為開啟編輯器在 ${when} 保留的版本嗎？`,
     documentNotLoaded:
       '上一份文件導致編輯器無法啟動。仍要再次載入它嗎？\n\n選擇「取消」會新增一份空白文件；舊文件會以「edentext-doc-broken」保留在瀏覽器儲存空間中。',

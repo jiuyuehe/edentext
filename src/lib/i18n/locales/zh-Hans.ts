@@ -1247,7 +1247,7 @@ const zhHans: Messages = {
     couldNotPrint: '无法打印。',
     couldNotPrintPdf: '无法打印为 PDF。',
     autosaveQuota:
-      '文档过大，无法自动保存（已达到浏览器存储上限）。这通常是因为嵌入了大图片。请另存为 .odt 文件以保留您的成果。',
+      '文档过大，无法自动保存（已达到浏览器存储上限）。这通常是因为嵌入了大图片。请将其保存到本地以保留您的成果。',
     openSnapshot: (when: string) => `文档无法载入。要改为打开编辑器在 ${when} 保留的版本吗？`,
     documentNotLoaded:
       '上一个文档导致编辑器无法启动。仍要再次载入它吗？\n\n选择“取消”将新建一个空文档；旧文档会以“edentext-doc-broken”保留在浏览器存储中。',
