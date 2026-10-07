@@ -127,6 +127,11 @@ type Ctx = {
   notes: { id: string; kind: NoteKind; label: string | null; text: string; content: Node[]; styleName: string | null }[];
   // Converting a header/footer part: page fields, no notes, comments or revisions.
   zone?: boolean;
+  // The body's open index field. Word may open one in the paragraph that ends a section
+  // and fill it in the next, so it outlives the per-section walk.
+  bodyField?: BodyField;
+  // The columns of the section being walked, which an index laid out in them takes.
+  sectionCols?: { count: number; gapCm: number } | null;
 };
 
 // The bookmark around a note's own reference mark, mapped to the note — the target a
@@ -287,6 +292,7 @@ export function importDocx(bytes: Uint8Array, convertedImages: ConvertedImages =
   // more than one column becomes a columns node (the trailing group is described
   // by the body-final sectPr, covering whole-document multi-column files).
   const { groups, midSectPrs } = splitBodySections(Array.from(body.children));
+  ctx.bodyField = newBodyField();
   const finalSectPr = fc(body, 'sectPr');
   const blocks: Node[] = [];
   const groupCols = groups.map((g) => sectPrColumns(g.sectPr ?? finalSectPr, ctx));
@@ -306,6 +312,7 @@ export function importDocx(bytes: Uint8Array, convertedImages: ConvertedImages =
     ctx.contentWidthCm = sectionContentWidthCm(sect);
     ctx.leftMarginCm = twipToCm(intAttr(fc(sect, 'pgMar'), W, 'left') ?? 1440);
     ctx.rightMarginCm = twipToCm(intAttr(fc(sect, 'pgMar'), W, 'right') ?? 1440);
+    ctx.sectionCols = groupCols[gi];
     const inner = convertBlocks(g.els, ctx, 'body');
     // A section's own w:type says how it begins: a page-starting break (nextPage/odd/even,
     // or the default) puts its first block on a new page; continuous/nextColumn flow on.
@@ -467,15 +474,25 @@ function tocRowTab(el: Element, ctx: Ctx): { leader?: string; tabPosCm?: number 
   const tabs = fc(fc(el, 'pPr'), 'tabs');
   const stop = tabs ? readTabStops(tabs).find((t) => t.align === 'right') : undefined;
   if (!stop) return {};
-  // A stop at the text width is where a row's number lands anyway, so it names no
-  // position of its own — the ODF side suppresses it the same way.
-  const own = stop.pos > 0 && Math.abs(stop.pos - ctx.contentWidthCm) > 0.05;
+  // A stop at the text width (or the column's, in columns) is where a row's number lands
+  // anyway, so it names no position of its own — the ODF side suppresses it the same way.
+  const cols = ctx.sectionCols;
+  const columnCm = cols ? (ctx.contentWidthCm - cols.gapCm * (cols.count - 1)) / cols.count : ctx.contentWidthCm;
+  const own = stop.pos > 0 && Math.abs(stop.pos - ctx.contentWidthCm) > 0.05 && Math.abs(stop.pos - columnCm) > 0.05;
   return { ...(stop.leader ? { leader: stop.leader } : {}), ...(own ? { tabPosCm: stop.pos } : {}) };
 }
 
 // A TOC is a `TOC` field spanning several paragraphs, each entry a nested PAGEREF field,
 // so field depth is tracked (across one convertBlocks call) to match the TOC's own end.
 type TocFieldState = { fieldDepth: number; tocDepth: number; instr: string[] };
+type BodyField = { state: TocFieldState; into: { entries: TocEntry[]; kind: IndexKind; pages: boolean; node: Node } | null };
+const newBodyField = (): BodyField => ({ state: { fieldDepth: 0, tocDepth: -1, instr: [] }, into: null });
+
+// INDEX's \c is its column count (a TOC's names a caption label instead).
+function indexColumns(instr: string): { columns?: number } {
+  const n = Number(/\\c\s+"?\s*(\d+)/.exec(instr)?.[1]);
+  return n > 1 ? { columns: Math.min(n, 3) } : {};
+}
 
 // The deepest heading level a TOC field lists: the end of its `\o "1-3"` range (Word's
 // own default is 1-9). Anything deeper only inflates the block on screen.
@@ -585,12 +602,17 @@ function cachedIndexEntry(p: Element, ctx: Ctx, kind: IndexKind, pages: boolean)
   // A tab inside the text stays one: it sets the title at the level's hanging indent.
   const body = (cut < 0 ? text : text.slice(0, cut)).replace(/\t+/g, '\t').trim();
   const nums = cut < 0 ? [] : text.slice(cut + (comma ? comma[0].length : 1)).split(/[,;]/).map((n) => parseInt(n, 10)).filter((n) => n > 0);
-  // An alphabetical index's letter rows carry no number and are not entries.
-  if (!body || (kind === 'alphabetical' && pages && !nums.length)) return null;
+  if (!body) return null;
   // A style the file names but does not define still says its level in its id (TOC2).
   const id = styleIdOf(fc(p, 'pPr'), ctx) ?? '';
   const name = ctx.styleNames.get(id);
-  const level = Number((name ? INDEX_LEVEL_STYLES[kind]?.exec(name) : /(\d+)$/.exec(id))?.[1]) || 1;
+  const levelMatch = name ? INDEX_LEVEL_STYLES[kind]?.exec(name) : /(\d+)$/.exec(id);
+  const level = Number(levelMatch?.[1]) || 1;
+  // An alphabetical row with no number is a letter row, which is no entry, or — in a
+  // level's own style — a term heading its subentries, which lists no page (`pages: []`).
+  if (kind === 'alphabetical' && pages && !nums.length) {
+    return levelMatch ? { text: body, level: Math.min(MAX_HEADING_LEVEL, level), page: 1, pages: [] } : null;
+  }
   return { text: body, level: Math.min(MAX_HEADING_LEVEL, level), page: nums[0] ?? 1, ...(nums.length > 1 ? { pages: nums } : {}) };
 }
 
@@ -664,8 +686,8 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
   };
   // Table-of-contents field tracking (see scanTocField). A TOC node is emitted for the
   // body only; its cached paragraphs (a bibliography's table rows) become its entries.
-  const tocState: TocFieldState = { fieldDepth: 0, tocDepth: -1, instr: [] };
-  let cachedInto: { entries: TocEntry[]; kind: IndexKind; pages: boolean } | null = null;
+  const field = kind === 'body' && ctx.bodyField ? ctx.bodyField : newBodyField();
+  const tocState = field.state;
   // Floating tables, each with the place in `out` its anchor follows (floatingTableBox).
   const floatBoxes: { box: Node; at: number }[] = [];
 
@@ -710,16 +732,24 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
         const levels = index === 'bibliography' ? null : tocMaxLevel(instr);
         const levelStyles = levels == null ? null : tocLevelStyles(ctx, levels, index);
         const pageNumbers = tocPageNumbers(instr);
-        cachedInto = { entries: [], kind: index, pages: pageNumbers.pageNumbers !== false && index !== 'bibliography' };
-        out.push({ type: 'tableOfContents', attrs: { entries: cachedInto.entries, title: '', index, ...pageNumbers,
+        const node: Node = { type: 'tableOfContents', attrs: { entries: [], title: '', index, ...pageNumbers,
           ...tocRowTab(el, ctx),
+          ...(index === 'alphabetical' ? indexColumns(instr) : {}),
           ...(levels == null ? {} : { maxLevel: levels }),
           ...(levelStyles ? { levelStyles } : {}),
-          ...(index === 'bibliography' ? { citationStyle: ctx.citationStyle } : {}) } });
+          ...(index === 'bibliography' ? { citationStyle: ctx.citationStyle } : {}) } };
+        field.into = { entries: node.attrs!.entries as TocEntry[], kind: index, pages: pageNumbers.pageNumbers !== false && index !== 'bibliography', node };
+        out.push(node);
       }
       if (startedInToc || emit) {
-        const entry = cachedInto && kind === 'body' ? cachedIndexEntry(el, ctx, cachedInto.kind, cachedInto.pages) : null;
-        if (entry) cachedInto!.entries.push(entry);
+        const into = kind === 'body' ? field.into : null;
+        const entry = into ? cachedIndexEntry(el, ctx, into.kind, into.pages) : null;
+        if (entry) {
+          into!.entries.push(entry);
+          // The gap is the one of the section the rows land in, which Word wraps them in.
+          const a = into!.node.attrs!;
+          if (a.columns && a.columnGapCm == null && ctx.sectionCols?.count === a.columns) a.columnGapCm = ctx.sectionCols.gapCm;
+        }
         continue;
       }
       const num = paragraphNum(el, ctx);
@@ -756,10 +786,10 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
     } else if (tocState.tocDepth >= 0) {
       // Still inside an open TOC/INDEX/BIBLIOGRAPHY field: a bibliography's table holds
       // one source per row.
-      if (el.localName === 'tbl' && cachedInto) {
+      if (el.localName === 'tbl' && field.into) {
         for (const tr of fcAll(el, 'tr')) {
           const text = fcAll(tr, 'tc').map((tc) => (tc.textContent ?? '').trim()).filter(Boolean).join(' ');
-          if (text) cachedInto.entries.push({ text, level: 1, page: 1 });
+          if (text) field.into.entries.push({ text, level: 1, page: 1 });
         }
       }
       continue;
@@ -1083,10 +1113,12 @@ function registryName(id: string, wordName: string, isDefault: boolean): string 
   if (/^Title$/i.test(id)) return 'Title';
   if (/^Subtitle$/i.test(id)) return 'Subtitle';
   if (/^Quote$/i.test(id) || /^Quotations?$/i.test(id)) return 'Quotations';
-  // The index entry styles: LibreOffice calls them Contents 1…10, and naming them that
+  // The index entry styles: LibreOffice calls them Contents 1…10 and Index 1…9, and naming them that
   // keeps one document's ODF and DOCX legs pointing at the same registry entry.
   const toc = /^toc\s?(10|[1-9])$/i.exec(wordName);
   if (toc) return `Contents ${toc[1]}`;
+  const index = /^index\s?([1-9])$/i.exec(wordName);
+  if (index) return `Index ${index[1]}`;
   return wordName || id;
 }
 
@@ -3665,6 +3697,12 @@ function pushColumnRuns(inner: Node[], cols: { count: number; gapCm: number }, o
   for (const block of inner) {
     if (COLUMNS_ALLOWED.has(block.type)) {
       run.push(block);
+    } else if (block.type === 'tableOfContents') {
+      // An index flows through the section's columns on its own.
+      flush();
+      const a = block.attrs ?? {};
+      block.attrs = { ...a, columns: a.columns ?? cols.count, columnGapCm: a.columnGapCm ?? cols.gapCm };
+      out.push(block);
     } else {
       ctx.warnings.add(WARN.movedOutOfColumns);
       flush();

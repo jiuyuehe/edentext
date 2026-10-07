@@ -33,7 +33,7 @@ import { DEFAULT_NOTE_SETTINGS, type NoteKind, type NoteNumFormat, type NoteSett
 import { DOCX_SEQ_NAME, seqCategoryOf } from '../editor/extensions/caption';
 import { sanitizeBookmarkName } from '../editor/extensions/bookmark';
 import { isCrossRefFormat, isCrossRefKind, type CrossRefFormat, type CrossRefKind } from '../editor/extensions/crossReference';
-import { indexKindOf, INDEX_TITLES, type IndexKind } from '../editor/extensions/tableOfContents';
+import { indexKindOf, INDEX_TITLES, INDEX_COLUMN_GAP_CM, type IndexKind } from '../editor/extensions/tableOfContents';
 import { citationText, DOCX_BIB_FIELD, DOCX_SOURCE_TYPE, type BibSource } from '../editor/extensions/bibliographyEntry';
 import { DOCX_STYLE_NAME, isCitationStyle, type CitationStyle } from '../utils/citationStyle';
 import { HEADER_SHADE } from '../editor/extensions/tableHeaderRow';
@@ -2809,7 +2809,7 @@ function indexFieldParagraphs(node: TiptapNode, kind: IndexKind, maxLevel: numbe
   const instr =
     // `\n` is a TOC switch that INDEX has no counterpart for; Word ignores the unknown
     // one and regenerates its rows, and this side reads it back.
-    kind === 'alphabetical' ? `INDEX \\c "1" \\e "\t"${noPages ? ' \\n' : ''}`
+    kind === 'alphabetical' ? `INDEX \\c "${indexColumns(node)?.count ?? 1}" \\e "\t"${noPages ? ' \\n' : ''}`
     : kind === 'bibliography' ? 'BIBLIOGRAPHY'
     // `\n` over the whole range: Word's switch takes levels, the editor's index is
     // all-or-nothing.
@@ -2821,11 +2821,15 @@ function indexFieldParagraphs(node: TiptapNode, kind: IndexKind, maxLevel: numbe
   const entries = raw.map((e) => ({
     text: typeof e.text === 'string' ? e.text : '',
     level: typeof e.level === 'number' && e.level >= 1 ? Math.round(e.level) : 1,
-    pages: Array.isArray(e.pages) && e.pages.length ? e.pages.join(', ') : String(typeof e.page === 'number' ? e.page : 1),
+    // '' is a term heading its subentries, which lists no page.
+    pages: Array.isArray(e.pages) ? e.pages.join(', ') : String(typeof e.page === 'number' ? e.page : 1),
   }));
   const noPage = kind === 'bibliography' || noPages;
   const leader = DOCX_LEADER[String(a.leader ?? '')];
-  const tabCm = typeof a.tabPosCm === 'number' && a.tabPosCm > 0 ? a.tabPosCm : contentWidthCm;
+  // In columns the rows end at their column's edge.
+  const cols = indexColumns(node);
+  const rowWidthCm = cols ? (contentWidthCm - cols.gapCm * (cols.count - 1)) / cols.count : contentWidthCm;
+  const tabCm = typeof a.tabPosCm === 'number' && a.tabPosCm > 0 ? a.tabPosCm : rowWidthCm;
   const open = runsFromXml(
     '<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>'
     + `<w:r><w:instrText xml:space="preserve"> ${escapeXml(instr)} </w:instrText></w:r>`
@@ -2853,7 +2857,7 @@ function indexFieldParagraphs(node: TiptapNode, kind: IndexKind, maxLevel: numbe
         ...(ti ? runsFromXml('<w:r><w:tab/></w:r>') : []),
         new TextRun(li && !ti ? { text: part, break: 1 } : { text: part }),
       ])),
-      ...(noPage ? [] : runsFromXml(`<w:r><w:tab/></w:r><w:r><w:t xml:space="preserve">${escapeXml(e.pages)}</w:t></w:r>`)),
+      ...(noPage || !e.pages ? [] : runsFromXml(`<w:r><w:tab/></w:r><w:r><w:t xml:space="preserve">${escapeXml(e.pages)}</w:t></w:r>`)),
       ...(i === entries.length - 1 ? close : []),
     ],
   }));
@@ -2933,8 +2937,7 @@ function blocksToDocx(content: TiptapNode[], num: Numbering, contentWidthCm: num
       // the heading levels. The title is a plain bold paragraph so it isn't itself
       // listed, and is omitted where the index has none.
       const kind = indexKindOf(node.attrs?.index);
-      const rawTitle = node.attrs?.title;
-      const tocTitle = typeof rawTitle === 'string' ? rawTitle : INDEX_TITLES[kind];
+      const tocTitle = indexTitleOf(node);
       const depth = Number(node.attrs?.maxLevel);
       const maxLevel = depth >= 1 ? Math.min(MAX_HEADING_LEVEL, depth) : MAX_HEADING_LEVEL;
       // The break rides whichever paragraph the index opens with — its title, else the
@@ -2945,6 +2948,18 @@ function blocksToDocx(content: TiptapNode[], num: Numbering, contentWidthCm: num
     }
   }
   return out;
+}
+
+const indexTitleOf = (node: TiptapNode): string => {
+  const raw = node.attrs?.title;
+  return typeof raw === 'string' ? raw : INDEX_TITLES[indexKindOf(node.attrs?.index)];
+};
+
+// The columns an index lays its rows out in, null for one.
+function indexColumns(node: TiptapNode): { count: number; gapCm: number } | null {
+  const n = Number(node.attrs?.columns);
+  if (node.type !== 'tableOfContents' || !(n > 1)) return null;
+  return { count: Math.min(3, Math.round(n)), gapCm: Number(node.attrs?.columnGapCm) || INDEX_COLUMN_GAP_CM };
 }
 
 // One body section: a run of ordinary blocks (columns: null) or one columns node's
@@ -3003,6 +3018,13 @@ function bodyGroups(content: TiptapNode[], num: Numbering, widthCm: (section: nu
         flushPlain();
         cols = { count, gapCm, blocks: [...(node.content ?? [])] };
       }
+    } else if (indexColumns(node)) {
+      // An index in columns is a columns section of its own, its title above it.
+      flushCols();
+      flushPlain();
+      const children = blocksToDocx([node], num, widthCm(section));
+      if (indexTitleOf(node)) groups.push({ section, columns: null, children: children.splice(0, 1) });
+      groups.push({ section, columns: indexColumns(node), children });
     } else {
       flushCols();
       plain.push(node);

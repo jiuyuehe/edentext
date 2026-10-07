@@ -1318,6 +1318,12 @@ function pushColumnRuns(inner: Node[], cols: { count: number; gapCm: number }, o
   for (const block of inner) {
     if (COLUMNS_ALLOWED.has(block.type)) {
       run.push(block);
+    } else if (block.type === 'tableOfContents') {
+      // An index flows through the section's columns on its own.
+      flush();
+      const a = block.attrs ?? {};
+      block.attrs = { ...a, columns: a.columns ?? count, columnGapCm: a.columnGapCm ?? cols.gapCm };
+      out.push(block);
     } else {
       if (block.type !== 'columns') {
         ctx.warnings.add(WARN.movedOutOfColumns);
@@ -1509,6 +1515,9 @@ function convertToc(el: Element, ctx: Ctx, indexKind: IndexKind): Node {
     attrs.pageNumbers = false;
   }
   if (levelStyles.some(Boolean)) attrs.levelStyles = Array.from(levelStyles, (s) => s ?? null);
+  // The index's own section style may lay its rows out in columns.
+  const cols = ctx.resolver.sectionColumns(el.getAttributeNS(NS.text, 'style-name'));
+  if (cols) Object.assign(attrs, { columns: Math.min(3, cols.count), columnGapCm: cols.gapCm });
   // A bibliography's citation style is its entry template: the fields it names, in order.
   // A numbered index says so on the source instead, whatever its template reads.
   if (indexKind === 'bibliography') {
@@ -1543,8 +1552,13 @@ function convertToc(el: Element, ctx: Ctx, indexKind: IndexKind): Node {
     const level = m ? Math.min(MAX_HEADING_LEVEL, Math.max(1, parseInt(m[1], 10))) : 1;
     const { text, page } = tocEntryTextAndPage(p, pages);
     const nums = page.split(/[,;]/).map((n) => parseInt(n, 10)).filter((n) => n > 0);
-    // An alphabetical index's letter rows carry no number and are not entries.
-    if (!text || (indexKind === 'alphabetical' && pages && !nums.length)) continue;
+    if (!text) continue;
+    // A letter row (its own separator style) is no entry; a term heading its subentries
+    // has a level style and lists no page.
+    if (indexKind === 'alphabetical' && pages && !nums.length) {
+      if (m) entries.push({ text, level, page: 1, pages: [] });
+      continue;
+    }
     entries.push({ text, level, page: nums[0] ?? 1, ...(nums.length > 1 ? { pages: nums } : {}) });
   }
   attrs.entries = entries;

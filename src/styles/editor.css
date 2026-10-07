@@ -299,6 +299,10 @@
 .paper .tiptap :is(.toc-leader, .toc-page) {
   text-indent: 0;
 }
+/* An index in columns (tableOfContents.ts paginateColumns): a row never splits between two. */
+.paper .tiptap .toc-cols .toc-entry {
+  break-inside: avoid;
+}
 
 /* Footnotes and endnotes (notes.ts). Sizes and indents are LibreOffice's own Footnote
    style; the separator values follow its style:footnote-sep — see

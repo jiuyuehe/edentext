@@ -41,7 +41,7 @@ import { charStyleProps, listMarkerFormat, type MarkerFormat } from '../editor/e
 import { orderedTypeDef, effectiveOrderedDef, odfNumFormatAttrs, effectiveOrderedDefAt, childCycle, formatOrdinal, ROOT_ORDERED_CYCLE, type OrderedCycle } from '../utils/orderedListTypes';
 import { ODF_SEQ_NAME, seqCategoryOf, type SeqCategory } from '../editor/extensions/caption';
 import { isCrossRefFormat, isCrossRefKind, type CrossRefFormat, type CrossRefKind } from '../editor/extensions/crossReference';
-import { indexKindOf, INDEX_TITLES, type IndexKind } from '../editor/extensions/tableOfContents';
+import { indexKindOf, INDEX_TITLES, INDEX_COLUMN_GAP_CM, type IndexKind } from '../editor/extensions/tableOfContents';
 import { citationText, isBibType } from '../editor/extensions/bibliographyEntry';
 import { isCitationStyle, rowTemplate, type CitationStyle } from '../utils/citationStyle';
 import { DEFAULT_BULLET_CYCLE, defaultBulletChar } from '../utils/bulletListTypes';
@@ -1265,7 +1265,7 @@ function replaceColumns(doc: TiptapNode, cols: ColumnsExport[]): TiptapNode {
 // One generated table of contents, collected by replaceTableOfContents and emitted by
 // applyToc. Entries are the cached heading→page rows (the node view keeps them current).
 type TocEntry = { text: string; level: number; page: number; pages?: number[] };
-type TocExport = { kind: IndexKind; entries: TocEntry[]; title: string | null; maxLevel: number; leader: string | null; tabPosCm: number | null; pageNumbers: boolean; levelStyles: (string | null)[] | null; citationStyle: CitationStyle };
+type TocExport = { kind: IndexKind; entries: TocEntry[]; title: string | null; maxLevel: number; leader: string | null; tabPosCm: number | null; pageNumbers: boolean; levelStyles: (string | null)[] | null; citationStyle: CitationStyle; columns: ColumnsExport | null };
 
 // Swap each top-level tableOfContents node for a marker paragraph carrying the TOC
 // sentinel and collect its cached entries. Top-level only (like replacePageBreaks): a
@@ -1283,7 +1283,8 @@ function replaceTableOfContents(doc: TiptapNode, tocs: TocExport[]): TiptapNode 
           level: Math.min(MAX_HEADING_LEVEL, Math.max(1, Number(e.level) || 1)),
           page: Math.max(1, Number(e.page) || 1),
           // An alphabetical row lists every page its term appears on.
-          ...(Array.isArray(e.pages) && e.pages.length ? { pages: e.pages.map((n: unknown) => Math.max(1, Number(n) || 1)) } : {}),
+          // An empty list is a term heading its subentries, with no page of its own.
+          ...(Array.isArray(e.pages) ? { pages: e.pages.map((n: unknown) => Math.max(1, Number(n) || 1)) } : {}),
         }));
       const rawTitle = child.attrs?.title;
       const depth = Number(child.attrs?.maxLevel);
@@ -1299,6 +1300,9 @@ function replaceTableOfContents(doc: TiptapNode, tocs: TocExport[]): TiptapNode 
         pageNumbers: child.attrs?.pageNumbers !== false,
         levelStyles: Array.isArray(child.attrs?.levelStyles) ? (child.attrs!.levelStyles as (string | null)[]) : null,
         citationStyle: isCitationStyle(child.attrs?.citationStyle) ? child.attrs!.citationStyle : 'key',
+        columns: Number(child.attrs?.columns) > 1
+          ? { count: Math.min(3, Number(child.attrs!.columns)), gapCm: Number(child.attrs?.columnGapCm) || INDEX_COLUMN_GAP_CM }
+          : null,
       });
       // The flow attrs ride the marker paragraph so replacePageBreaks and
       // replaceSectionBreaks reach them; applyToc moves what they wrote into the index.
@@ -4901,9 +4905,9 @@ function applyTextBoxes(odtBytes: Uint8Array, boxes: TextBoxExport[]): Uint8Arra
 // Section style for a multi-column region: balanced columns with a uniform gap.
 // text:dont-balance-text-columns sits on <style:section-properties> — the only place
 // the schema admits it, and where LibreOffice reads and re-writes it (probed).
-function columnsSectionStyle(cols: ColumnsExport, index: number): string {
+function columnsSectionStyle(cols: ColumnsExport, name: string): string {
   return (
-    `<style:style style:name="ColSec${index + 1}" style:family="section">` +
+    `<style:style style:name="${name}" style:family="section">` +
     `<style:section-properties style:editable="false" text:dont-balance-text-columns="false">` +
     `<style:columns fo:column-count="${cols.count}" fo:column-gap="${cols.gapCm}cm"/>` +
     `</style:section-properties></style:style>`
@@ -4928,7 +4932,7 @@ function applyColumns(odtBytes: Uint8Array, cols: ColumnsExport[]): Uint8Array {
       return `<text:section text:style-name="ColSec${i + 1}" text:name="ColumnsSection${i + 1}">${inner}</text:section>`;
     },
   );
-  content = injectAutomaticStyles(content, cols.map((c, i) => columnsSectionStyle(c, i)).join(''));
+  content = injectAutomaticStyles(content, cols.map((c, i) => columnsSectionStyle(c, `ColSec${i + 1}`)).join(''));
   files['content.xml'] = strToU8(content);
   return rezipOdt(files);
 }
@@ -5090,10 +5094,12 @@ function tocXml(toc: TocExport, index: number, bibTypes: string[]): string {
       .map(e => `<text:p text:style-name="${tocLevelStyle(toc, e.level)}">${escapeXml(e.text).replace(/\n/g, '<text:line-break/>').replace(/\t/g, '<text:tab/>')}`
         // A bibliography row is the source, nothing else: no tab, no page number. An
         // index switched to text alone says the same about its rows.
-        + (toc.kind === 'bibliography' || !toc.pageNumbers ? '' : `<text:tab/>${e.pages?.join(', ') ?? e.page}`) + '</text:p>')
+        + (toc.kind === 'bibliography' || !toc.pageNumbers || e.pages?.length === 0 ? '' : `<text:tab/>${e.pages?.join(', ') ?? e.page}`) + '</text:p>')
       .join('') +
     `</text:index-body>`;
-  return `<text:${spec.el} text:name="${escapeXml(name)}" text:protected="true">${source}${body}</text:${spec.el}>`;
+  // Columns are the index section's own style, as LibreOffice writes them.
+  const style = toc.columns ? ` text:style-name="IdxSec${index + 1}"` : '';
+  return `<text:${spec.el}${style} text:name="${escapeXml(name)}" text:protected="true">${source}${body}</text:${spec.el}>`;
 }
 
 // BMS/BME/XRF sentinels → <text:bookmark-start/>, <text:bookmark-end/> and
@@ -5320,7 +5326,8 @@ function applyToc(odtBytes: Uint8Array, tocs: TocExport[], contentWidthCm: numbe
       return contentsHeadingStyle(spec.heading)
         + levels.map(l => contentsEntryStyle(`${spec.entryStyle}${l}`, l, tabPosCm)).join('');
     })
-    .join('');
+    .join('')
+    + tocs.map((t, i) => (t.columns ? columnsSectionStyle(t.columns, `IdxSec${i + 1}`) : '')).join('');
   content = injectAutomaticStyles(content, styles);
 
   files['content.xml'] = strToU8(content);
