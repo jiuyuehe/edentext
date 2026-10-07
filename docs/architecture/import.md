@@ -81,11 +81,17 @@ outline level as well as style name. WPS repeats the chapter numbering's `w:numP
 heading paragraph; that stays chapter numbering, and where the heading style carries none, the
 first heading of a level supplies it. Chapter numbering takes every list format, the CJK ones
 included. A heading becomes a list item only when the list is its own: a `w:numPr` naming
-another numbering than its style's, or a bullet where the style has none. In ODF, a `text:list`
+another numbering than its style's, or, where the style has none, a bullet or a list level a body
+paragraph also uses (`bodyNumLevels`). In ODF, a `text:list`
 around headings is chapter numbering when it is the outline style, the list the heading's named
 style carries, or unnamed (`isChapterList`). LibreOffice's bullet on a heading puts the list on
-the automatic style alone, and that heading stays a heading in the item. A *numbered* list on a
-DOCX heading whose style has no numbering still reads as chapter numbering.
+the automatic style alone, and that heading stays a heading in the item. A numbered list of
+headings alone, with no numbering on their style, still reads as chapter numbering.
+
+DOCX has no further paragraph of a list item. LibreOffice writes one with `w:numId="0"` and this
+editor without numbering, both indented to the item's text; an unnumbered paragraph whose left
+indent meets an open level's text start (±10 twips, no hang) joins that level's last item
+(`continuedLevel`).
 
 A nonzero `w:beforeLines`/`w:afterLines` wins over `w:before`/`w:after`, as in Word, at 12pt a
 line. LibreOffice keeps the twips when both are written, which WPS does (`w:after="0"

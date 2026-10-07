@@ -83,6 +83,8 @@ type Ctx = {
   // Heading level → the first w:numPr a heading of it states on itself, for chapter
   // numbering where the heading style carries none.
   headingNumPr: Map<number, { numId: number; ilvl: number }>;
+  // `numId:ilvl` levels that also number a body paragraph: on a heading, a list's level.
+  bodyNumLevels: Set<string>;
   usedListStyles: Map<number, string>; // numId → the named numbering style it links to
   // Text width (cm) of the file's page setup; a table's margins are relative to it.
   contentWidthCm: number;
@@ -282,11 +284,15 @@ export function importDocx(bytes: Uint8Array, convertedImages: ConvertedImages =
   const contentWidthCm = sectionContentWidthCm(sectPr);
   const leftMarginCm = twipToCm(intAttr(fc(sectPr, 'pgMar'), W, 'left') ?? 1440);
   const rightMarginCm = twipToCm(intAttr(fc(sectPr, 'pgMar'), W, 'right') ?? 1440);
-  const ctx: Ctx = { styles, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), warnings, files, rels: parseRels(files['word/_rels/document.xml.rels']), imageCache: new Map(), convertedImages, listCounters: new Map(), headingNumPr: new Map(), usedListStyles: new Map(), contentWidthCm, leftMarginCm, rightMarginCm, pageRtl: sectPrRtl(sectPr), mainLang: docLangs.main, hyphenate: docSetting(files, 'autoHyphenation'), cellSpacing: {}, compatMode: wordCompatMode(files), accents: themeAccents(themeDoc), themeColors: themeColors(themeDoc), themeLineWidths: Array.from(themeDoc?.getElementsByTagNameNS(A, 'lnStyleLst')[0]?.children ?? [], (ln) => (Number(ln.getAttribute('w')) || 12700) / 12700), openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentDefs: docxComments(files), bibSources: docxSources(files), citationStyle: docxCitationStyle(files), notes: [], noteParts: {
+  const ctx: Ctx = { styles, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), warnings, files, rels: parseRels(files['word/_rels/document.xml.rels']), imageCache: new Map(), convertedImages, listCounters: new Map(), headingNumPr: new Map(), bodyNumLevels: new Set(), usedListStyles: new Map(), contentWidthCm, leftMarginCm, rightMarginCm, pageRtl: sectPrRtl(sectPr), mainLang: docLangs.main, hyphenate: docSetting(files, 'autoHyphenation'), cellSpacing: {}, compatMode: wordCompatMode(files), accents: themeAccents(themeDoc), themeColors: themeColors(themeDoc), themeLineWidths: Array.from(themeDoc?.getElementsByTagNameNS(A, 'lnStyleLst')[0]?.children ?? [], (ln) => (Number(ln.getAttribute('w')) || 12700) / 12700), openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentDefs: docxComments(files), bibSources: docxSources(files), citationStyle: docxCitationStyle(files), notes: [], noteParts: {
     footnote: noteParts(files, 'footnotes', 'footnote'),
     endnote: noteParts(files, 'endnotes', 'endnote'),
   }, noteBookmarks: new Map() };
   ctx.noteBookmarks = noteBookmarkNames(ctx.noteParts);
+  for (const p of Array.from(body.getElementsByTagNameNS(W, 'p'))) {
+    const np = headingLevelOf(fc(p, 'pPr'), ctx) == null ? paragraphNum(p, ctx) : null;
+    if (np) ctx.bodyNumLevels.add(`${np.numId}:${np.ilvl}`);
+  }
 
   // Mid-body sectPr paragraphs delimit sections; a section whose w:cols declares
   // more than one column becomes a columns node (the trailing group is described
@@ -687,7 +693,8 @@ function openBookmarkMarks(ctx: Ctx): Mark[] {
 
 function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDefault = false): Node[] {
   const out: Node[] = [];
-  const stack: { ilvl: number; numId: number; list: Node }[] = [];
+  // `textTwip`: where the level's item text starts, which a further paragraph of an item lines up with.
+  const stack: { ilvl: number; numId: number; list: Node; textTwip: number | null }[] = [];
   // A page break ending one paragraph moves the next block to a new page (breakBefore).
   // Only SECTION_CARRIERS hold it; any other block kind clears it (break dropped).
   let breakPending = false;
@@ -771,6 +778,7 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
       }
       const src = tailKept ? tail! : el;
       const num = paragraphNum(src, ctx);
+      const continued = num ? -1 : continuedLevel(src, stack);
       if (num) {
         breakPending = false; // a break before a list item can't be modeled; drop it
         const para = splitParaAtPageBreaks(convertParagraph(src, ctx, 'list', boldByDefault), 'list').blocks[0];
@@ -783,7 +791,8 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
         while (stack.length === 0 || stack[stack.length - 1].ilvl < num.ilvl) {
           const ilvl = stack.length ? stack[stack.length - 1].ilvl + 1 : 0;
           stack.push({ ilvl, numId: num.numId,
-            list: makeListNode(ctx, num.numId, ilvl, ilvl === num.ilvl ? own : EMPTY_ITEM_INDENT) });
+            list: makeListNode(ctx, num.numId, ilvl, ilvl === num.ilvl ? own : EMPTY_ITEM_INDENT),
+            textTwip: (ilvl === num.ilvl ? own.left : null) ?? ctx.styles.level(num.numId, ilvl).leftTwip ?? null });
           if (ilvl === num.ilvl) break;
         }
         const targetList = stack[stack.length - 1].list;
@@ -794,6 +803,11 @@ function convertBlocks(children: Element[], ctx: Ctx, kind: BlockKind, boldByDef
           targetList.attrs = { ...(targetList.attrs ?? {}), start: number };
         }
         targetList.content!.push({ type: 'listItem', content: [para] });
+      } else if (continued >= 0) {
+        // An item's further paragraph: unnumbered, indented to an open level's text.
+        while (stack.length > continued + 1) closeTop();
+        const items = stack[stack.length - 1].list.content!;
+        items[items.length - 1].content!.push(...splitParaAtPageBreaks(convertParagraph(src, ctx, 'list', boldByDefault), 'list').blocks);
       } else {
         flush();
         const { blocks, trailingBreak } = splitParaAtPageBreaks(convertParagraph(src, ctx, kind, boldByDefault), kind);
@@ -881,6 +895,19 @@ function nextListNumber(ctx: Ctx, numId: number, ilvl: number): number {
   return n;
 }
 
+// The open list level whose item text a paragraph's own left indent lines up with, as
+// LibreOffice (numId 0) and this editor write an item's further paragraphs; -1 = none.
+function continuedLevel(el: Element, stack: { textTwip: number | null }[]): number {
+  const ind = fc(fc(el, 'pPr'), 'ind');
+  const left = ind ? intAttr(ind, W, 'left') ?? intAttr(ind, W, 'start') : null;
+  if (left == null || (intAttr(ind!, W, 'hanging') ?? 0) !== 0 || (intAttr(ind!, W, 'firstLine') ?? 0) !== 0) return -1;
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const t = stack[i].textTwip;
+    if (t != null && Math.abs(t - left) <= 10) return i;
+  }
+  return -1;
+}
+
 function paragraphNum(el: Element, ctx: Ctx): { numId: number; ilvl: number } | null {
   const ppr = fc(el, 'pPr');
   const numPr = fc(ppr, 'numPr');
@@ -889,12 +916,12 @@ function paragraphNum(el: Element, ctx: Ctx): { numId: number; ilvl: number } | 
   const styleNp = ctx.styles.styleNumPr(ps ? wVal(ps) : null);
   // A numbered heading is chapter numbering — whether the numbering rides its style, the
   // paragraph (WPS repeats it there) or both — unless the paragraph names another list
-  // than its style, or a bullet where the style has none: a list on the heading itself.
+  // than its style, or, where the style has none, a bullet or a list level body text shares.
   const level = headingLevelOf(ppr, ctx);
   if (level != null) {
     if (!np || np.numId === 0) return null;
     const bullet = ctx.styles.level(np.numId, np.ilvl).numFmt === 'bullet';
-    if (styleNp && styleNp.numId !== 0 ? styleNp.numId !== np.numId : bullet) return np;
+    if (styleNp && styleNp.numId !== 0 ? styleNp.numId !== np.numId : bullet || ctx.bodyNumLevels.has(`${np.numId}:${np.ilvl}`)) return np;
     if (!ctx.headingNumPr.has(level)) ctx.headingNumPr.set(level, np);
     return null;
   }

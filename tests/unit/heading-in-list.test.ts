@@ -101,11 +101,24 @@ describe('a list on a heading', () => {
       expect(list.content![0].content![2].content![0].content![0].attrs?.textAlign).toBe('center');
       expect(list.content![1].content![0].attrs?.textAlign).toBe('right');
       expect(odtBack.content!.at(-1)!.type).toBe('heading');
-      // DOCX reads an item's further paragraph as body text, so only its heading is checked.
+      // DOCX has no further paragraph of an item: it is one indented to the item's text.
       const docxBack = importDocx(docxBytes).content;
-      expect(docxBack.content![0].type).toBe('bulletList');
+      expect(docxBack.content![0].content![0].content!.map((b) => b.type)).toEqual(['heading', 'paragraph', 'bulletList']);
       expect(docxBack.content![0].content![0].content![0]).toMatchObject({ type: 'heading', attrs: { level: 2 } });
       expect(docxBack.content!.at(-1)!.type).toBe('heading');
     });
   }
+
+  // A numbered list the heading shares with body text is no chapter numbering.
+  it('round-trips a numbered list on a heading through DOCX', async () => {
+    const item = (block: object) => ({ type: 'listItem', content: [block] });
+    const doc = { type: 'doc', content: [{ type: 'orderedList', content: [
+      item({ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Title' }] }),
+      item({ type: 'paragraph', content: [{ type: 'text', text: 'Next' }] }),
+    ] }] };
+    const margins = { top: 2, bottom: 2, left: 2, right: 2 };
+    const back = importDocx(await buildDocx(doc as never, margins, 'portrait', undefined, null, 'A4', builtinStyleSheet()));
+    expect(shape(back.content as never)).toEqual([['orderedList', 'heading']]);
+    expect(back.styles?.outline ?? null).toBeNull();
+  });
 });
