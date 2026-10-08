@@ -15,7 +15,10 @@ For PDF-export repros specifically: replicate `pdf.ts`'s clone + `html2canvas(..
 `dist/` headless through `tests/browser.mjs` (preview server, checklist, `pageerror`
 collector) and fail on any uncaught page error. The DOM run keeps the pagination
 invariants of pass 4 below — one page count through a settle, a reload, a zoom, a page
-break and its undo — which is the only test `src/lib/components/**` has.
+break and its undo — which is the only test `src/lib/components/**` has. Last, it opens
+every ribbon menu in the dark theme and fails on a glyph or label within 2:1 of the colour
+behind it — a colour a control fixed instead of taking the theme's. `openApp` gives
+`browser.close` a 10 s deadline: Chromium can leave it unanswered after the page grid.
 
 `npm run test:layout` and `npm run test:monkey` run against the dev server (Vite serves
 TypeScript, so a page imports `src/` and `tests/` modules directly). The **layout run**

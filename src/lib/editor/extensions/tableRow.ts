@@ -23,6 +23,13 @@ export const ResizableTableRow = TableRow.extend({
           return h ? { style: `height: ${h}px` } : {};
         },
       },
+      // The row may not break across pages (Word's w:cantSplit, ODF's row
+      // fo:keep-together): one taller than a page starts on a fresh one (pageBreaks.ts).
+      cantSplit: {
+        default: false,
+        parseHTML: (element) => (element as HTMLElement).dataset?.cantSplit === 'true',
+        renderHTML: (attributes) => (attributes.cantSplit ? { 'data-cant-split': 'true' } : {}),
+      },
     };
   },
 });

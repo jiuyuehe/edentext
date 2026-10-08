@@ -23,6 +23,7 @@ declare module '@tiptap/core' {
     image: {
       setImage: (attrs: { src: string; alt?: string; width?: number | null; height?: number | null; rotation?: number; wrap?: WrapMode }) => ReturnType;
       setImageWrap: (wrap: WrapMode, inFront?: boolean) => ReturnType;
+      restackFrame: (to: 'forward' | 'backward' | 'front' | 'back') => ReturnType;
     };
   }
 }
@@ -109,10 +110,46 @@ export function frameMargins(wrap: WrapMode, offsetCm: unknown, boxWidthPx: numb
   return `0 ${far} 0 ${gap}`;
 }
 
+// CSS queues floats of one side behind each other, so a later frame would sit beside an
+// earlier one, or below it where its x no longer fits, rather than at its own x. Once
+// laid out, its margins are set to reach that x from the earlier one's outer edge, the
+// gap beside it cut where it would cross the column's edge. Kept on the element, so a
+// re-applied wrap restores them at once instead of laying out again.
+export function unstackFloat(el: HTMLElement, side: 'left' | 'right', offsetCm: unknown): void {
+  const kept = el.dataset.unstack?.split(':');
+  if (typeof offsetCm !== 'number' || kept?.[0] !== `${side}${offsetCm}`) delete el.dataset.unstack;
+  else [el.style.marginLeft, el.style.marginRight] = [kept[1], kept[2]];
+  if (typeof offsetCm !== 'number') return;
+  // Deferred: a new node view is not in its paragraph yet, so its neighbours are unknown.
+  requestAnimationFrame(() => {
+    let before = el.previousElementSibling;
+    while (before && !(before instanceof HTMLElement && before.style.float === side)) before = before.previousElementSibling;
+    const block = el.parentElement;
+    if (!before || !block || !el.isConnected || el.style.float !== side) return;
+    const b = block.getBoundingClientRect(), p = before.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const s = b.width / (block.offsetWidth || 1);
+    const cs = getComputedStyle(block), pm = getComputedStyle(before), em = getComputedStyle(el);
+    const top = r.top - parseFloat(em.marginTop) * s;
+    if (top < p.top - parseFloat(pm.marginTop) * s - 1 || top > p.bottom + 1) return; // not queued on its line
+    const left = b.left + (parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth)) * s;
+    const right = b.right - (parseFloat(cs.paddingRight) + parseFloat(cs.borderRightWidth)) * s;
+    const x = cmToPx(offsetCm), w = r.width / s, cw = (right - left) / s;
+    let ml = parseFloat(em.marginLeft), mr = parseFloat(em.marginRight);
+    if (side === 'left') { ml = x - ((p.right - left) / s + parseFloat(pm.marginRight)); mr = Math.min(mr, cw - x - w); }
+    else { mr = cw - x - w - ((right - p.left) / s + parseFloat(pm.marginLeft)); ml = Math.min(ml, x); }
+    if (Math.abs(ml - parseFloat(em.marginLeft)) < 0.5 && Math.abs(mr - parseFloat(em.marginRight)) < 0.5) return;
+    el.style.marginLeft = `${ml.toFixed(2)}px`;
+    el.style.marginRight = `${mr.toFixed(2)}px`;
+    el.dataset.unstack = `${side}${offsetCm}:${el.style.marginLeft}:${el.style.marginRight}`;
+  });
+}
+
 // What picking a wrap mode by hand drops: the offsets belong to the mode that was set,
 // and so do the coordinate systems they were measured in (the page corner, a fixed
 // page). `inFront` means something for run-through alone. Shared with textBox.ts.
-export function droppedFrameAttrs(wrap: WrapMode, inFront: boolean): Record<string, unknown> {
+// Behind and in front of the text are one mode, so a switch between them keeps the place.
+export function droppedFrameAttrs(wrap: WrapMode, inFront: boolean, from: unknown): Record<string, unknown> {
+  if (wrap === 'through' && from === 'through') return { inFront };
   return {
     wrapOffset: null,
     wrapOffsetY: null,
@@ -126,11 +163,11 @@ export function droppedFrameAttrs(wrap: WrapMode, inFront: boolean): Record<stri
 // Word's behind-text / in-front-of-text, ODF run-through: the text runs over or under
 // the frame, so it reserves nothing. Absolute with no offsets keeps the static position
 // it was anchored at; the file's own offsets ride as margins from there.
-export function applyRunThrough(el: HTMLElement, offsetCm: unknown, offsetYCm: unknown, inFront: boolean, fromPage = false, fromBody = false): void {
+export function applyRunThrough(el: HTMLElement, offsetCm: unknown, offsetYCm: unknown, inFront: boolean, fromPage = false, fromBody = false, rank: unknown = 0): void {
   const px = (cm: unknown) => (typeof cm === 'number' ? Math.round(cmToPx(cm)) : 0);
   el.style.position = 'absolute';
   el.style.margin = `${px(offsetYCm)}px 0 0 ${px(offsetCm)}px`;
-  el.style.zIndex = inFront ? '1' : '-1';
+  el.style.zIndex = stackZ(inFront, rank, el.classList.contains('image-node'));
   // Which side of the text it lands on, for the header/footer layer's stacking.
   if (inFront) el.dataset.inFront = ''; else delete el.dataset.inFront;
   clearPagePlace(el);
@@ -146,6 +183,84 @@ export function applyRunThrough(el: HTMLElement, offsetCm: unknown, offsetYCm: u
   } else if (typeof offsetCm === 'number') {
     el.dataset.columnX = String(px(offsetCm));
   }
+}
+
+// A free frame's layer: in front of the text under the header layer (22), behind it over
+// the sheets (-200), where every picture paints over every shape whatever their ranks, as
+// LibreOffice paints them (frames.md). Past the caps the document order decides.
+export function stackZ(inFront: boolean, rank: unknown, picture: boolean): string {
+  const r = typeof rank === 'number' && rank > 0 ? rank : 0;
+  return String(inFront ? 1 + Math.min(r, 20) : -150 + Math.min(r, 60) + (picture ? 70 : 0));
+}
+
+// A frame's rank among the stacking numbers its file part uses (ODF draw:z-index, DOCX
+// relativeHeight, which runs into the billions): one above every lower-numbered frame
+// anchored within STACK_REACH paragraphs, so the few frames that can overlap keep their
+// order under stackZ's caps however many the part holds. Both importers read it this way.
+const STACK_REACH = 3;
+const partRanks = new WeakMap<Document, Map<Element, number>>();
+export function stackRank(el: Element, ns: string | null, attr: string): number {
+  const doc = el.ownerDocument;
+  let ranks = partRanks.get(doc);
+  if (!ranks) {
+    const paras = new Map<Element, number>();
+    const frames: { el: Element; v: number; at: number }[] = [];
+    for (const e of Array.from(doc.getElementsByTagName('*'))) {
+      // A paragraph inside a frame's text counts as its anchor's.
+      let p: Element | null = e.parentElement;
+      while (p && !paras.has(p)) p = p.parentElement;
+      if (!p && (e.localName === 'p' || e.localName === 'h')) paras.set(e, paras.size);
+      const v = Number(e.getAttributeNS(ns, attr) ?? NaN);
+      if (Number.isFinite(v)) frames.push({ el: e, v, at: p ? paras.get(p)! : paras.size });
+    }
+    frames.sort((a, b) => a.v - b.v);
+    ranks = new Map();
+    for (const [i, f] of frames.entries()) {
+      let r = 0;
+      for (let j = 0; j < i; j++) {
+        const g = frames[j];
+        if (g.v < f.v && Math.abs(g.at - f.at) <= STACK_REACH) r = Math.max(r, ranks.get(g.el)! + 1);
+      }
+      ranks.set(f.el, r);
+    }
+    partRanks.set(doc, ranks);
+  }
+  return ranks.get(el) ?? 0;
+}
+
+// Whether a frame is out of the flow, where frames overlap and their order shows.
+const isFreeFrame = (n: PMNode): boolean =>
+  (n.type.name === 'image' || n.type.name === 'textBox') && (n.attrs.wrap === 'through' || typeof n.attrs.anchorPage === 'number');
+
+// One step past the next free frame in its layer (stackZ), or to that layer's end, as
+// both word processors move one; every free frame is then renumbered from 0. Shared
+// with text boxes, which it also reaches from a caret in their text. Returns false where
+// the frame is already there or not free.
+export function restackFrame(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, to: 'forward' | 'backward' | 'front' | 'back'): boolean {
+  const sel = state.selection;
+  const { $from } = sel;
+  let from = sel instanceof NodeSelection ? sel.from : -1;
+  for (let d = $from.depth; from < 0 && d > 0; d--) if ($from.node(d).type.name === 'textBox') from = $from.before(d);
+  const node = from >= 0 ? state.doc.nodeAt(from) : null;
+  if (!node || !isFreeFrame(node)) return false;
+  const frames: { pos: number; node: PMNode }[] = [];
+  state.doc.descendants((node, pos) => { if (isFreeFrame(node)) frames.push({ pos, node }); });
+  const rank = (n: PMNode) => (n.attrs.zIndex as number) || 0;
+  frames.sort((a, b) => rank(a.node) - rank(b.node) || a.pos - b.pos);
+  const i = frames.findIndex((f) => f.pos === from);
+  const layer = (f: { node: PMNode }) => (f.node.attrs.inFront === true ? 'front' : f.node.type.name);
+  const peers = frames.map((f, k) => (layer(f) === layer(frames[i]) ? k : -1)).filter((k) => k >= 0);
+  const at = peers.indexOf(i);
+  const j = to === 'forward' ? peers[at + 1] : to === 'backward' ? peers[at - 1] : to === 'front' ? peers[peers.length - 1] : peers[0];
+  if (j == null || j === i) return false;
+  if (dispatch) {
+    const [moved] = frames.splice(i, 1);
+    frames.splice(j, 0, moved);
+    const tr = state.tr;
+    frames.forEach((f, k) => { if (rank(f.node) !== k) tr.setNodeAttribute(f.pos, 'zIndex', k); });
+    dispatch(tr);
+  }
+  return true;
 }
 
 // A frame leaving run-through, or its page, takes no page place along.
@@ -358,6 +473,13 @@ export const Image = Node.create({
         parseHTML: el => (el as HTMLElement).hasAttribute('data-wrap-from-body'),
         renderHTML: () => ({}),
       },
+      // The frame's place among the free frames (restackFrame): 0 up, ties in document
+      // order. The files' draw:z-index / relativeHeight, ranked on import.
+      zIndex: {
+        default: 0,
+        parseHTML: el => parsePx((el as HTMLElement).getAttribute('data-z-index')) ?? 0,
+        renderHTML: () => ({}),
+      },
       // A page-anchored frame's stacking against text (ODF style:run-through): default
       // "background" sits behind; a title page's own cover graphic sets "foreground".
       inFront: {
@@ -404,6 +526,7 @@ export const Image = Node.create({
       ...(node.attrs.vAlign ? { 'data-v-align': String(node.attrs.vAlign) } : {}),
       ...(node.attrs.anchorPage ? { 'data-anchor-page': String(node.attrs.anchorPage) } : {}),
       ...(node.attrs.inFront ? { 'data-in-front': '' } : {}),
+      ...(node.attrs.zIndex ? { 'data-z-index': String(node.attrs.zIndex) } : {}),
       ...(node.attrs.wrapFromPage ? { 'data-wrap-from-page': '' } : {}),
       ...(node.attrs.wrapFromBody ? { 'data-wrap-from-body': '' } : {}),
     })];
@@ -428,10 +551,12 @@ export const Image = Node.create({
           const wrapDist = wrap === 'inline' ? sel.node.attrs.wrapDist : sel.node.attrs.wrapDist ?? 0.32;
           if (dispatch) {
             dispatch(atomAttrTr(state, sel.from,
-              { ...sel.node.attrs, wrap, wrapDist, ...droppedFrameAttrs(wrap, inFront) }));
+              { ...sel.node.attrs, wrap, wrapDist, ...droppedFrameAttrs(wrap, inFront, sel.node.attrs.wrap) }));
           }
           return true;
         },
+
+      restackFrame: (to) => ({ state, dispatch }) => restackFrame(state, dispatch, to),
     };
   },
 
@@ -461,27 +586,35 @@ function behindTextPlugin(): Plugin {
           // context-menu handling does with the point.
           if (!view.editable || event.button !== 0) return false;
           if (at instanceof HTMLElement && at.closest('[data-wrap="through"]')) return false;
-          const frame = frameBehindPoint(view, event.clientX, event.clientY);
-          if (!frame) return false;
+          const hit = frameBehindPoint(view, event.clientX, event.clientY);
+          if (!hit) return false;
           event.preventDefault();
-          (frame.querySelector('img') ?? frame).dispatchEvent(new MouseEvent('mousedown', {
-            clientX: event.clientX, clientY: event.clientY, button: 0, cancelable: true,
+          // A text box tells its outline from its text by the element hit; a picture is its image.
+          const frame = hit.closest('[data-wrap="through"]')!;
+          (frame.classList.contains('textbox-node') ? hit : frame.querySelector('img') ?? frame).dispatchEvent(new MouseEvent('mousedown', {
+            clientX: event.clientX, clientY: event.clientY, button: 0, cancelable: true, bubbles: true,
           }));
           return true;
+        },
+        // The page over such a frame would show its own cursor; the frame's is the one meant.
+        mousemove(view, event) {
+          const hit = view.editable && !event.buttons ? frameBehindPoint(view, event.clientX, event.clientY) : null;
+          view.dom.style.cursor = hit ? getComputedStyle(hit).cursor : '';
+          return false;
         },
       },
     },
   });
 }
 
-// The topmost behind-text frame under the point, or null where text painted over it
-// covers the point — the elements above it are walked in paint order.
-function frameBehindPoint(view: EditorView, x: number, y: number): HTMLElement | null {
+// The element hit in the topmost behind-text frame under the point, or null where text
+// painted over it covers the point — the elements above it are walked in paint order.
+// A shape's outline is an SVG path, and only it and the shape's text take the hit.
+function frameBehindPoint(view: EditorView, x: number, y: number): Element | null {
   const doc = view.dom.ownerDocument;
   for (const el of doc.elementsFromPoint(x, y)) {
-    if (!(el instanceof HTMLElement)) continue;
-    if (el.dataset.wrap === 'through' && view.dom.contains(el)) return el;
-    if (textUnder(el, x, y)) return null;
+    if (el.closest('[data-wrap="through"]') && view.dom.contains(el)) return el;
+    if (el instanceof HTMLElement && textUnder(el, x, y)) return null;
   }
   return null;
 }
@@ -651,7 +784,8 @@ class ImageView {
     if (w && h) {
       this.rotor.style.width = `${w}px`;
       this.rotor.style.height = `${h}px`;
-      const rad = (deg * Math.PI) / 180;
+      // Out of the flow the offsets place the unrotated box, as both formats do.
+      const rad = this.isFree() ? 0 : (deg * Math.PI) / 180;
       const bw = Math.abs(w * Math.cos(rad)) + Math.abs(h * Math.sin(rad));
       const bh = Math.abs(w * Math.sin(rad)) + Math.abs(h * Math.cos(rad));
       this.dom.style.width = `${bw}px`;
@@ -699,11 +833,11 @@ class ImageView {
     }
     delete d.dataset.anchorPage;
     if (wrap !== 'through' && this.pastZone()) {
-      applyRunThrough(d, this.offX(), this.offY(), true, a.wrapFromPage === true, a.wrapFromBody === true);
+      applyRunThrough(d, this.offX(), this.offY(), true, a.wrapFromPage === true, a.wrapFromBody === true, a.zIndex);
       return;
     }
     if (wrap === 'through') {
-      applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true, a.wrapFromBody === true);
+      applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true, a.wrapFromBody === true, a.zIndex);
       // Deferred like sinkToOffset: the frame has to be laid out before its own page
       // can be read off the grid. Its column only needs it in the document, so a frame
       // already there (a drag, an edit) lands at once instead of a frame late.
@@ -714,6 +848,7 @@ class ImageView {
     if (wrap === 'left' || wrap === 'right') {
       d.style.float = wrap;
       d.style.margin = frameMargins(wrap, a.wrapOffset, this.boxWidth(), null, a.wrapDist);
+      unstackFloat(d, wrap, a.wrapOffset);
       this.sinkToOffset();
     } else if (wrap === 'topBottom' && (a.wrapAlign === 'left' || a.wrapAlign === 'right')) {
       // Sharing its band with the frame set against the other end (the importers only
@@ -749,7 +884,7 @@ class ImageView {
     d.dataset.anchorPage = String(page);
     const px = (cm: unknown) => Math.round(cmToPx(typeof cm === 'number' ? cm : 0));
     d.style.position = 'absolute';
-    d.style.zIndex = this.node.attrs.inFront ? '1' : '-1';
+    d.style.zIndex = stackZ(this.node.attrs.inFront === true, this.node.attrs.zIndex, true);
     const grid = readVerticalMargins(this.view.dom as HTMLElement).grid;
     d.style.left = `${grid.leftOf(page) + px(this.offX())}px`;
     d.style.top = `${grid.topOf(page) + px(this.offY())}px`;
@@ -767,8 +902,11 @@ class ImageView {
   // Drag an image to re-anchor it live to the text position under the cursor (text
   // reflows in real time, throttled): a float re-anchors on a line change, an inline
   // image to the exact character. One undo step (later moves are addToHistory:false).
+  // The press selects the image, as it does a shape, so its frame shows while it moves.
   private startReposition(event: MouseEvent): void {
     if (!this.editor.isEditable) return;
+    const pos = this.getPos();
+    if (typeof pos === 'number') this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)));
     if (this.isFree()) { this.startFreeDrag(event); return; }
     event.preventDefault();
     event.stopPropagation();
@@ -779,7 +917,6 @@ class ImageView {
 
     let curPos = origPos;
     let firstMove = true;
-    let moved = false;
     let raf = 0;
     let lastX = event.clientX;
     let lastY = event.clientY;
@@ -818,7 +955,6 @@ class ImageView {
         view.dispatch(tr);
         curPos = ip;
         firstMove = false;
-        moved = true;
       } catch { /* target can't hold an inline image — ignore */ }
     };
 
@@ -832,28 +968,17 @@ class ImageView {
       if (raf) win.cancelAnimationFrame(raf);
       win.removeEventListener('mousemove', move);
       win.removeEventListener('mouseup', finish);
-      // A plain click (no move) just selects the image so its toolbar/handles show.
-      if (!moved && typeof this.getPos() === 'number') {
-        const pos = this.getPos();
-        view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)));
-      }
     };
     win.addEventListener('mousemove', move);
     win.addEventListener('mouseup', finish);
   }
 
   // A frame out of the flow moves by its own offsets instead of re-anchoring: nothing
-  // wraps around it, so there is no text position to follow. A click that never moved
-  // selects it, as it does everywhere else.
+  // wraps around it, so there is no text position to follow.
   private startFreeDrag(event: MouseEvent): void {
     this.dragX = freeDragX(this.view, this.dom, this.node.attrs.wrapOffset);
-    startFreeMove(event, this.dom, { ...this.node.attrs, wrapOffset: this.dragX }, by => { this.dragBy = by; this.applyWrap(); }, offsets => {
-      if (offsets) { this.commit(offsets); return; }
-      const pos = this.getPos();
-      if (typeof pos === 'number') {
-        this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)));
-      }
-    });
+    startFreeMove(event, this.dom, { ...this.node.attrs, wrapOffset: this.dragX }, by => { this.dragBy = by; this.applyWrap(); },
+      offsets => { if (offsets) this.commit(offsets); });
   }
 
   private adoptNaturalSize(): void {

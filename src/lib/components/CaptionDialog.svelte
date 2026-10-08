@@ -99,7 +99,7 @@
     /* The global reset zeroes every margin, which also takes the auto centring a
        modal <dialog> gets by default. */
     margin: auto;
-    border: none;
+    border: 1px solid var(--w-border-strong);
     border-radius: 8px;
     padding: 0;
     background: var(--color-surface);

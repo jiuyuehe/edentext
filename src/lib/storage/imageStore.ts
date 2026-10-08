@@ -75,8 +75,14 @@ function referenced(): Set<string> {
   return out;
 }
 
-/** Write the pictures and drop every key no document references any more. */
-export async function putImages(blobs: Map<string, string>): Promise<boolean> {
+// Keys a header or footer put this session: its JSON names them only once the write
+// lands, so a sweep in between would take them. The next session's sweep can.
+const pinned = new Set<string>();
+
+/**
+ * Write the pictures and, with `sweep`, drop every key no document references any more.
+ */
+export async function putImages(blobs: Map<string, string>, sweep = true): Promise<boolean> {
   if (!blobs.size && !inUse) return true;
   if (typeof indexedDB === 'undefined') return false;
   inUse = blobs.size > 0;
@@ -86,11 +92,13 @@ export async function putImages(blobs: Map<string, string>): Promise<boolean> {
     for (const [key, src] of blobs) {
       if (!known.includes(key)) await idbRequest(db, STORE, 'readwrite', (s) => s.put(src, key));
       confirmed.add(key);
+      if (!sweep) pinned.add(key);
     }
+    if (!sweep) { db.close(); return true; }
     // Not from the stored copy yet, so the sweeper's own pictures come from `blobs`.
     const live = referenced();
     for (const key of known) {
-      if (blobs.has(String(key)) || live.has(String(key))) continue;
+      if (blobs.has(String(key)) || live.has(String(key)) || pinned.has(String(key))) continue;
       confirmed.delete(String(key));
       await idbRequest(db, STORE, 'readwrite', (s) => s.delete(key));
     }
@@ -99,6 +107,12 @@ export async function putImages(blobs: Map<string, string>): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Drop every key no document references, as after deleting documents. */
+export function sweepImages(): Promise<boolean> {
+  inUse = true;
+  return putImages(new Map());
 }
 
 /**

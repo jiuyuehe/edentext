@@ -37,6 +37,13 @@ export const DEFAULT_OUTLINE_LEVEL: OutlineLevel = {
   format: 'none', prefix: '', suffix: '', displayLevels: 1, start: 1,
 };
 
+// 1 / 1.1 / 1.1.1: every level decimal, showing its parents, a space before the title.
+export function decimalOutline(): OutlineNumbering {
+  return Array.from({ length: MAX_OUTLINE_LEVELS }, (_, i) => ({
+    format: '1', prefix: '', suffix: ' ', displayLevels: i + 1, start: 1,
+  }));
+}
+
 export function outlineLevelAt(outline: OutlineNumbering | null | undefined, level: number): OutlineLevel | null {
   const l = outline?.[level - 1];
   return l && l.format !== 'none' ? l : null;
@@ -46,12 +53,15 @@ export function outlineIsEmpty(outline: OutlineNumbering | null | undefined): bo
   return !outline?.some((l) => l.format !== 'none');
 }
 
-// The CJK counter styles are the ones the lists use (editor.css).
+// The lists' counter styles (editor.css), plus capitals for upper Cyrillic chapters.
 const CSS_STYLE: Record<OutlineFormat, string> = {
   '1': 'decimal', a: 'lower-alpha', A: 'upper-alpha', i: 'lower-roman', I: 'upper-roman',
   '一, 二, 三, ...': 'simp-chinese-informal', '壹, 贰, 叁, ...': 'simp-chinese-formal',
   '甲, 乙, 丙, ...': 'edt-stem', '①, ②, ③, ...': 'edt-circled',
   'ア, イ, ウ, ...': 'edt-aiueo', 'イ, ロ, ハ, ...': 'edt-iroha',
+  aa: 'edt-alpha-sync', AA: 'edt-upper-alpha-sync',
+  'а, б, .., аа, аб, ... (ru)': 'edt-cyrillic', 'А, Б, .., Аа, Аб, ... (ru)': 'edt-upper-cyrillic',
+  'а, б, .., аа, бб, ... (ru)': 'edt-cyrillic-sync', 'А, Б, .., Аа, Бб, ... (ru)': 'edt-upper-cyrillic-sync',
 };
 
 const COUNTER = (level: number) => `edt-outline-${level}`;
@@ -146,8 +156,10 @@ export function outlineCss(
     // text-indent inherits, and an inline block applies it to its own first line: the
     // hanging indent below would shrink the label's box by exactly what it hangs it out.
     const label = [`content: ${content}`, 'white-space: pre', 'display: inline-block', 'text-indent: 0'];
-    const gap = (own.tabCm ?? 0) - (indent + first);
-    if (gap > 0) label.push(`min-width: ${cm(gap)}`);
+    // A tab running to the level's indent runs to the paragraph's own instead, so the
+    // label fills whatever first line hangs out of it, a heading's direct one included.
+    if (own.tabCm != null && own.tabCm === indent) label.push(`min-width: calc(-1 * var(--indent-first, ${cm(first)}))`);
+    else if ((own.tabCm ?? 0) - (indent + first) > 0) label.push(`min-width: ${cm(own.tabCm! - indent - first)}`);
     label.push(...labelDecls(own.labelText ?? {}));
     rules.push(`${head}::before {\n  ${label.join(';\n  ')};\n}`);
   }

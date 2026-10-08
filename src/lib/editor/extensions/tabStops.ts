@@ -87,7 +87,7 @@ declare module '@tiptap/core' {
   }
 }
 
-const tabStopsKey = new PluginKey<DecorationSet>('tabStops');
+export const tabStopsKey = new PluginKey<DecorationSet>('tabStops');
 
 // A stop past the end of the line is drawn at the end of the line, as LibreOffice does:
 // the Math Guide's footer style puts its right stop at 18cm in a 17cm column, and honoured
@@ -123,7 +123,22 @@ function tabPositions(node: PmNode, blockPos: number): number[] {
 
 type TabWidth = { pos: number; width: number; leader: string | null };
 // Doc positions where a run of tabs has to start a new line.
-type TabLayout = { widths: TabWidth[]; breaks: number[] };
+export type TabLayout = { widths: TabWidth[]; breaks: number[] };
+
+// An advance re-measured over its own margin lands a rounding step off (72.14 ↔ 72.15 px),
+// which would re-dispatch, and so re-paginate, on every pass; half a pixel nobody sees.
+const SAME_WIDTH_PX = 0.5;
+
+export function sameLayout({ widths, breaks }: TabLayout, live: Decoration[]): boolean {
+  const tabs = live.filter((d) => d.spec.width !== undefined).sort((a, b) => a.from - b.from);
+  const wraps = live.filter((d) => d.spec.key === 'tab-wrap').map((d) => d.from).sort((a, b) => a - b);
+  const sorted = [...widths].sort((a, b) => a.pos - b.pos);
+  const at = [...breaks].sort((a, b) => a - b);
+  return tabs.length === sorted.length && wraps.length === at.length
+    && sorted.every((w, i) => tabs[i].from === w.pos && (tabs[i].spec.leader ?? null) === (w.leader ?? null)
+      && Math.abs(tabs[i].spec.width - w.width) < SAME_WIDTH_PX)
+    && at.every((p, i) => wraps[i] === p);
+}
 
 // Where the pen lands after a tab standing at x (cm from the line start): the first stop
 // right of it, else the next multiple of the default interval.
@@ -481,7 +496,6 @@ export const TabStops = Extension.create({
 
   addProseMirrorPlugins() {
     let rafId: number | null = null;
-    let key = '';
     // Each pass measures the layout the previous one produced, so a tab whose x moved
     // needs one more pass to settle (a stop can also rewrap the line). Bounded against
     // a two-layout ping-pong; reset per external change.
@@ -517,6 +531,9 @@ export const TabStops = Extension.create({
           // A read-only zone source is cloned per page, and its clones lay out their own
           // tabs (layOutZoneTabs) with the page's field values.
           if (isSplitPane(view) || !view.editable) return {};
+          // The first pass always dispatches, so a page recalc follows the load: without
+          // it WebKit took ~9s over a long document's first spell highlights (cause unknown).
+          let applied = false;
           const calculate = () => {
             rafId = null;
             let layout: TabLayout = { widths: [], breaks: [] };
@@ -524,13 +541,10 @@ export const TabStops = Extension.create({
             // next change re-runs the pass anyway.
             try { layout = measure(view); } catch { return; }
             const { widths, breaks } = layout;
-            const next = widths.map((w) => `${w.pos}:${w.width}:${w.leader ?? ''}`).join(',') + `|${breaks.join(',')}`;
-            // Replacing the document maps every decoration away, so a layout identical to
-            // the last one — the two forms of one letter template — has to be dispatched
-            // again rather than recognised as already applied.
-            const live = tabStopsKey.getState(view.state)?.find().length ?? 0;
-            if (next === key && live === widths.length + breaks.length) return;
-            key = next;
+            // Compared with the live set, which edits have mapped along: typing moves every
+            // later tab's position but no advance, and a replaced document has mapped it empty.
+            if (applied && sameLayout(layout, tabStopsKey.getState(view.state)?.find() ?? [])) return;
+            applied = true;
             const decos: Decoration[] = widths.map((w) =>
               // margin-LEFT: the gap is the tab's own advance, so a caret placed after
               // the tab has to sit behind it. As margin-right it stayed at the old x
@@ -539,7 +553,8 @@ export const TabStops = Extension.create({
                 // The fill is a ::before clipped to the gap (editor.css), so the leader
                 // stays out of the document's text.
                 ? { style: `tab-size:0;margin-left:${w.width}px;--leader-w:${w.width}px`, class: 'tab-leader', 'data-leader': w.leader }
-                : { style: `tab-size:0;margin-left:${w.width}px` }),
+                : { style: `tab-size:0;margin-left:${w.width}px` },
+                { width: w.width, leader: w.leader }),
             );
             // The tabs the line can't hold move to the next one, where the grid starts
             // over — which is what CSS does after a <br> anyway.

@@ -14,12 +14,12 @@
 </div>
 
 <style>
-  /* Behind everything the page carries — a shape behind the text sits at -2 and the
-     header/footer background layer at -1, so the sheet has to be under both. */
+  /* Behind everything the page carries — the frames behind the text (-150 to -20, stackZ
+     in image.ts) and the header/footer background layer at -1. */
   .page-sheet-layer {
     position: absolute;
     inset: 0;
-    z-index: -3;
+    z-index: -200;
     pointer-events: none;
   }
 

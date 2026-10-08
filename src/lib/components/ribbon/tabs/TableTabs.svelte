@@ -100,10 +100,10 @@
 
   // Word folds the three deletions into one big button's menu, so the four inserts
   // beside it are the group's whole width.
-  const DELETES: { icon: IconName; label: () => string; cmd: (c: ChainedCommands) => ChainedCommands }[] = [
-    { icon: 'deleteRow', label: () => t().table.deleteRow, cmd: (c) => c.deleteRow() },
-    { icon: 'deleteCol', label: () => t().table.deleteColumn, cmd: (c) => c.deleteColumn() },
-    { icon: 'deleteTable', label: () => t().table.deleteTable, cmd: (c) => c.deleteTable() },
+  const DELETES: { key: string; icon: IconName; label: () => string; cmd: (c: ChainedCommands) => ChainedCommands }[] = [
+    { key: 'deleteRow', icon: 'deleteRow', label: () => t().table.deleteRow, cmd: (c) => c.deleteRow() },
+    { key: 'deleteColumn', icon: 'deleteCol', label: () => t().table.deleteColumn, cmd: (c) => c.deleteColumn() },
+    { key: 'deleteTable', icon: 'deleteTable', label: () => t().table.deleteTable, cmd: (c) => c.deleteTable() },
   ];
 
   const VALIGNS: { key: CellVerticalAlign | null; icon: 'alignTop' | 'alignMiddle' | 'alignBottom'; label: () => string }[] = [
@@ -115,7 +115,7 @@
 
 {#if which === 'design'}
   <RibbonGroup label={t().styles.tableStyles}>
-    <div class="rb-captioned" use:captionClicks>
+    <div class="rb-captioned" data-cmd="tableStyle" use:captionClicks>
       <TableStylePicker {editor} {tick} />
       <span class="rb-caption">{t().table.tableStyle}</span>
     </div>
@@ -124,7 +124,7 @@
   <div class="ribbon-sep"></div>
 
   <RibbonGroup label={t().ribbon.groups.tableDecor}>
-    <div class="rb-captioned" use:captionClicks>
+    <div class="rb-captioned" data-cmd="cellShading" use:captionClicks>
       <ColorPicker
         {editor}
         currentColor={cellColor}
@@ -138,7 +138,7 @@
       />
       <span class="rb-caption">{t().table.cellShading}</span>
     </div>
-    <div class="rb-captioned" use:captionClicks>
+    <div class="rb-captioned" data-cmd="tableBorders" use:captionClicks>
       <TableBorderPicker {editor} {tick} />
       <span class="rb-caption">{t().borders.title}</span>
     </div>
@@ -148,11 +148,12 @@
 
   <RibbonGroup label={t().ribbon.groups.tableOptions}>
     <div class="rb-col">
-      <RibbonButton variant="small" icon="headerRow" label={t().styles.regions.headerRow} active={isHeaderRow} onclick={() => run((c) => c.toggleHeaderRowStyle())} />
-      <RibbonButton variant="small" icon="firstColumn" label={t().styles.regions.firstColumn} active={isHeaderCol} onclick={() => run((c) => c.toggleHeaderColumnStyle())} />
+      <RibbonButton variant="small" icon="headerRow" cmd="headerRow" label={t().styles.regions.headerRow} active={isHeaderRow} onclick={() => run((c) => c.toggleHeaderRowStyle())} />
+      <RibbonButton variant="small" icon="firstColumn" cmd="firstColumn" label={t().styles.regions.firstColumn} active={isHeaderCol} onclick={() => run((c) => c.toggleHeaderColumnStyle())} />
       <RibbonButton
         variant="small"
         icon="headerRow"
+        cmd="repeatHeaderRow"
         label={t().ribbon.repeatHeaderRow}
         title={t().ribbon.repeatHeaderRowHint}
         active={repeatsHeader}
@@ -166,6 +167,7 @@
       <RibbonButton
         variant="big"
         icon="deleteRow"
+        cmd="tableDelete"
         label={t().common.remove}
         title={t().common.remove}
         caret
@@ -175,7 +177,7 @@
       {#if isMenuOpen('tableDelete')}
         <div class="ribbon-menu" use:anchored role="menu">
           {#each DELETES as d}
-            <button role="menuitem" onclick={() => { closeMenu(); run(d.cmd); }}>
+            <button role="menuitem" data-cmd={`tableDelete-${d.key}`} onclick={() => { closeMenu(); run(d.cmd); }}>
               <Icon name={d.icon} size={16} />{d.label()}
             </button>
           {/each}
@@ -184,20 +186,20 @@
     </div>
     <div class="rb-mini-sep"></div>
     <div class="inserts">
-      <RibbonButton variant="big" icon="rowAbove" label={t().ribbon.insertAbove} onclick={() => run((c) => c.addRowBefore())} />
-      <RibbonButton variant="big" icon="rowBelow" label={t().ribbon.insertBelow} onclick={() => run((c) => c.addRowAfter())} />
-      <RibbonButton variant="big" icon="colLeft" label={t().ribbon.insertLeft} onclick={() => run((c) => c.addColumnBefore())} />
-      <RibbonButton variant="big" icon="colRight" label={t().ribbon.insertRight} onclick={() => run((c) => c.addColumnAfter())} />
+      <RibbonButton variant="big" icon="rowAbove" cmd="insertAbove" label={t().ribbon.insertAbove} onclick={() => run((c) => c.addRowBefore())} />
+      <RibbonButton variant="big" icon="rowBelow" cmd="insertBelow" label={t().ribbon.insertBelow} onclick={() => run((c) => c.addRowAfter())} />
+      <RibbonButton variant="big" icon="colLeft" cmd="insertLeft" label={t().ribbon.insertLeft} onclick={() => run((c) => c.addColumnBefore())} />
+      <RibbonButton variant="big" icon="colRight" cmd="insertRight" label={t().ribbon.insertRight} onclick={() => run((c) => c.addColumnAfter())} />
     </div>
   </RibbonGroup>
 
   <div class="ribbon-sep"></div>
 
   <RibbonGroup label={t().ribbon.groups.merge}>
-    <RibbonButton variant="big" icon="merge" label={t().table.mergeCells} disabled={!canMerge} onclick={() => run((c) => c.mergeCells())} />
+    <RibbonButton variant="big" icon="merge" cmd="mergeCells" label={t().table.mergeCells} disabled={!canMerge} onclick={() => run((c) => c.mergeCells())} />
     <span class="rb-menu-wrap" use:clickOutside={'tableSplit'}>
       <button class="split-trigger" onclick={() => toggleMenu('tableSplit')} title={t().table.splitCells}>
-        <RibbonButton variant="big" icon="split" label={t().table.splitCellsAria} />
+        <RibbonButton variant="big" icon="split" cmd="splitCells" label={t().table.splitCellsAria} />
       </button>
       {#if isMenuOpen('tableSplit')}
         <div class="table-dialog" use:anchored>
@@ -215,6 +217,7 @@
   <RibbonGroup label={t().align.section}>
     {#each VALIGNS as v}
       <RibbonButton
+        cmd={`cellAlign-${v.icon.slice(5)}`}
         icon={v.icon}
         title={v.label()}
         active={vAlign === v.key}
@@ -230,6 +233,7 @@
       <RibbonButton
         variant="big"
         icon="cellMargins"
+        cmd="cellMargins"
         label={t().ribbon.cellMargins}
         title={t().ribbon.cellMargins}
         disabled={!padding}
@@ -266,7 +270,7 @@
   <RibbonGroup label={t().ribbon.groups.tableData}>
     <span class="rb-menu-wrap" use:clickOutside={'tableSort'}>
       <button class="split-trigger" onclick={() => toggleMenu('tableSort')} title={t().table.sort}>
-        <RibbonButton variant="big" icon="sortRows" label={t().table.sortAria} disabled={!inTable} />
+        <RibbonButton variant="big" icon="sortRows" cmd="sort" label={t().table.sortAria} disabled={!inTable} />
       </button>
       {#if isMenuOpen('tableSort') && inTable}
         <div class="table-dialog" use:anchored>
@@ -282,7 +286,7 @@
     </span>
     <span class="rb-menu-wrap" use:clickOutside={'tableFormula'}>
       <button class="split-trigger" onclick={() => toggleMenu('tableFormula')} title={t().table.formula}>
-        <RibbonButton variant="big" icon="formula" label={t().table.formulaAria} disabled={!inTable} />
+        <RibbonButton variant="big" icon="formula" cmd="tableFormula" label={t().table.formulaAria} disabled={!inTable} />
       </button>
       {#if isMenuOpen('tableFormula') && inTable}
         <div class="table-dialog" use:anchored>
@@ -299,6 +303,7 @@
     <RibbonButton
       variant="small"
       icon="wordCount"
+      cmd="numberRecognition"
       label={t().table.numberRecognition}
       title={t().table.numberRecognitionHint}
       active={numberRecognition()}

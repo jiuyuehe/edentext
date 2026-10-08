@@ -42,8 +42,8 @@
 
 <RibbonGroup label={t().hf.insert}>
   <RibbonButton variant="big" icon="pageNumber" label={t().hf.pageNumber} title={t().hf.pageNumberTitle} disabled={!editor} onclick={() => insertField('pageNumber')} />
-  <RibbonButton variant="big" icon="pageCount" label={t().hf.pageCount} title={t().hf.pageCountTitle} disabled={!editor} onclick={() => insertField('pageCount')} />
-  <RibbonButton variant="big" icon="toc" label={t().hf.chapter} title={t().hf.chapterTitle} disabled={!editor} onclick={() => insertField('chapterField')} />
+  <RibbonButton variant="big" icon="pageCount" cmd="hfPageCount" label={t().hf.pageCount} title={t().hf.pageCountTitle} disabled={!editor} onclick={() => insertField('pageCount')} />
+  <RibbonButton variant="big" icon="toc" cmd="hfChapter" label={t().hf.chapter} title={t().hf.chapterTitle} disabled={!editor} onclick={() => insertField('chapterField')} />
   <div class="rb-captioned" use:captionClicks>
     <DateTimePicker
       bind:open={dateOpen}
@@ -60,11 +60,11 @@
      editing depends on them, so they are read as often as they are set. -->
 <RibbonGroup label={t().ribbon.hfOptions}>
   <div class="hf-checks">
-    <label class="check-row" title={t().toolbarExpanded.differentFirstPageHint}>
+    <label class="check-row" data-cmd="differentFirstPage" title={t().toolbarExpanded.differentFirstPageHint}>
       <input type="checkbox" bind:checked={differentFirstPage} />
       {t().toolbarExpanded.differentFirstPage}
     </label>
-    <label class="check-row" title={t().toolbarExpanded.differentOddEvenHint}>
+    <label class="check-row" data-cmd="differentOddEven" title={t().toolbarExpanded.differentOddEvenHint}>
       <input type="checkbox" bind:checked={differentOddEven} />
       {t().toolbarExpanded.differentOddEven}
     </label>
@@ -91,13 +91,13 @@
   </div>
   <!-- The left/centre/right running head rides on the zone's tab stops; the ruler is
        the other way to them. -->
-  <RibbonButton variant="big" icon="ruler" label={t().paragraphDialog.tabsButton} title={t().tabsDialog.title} disabled={!editor} onclick={() => onTabsDialog?.()} />
+  <RibbonButton variant="big" icon="ruler" cmd="hfTabs" label={t().paragraphDialog.tabsButton} title={t().tabsDialog.title} disabled={!editor} onclick={() => onTabsDialog?.()} />
 </RibbonGroup>
 
 <div class="ribbon-sep"></div>
 
 <RibbonGroup label={t().ribbon.groups.close}>
-  <RibbonButton variant="big" icon="close" label={t().ribbon.closeHf} title={t().hf.doneTitle} onclick={() => onEditZone?.(null)} />
+  <RibbonButton variant="big" icon="close" cmd="closeHf" label={t().ribbon.closeHf} title={t().hf.doneTitle} onclick={() => onEditZone?.(null)} />
 </RibbonGroup>
 
 <style>

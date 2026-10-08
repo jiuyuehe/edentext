@@ -8,6 +8,7 @@ import {
   readVerticalMargins, bandAt, FORCE_PAGE_RECALC, isSplitPane, blockDeco, isBlockDeco, repairDecos,
 } from './pageBreaks';
 import { sameColumnsAttrs, COLUMNS_FIT_MARGIN_PX } from './columns';
+import { tabStopsKey } from './tabStops';
 
 // Cross-page column flow: keeps a columns chain's fragmentation in sync with the
 // page grid (split an overflowing fragment at a block or line boundary, pull a
@@ -174,7 +175,6 @@ export const ColumnsFlow = Extension.create({
     // as long as the budget lasts. The join that undoes a split(pos) sits at pos + 1.
     const splitAt = new Set<number>();
     let decorations = DecorationSet.empty;
-    let lastDecoKey = '';
 
     const plugin = new Plugin<number>({
       key: flowKey,
@@ -194,6 +194,9 @@ export const ColumnsFlow = Extension.create({
           // A pass of its own never refreshes the budget — not even the recalc the
           // decoration update asks for, or reflow and decorations pump each other forever.
           if (tr.getMeta(FLOW_TX)) return value;
+          // Nor does the tab pass's recalc: it answers every doc change of ours, so counting
+          // it lets a join/split pair at one boundary restart the budget forever.
+          if (tr.getMeta(tabStopsKey)) return value;
           if (tr.docChanged || tr.getMeta(FORCE_PAGE_RECALC)) return value + 1;
           return value;
         },
@@ -232,10 +235,6 @@ export const ColumnsFlow = Extension.create({
         }
 
         function dispatchFlow(tr: Transaction): void {
-          // A split or join replaces the nodes the height decorations sit on, so
-          // ProseMirror drops them; the cache key would keep them from coming back
-          // and leave the fragment measuring its balanced height instead of its slot.
-          lastDecoKey = '';
           editorView.dispatch(tr.setMeta('addToHistory', false).setMeta(FLOW_TX, true));
         }
 
@@ -488,14 +487,14 @@ export const ColumnsFlow = Extension.create({
             items.push({ from: pos, to: pos + node.nodeSize, height: Math.round(height) });
           }
 
-          const key = items.map((d) => `${d.from}:${d.to}:${d.height}`).join('|');
-          if (key === lastDecoKey) return;
-          lastDecoKey = key;
+          // Against the live set, which edits map along: typing above a section moves its
+          // positions, not its height. A split or join drops the decorations it replaces.
+          const style = (height: number) => `height:${height}px;column-fill:auto;overflow:hidden`;
+          const key = items.map((d) => `${d.from}:${d.to}:${style(d.height)}`).join('|');
+          const live = decorations.find().map((d) => `${d.from}:${d.to}:${d.spec.block?.style}`).join('|');
+          if (key === live) return;
           decorations = items.length
-            ? DecorationSet.create(editorView.state.doc, items.map((d) =>
-                blockDeco(d.from, d.to, {
-                  style: `height:${d.height}px;column-fill:auto;overflow:hidden`,
-                })))
+            ? DecorationSet.create(editorView.state.doc, items.map((d) => blockDeco(d.from, d.to, { style: style(d.height) })))
             : DecorationSet.empty;
           // Re-render + let pageBreaks re-measure the new box heights.
           editorView.dispatch(

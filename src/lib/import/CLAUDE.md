@@ -68,6 +68,8 @@ is the list's indent, and a table's `w:tblW w:type="pct"` its width as a share o
 section's text width — the grid is only the columns' weights there, and reading it as a
 width collapses a full-width table to a few millimetres.
 
+`utils/shapePresets.json` is generated (`scripts/make-shape-presets.mjs`, MPL-2.0 from LibreOffice): never edit it by hand.
+
 Read `docs/architecture/import.md` before changing parsing, style resolution, default
 suppression, image conversion, headers/footers, or format-specific edge cases. Read the
 focused architecture document for tables, frames, formulas, formatting, notes, or encryption.

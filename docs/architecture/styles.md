@@ -74,11 +74,18 @@ documentation.
 `StyleSheet.outline` stores one document-wide definition: format, prefix, suffix,
 `displayLevels`, start value, label formatting, indentation, and tab stop per level. Heading
 levels increment their own counter and reset deeper levels. Headings in cells, lists, and frames
-are outside that document outline.
+are outside that document outline. A tab stop at the level's indent follows a heading's own
+hanging indent (`--indent-first`), so a wrapped title lines up under itself (probed in LibreOffice).
 
 The visible label and table-of-contents label use the same counting rules. ODF writes the
 definition as an outline style; DOCX writes matching numbering referenced by heading styles.
 Keep the heading level explicit so import does not mistake a numbered heading for a list item.
+
+The style manager's Chapters tab edits it level by level (`setOutline`); its preset
+`decimalOutline` is 1 / 1.1 / 1.1.1 with a space as the suffix. Its one indent field sets
+indent, hanging first line and tab together, the only label position DOCX can state.
+The numbering button on a heading switches it as well, as a word processor's multilevel
+list bound to the heading styles does (`orderedList.ts`).
 
 **A run in a taller face does raise the line.** A run whose own font or character style
 sets a `--natural-line` takes the paragraph's line-height expression with that value

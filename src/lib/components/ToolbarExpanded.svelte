@@ -2026,19 +2026,26 @@
     flex-direction: column;
   }
 
+  /* A ruled heading that stays pinned while its fonts scroll, so it never reads
+     as one more font that cannot be picked. */
   .font-section-label {
-    padding: 0.4rem 0.6rem 0.2rem;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 0.3rem 0.6rem;
     font-size: 0.65rem;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--color-text-muted);
+    color: var(--color-text);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-text-muted);
     font-family: var(--font-sans);
     user-select: none;
   }
 
   .font-section-label:not(:first-child) {
-    margin-top: 4px;
-    border-top: 1px solid var(--color-border);
+    margin-top: 6px;
   }
 
   .font-show-all {

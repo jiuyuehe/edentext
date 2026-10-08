@@ -236,7 +236,18 @@ function paragraph(r: Rng, indents = true, top = false): N {
 // px multiples of 48 map to whole-hundredth cm and back without rounding drift.
 function textBox(r: Rng): N {
   const attrs: N = { width: 48 * int(r, 3, 7), height: 48 * int(r, 2, 4) };
-  if (maybe(r, 0.3)) attrs.shapeKind = pick(r, ['roundRect', 'ellipse', 'diamond']);
+  const outline = maybe(r, 0.5);
+  if (outline) {
+    // An outline of its own on a quarter grid, which both files keep exactly: shaded
+    // faces, a part stroked only and its own text area — or a DrawingML preset.
+    attrs.shapePath = 'M 0 25 L 75 25 L 75 100 L 0 100 Z S N M 75 25 L 100 0 L 100 75 L 75 100 Z I S N '
+      + 'M 0 25 L 25 0 L 100 0 L 75 25 Z K S N M 0 25 L 25 0 L 100 0 L 100 75 L 75 100 L 0 100 Z F N';
+    if (maybe(r, 0.5)) attrs.shapeTextArea = [0, 25, 75, 100];
+    if (maybe(r, 0.5)) {
+      attrs.shapePreset = pick(r, [{ name: 'cube', adj: { adj: 40000 } }, { name: 'moon', adj: {}, flipH: true },
+        { name: 'wedgeRectCallout', adj: {} }, { name: 'smileyFace', adj: { adj: 4000 }, flipV: true }]);
+    }
+  } else if (maybe(r, 0.3)) attrs.shapeKind = pick(r, ['roundRect', 'ellipse', 'diamond']);
   if (maybe(r, 0.3)) attrs.fillColor = pick(r, ['#FFE0A0', '#DDEEFF']);
   // width only beside a stroke color: with no stroke drawn the width is meaningless
   if (maybe(r, 0.25)) {

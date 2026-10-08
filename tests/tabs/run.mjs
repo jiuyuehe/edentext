@@ -56,11 +56,20 @@ try {
   }
   check((await text(a)).includes('Alpha') && (await text(b)).includes('Beta'), 'both tabs keep their document across a reload');
 
-  // A closed tab signs its document off, so the next fresh tab takes it up again.
+  // An open tab holds its document's lock, and its end releases it however it came: the
+  // marker is set back to held, as a tab that ended with no pagehide leaves it.
+  const bId = await b.evaluate(() => sessionStorage.getItem('edentext-tab-doc'));
+  const locks = await a.evaluate(async () => (await navigator.locks.query()).held.map((l) => l.name));
+  check(locks.includes(`edentext-doc@${bId}`), `an open tab holds its document's lock (${locks.join(', ')})`);
+  // A fresh tab starts empty; the document a closed tab held is offered, not opened.
   await b.close();
+  await a.evaluate((id) => localStorage.setItem(`edentext-live@${id}`, String(Date.now())), bId);
   const c = await openTab();
-  await settle(c);
-  check((await text(c)).includes('Beta'), 'a new tab takes up the document the closed tab held');
+  await settle(c, true);
+  check(!(await text(c)).trim(), 'a new tab starts on an empty document');
+  await c.getByRole('button', { name: 'Beta' }).click();
+  await c.waitForFunction(() => document.querySelector('.tiptap')?.textContent.includes('Beta'));
+  check(true, 'the resume card reopens the document the closed tab held');
 } catch (err) {
   check(false, `tabs run threw: ${err.message ?? err}`);
 } finally {

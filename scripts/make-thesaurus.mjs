@@ -11,6 +11,7 @@ const SOURCES = [
   { code: 'fr', dat: 'fr_FR/dictionaries/thes_fr.dat', license: 'fr_FR/dictionaries/README_thes_fr.txt' },
   { code: 'pt', dat: 'pt_PT/th_pt_PT.dat', license: 'pt_PT/README_th_pt_PT.txt' },
   { code: 'ru', dat: 'ru_RU/th_ru_RU_M_aot_and_v2.dat', license: 'ru_RU/README_thes_ru_RU_M_aot_and_v2.txt' },
+  { code: 'uk', dat: 'uk_UA/th_uk_UA.dat', license: 'uk_UA/README_th_uk_UA.txt' },
 ];
 
 // "(noun)", "(ugs.)", "(generic term)" — a label to read, not a word to insert.

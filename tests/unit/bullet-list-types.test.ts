@@ -44,6 +44,11 @@ describe('bulletCharFromDocx (Word numbering.xml patterns)', () => {
     expect(bulletCharFromDocx('', 'Wingdings')).toBe('✓');
   });
 
+  it("maps the arrows of Word's bullet library", () => {
+    expect(bulletCharFromDocx('\uf0e0', 'Wingdings')).toBe('→');
+    expect(bulletCharFromDocx('\uf0e8', 'Wingdings')).toBe('➔');
+  });
+
   it('maps the Symbol bullets', () => {
     expect(bulletCharFromDocx('', 'Symbol')).toBe('•');
     expect(bulletCharFromDocx('', 'Symbol')).toBe('♦');
@@ -64,7 +69,7 @@ describe('bulletCharFromDocx (Word numbering.xml patterns)', () => {
   });
 
   it('returns null for unmapped symbol glyphs and PUA chars in unknown fonts', () => {
-    expect(bulletCharFromDocx('', 'Wingdings')).toBeNull();
+    expect(bulletCharFromDocx('\uf021', 'Wingdings')).toBeNull();
     expect(bulletCharFromDocx('', 'SomeDingbats')).toBeNull();
     expect(bulletCharFromDocx('', 'Wingdings')).toBeNull();
     expect(bulletCharFromDocx(undefined, 'Wingdings')).toBeNull();

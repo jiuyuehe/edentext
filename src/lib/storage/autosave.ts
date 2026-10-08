@@ -1,7 +1,8 @@
 import { t, locale } from '../i18n/i18n.svelte';
 import { stashImages, putImages, restoreImages, isStored } from './imageStore';
 import { keepSnapshot, listSnapshots, readSnapshot } from './snapshots';
-import { docKey } from './docScope';
+import { docKey, docStore, volatile, otherDocumentsStored } from './docScope';
+import type { Schema } from '@tiptap/pm/model';
 
 const STORAGE_KEY = docKey('edentext-doc');
 // Set while a stored document is being handed to the editor, cleared once the editor
@@ -9,7 +10,7 @@ const STORAGE_KEY = docKey('edentext-doc');
 // the last attempt hung or threw — reloading would only freeze again.
 const BOOT_KEY = docKey('edentext-doc-loading');
 // Where such a document is parked instead of being loaded, so nothing is lost and
-// it can still be pulled out of localStorage.
+// it can still be pulled out of docStore.
 const BROKEN_KEY = docKey('edentext-doc-broken');
 const DEBOUNCE_MS = 1000;
 
@@ -25,7 +26,30 @@ let chain: Promise<void> = Promise.resolve();
 // debounced timer doesn't surface an unhandled error.
 let quotaWarned = false;
 
+type DocJson = { type?: string; attrs?: Record<string, unknown>; marks?: DocJson[]; content?: DocJson[] } & Record<string, unknown>;
+
+/**
+ * The document without the attributes that hold their schema default: a paragraph
+ * spells out some thirty, mostly null, and loading fills each one back in.
+ */
+export function withoutDefaults(json: DocJson, schema: Schema): DocJson {
+  const trim = (n: DocJson, spec: Record<string, { default?: unknown }> | undefined): DocJson => {
+    const out: DocJson = { ...n };
+    if (n.attrs && spec) {
+      const attrs = Object.fromEntries(Object.entries(n.attrs).filter(([k, v]) => !(k in spec && spec[k].default === v)));
+      if (Object.keys(attrs).length) out.attrs = attrs;
+      else delete out.attrs;
+    }
+    if (n.marks) out.marks = n.marks.map((m) => trim(m, schema.marks[m.type!]?.spec.attrs));
+    if (n.content) out.content = n.content.map((c) => trim(c, schema.nodes[c.type!]?.spec.attrs));
+    return out;
+  };
+  return trim(json, schema.nodes[json.type!]?.spec.attrs);
+}
+
+// With nothing to be stored, there is nothing to write: no copy, no pictures, no versions.
 export function saveDocument(json: () => object): void {
+  if (volatile) return;
   pending = json;
   if (timeout) clearTimeout(timeout);
   timeout = setTimeout(() => { chain = chain.then(write); }, DEBOUNCE_MS);
@@ -63,17 +87,24 @@ export function flushDocument(): void {
 
 function store(json: object, warn = true): boolean {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(json));
+    docStore.setItem(STORAGE_KEY, JSON.stringify(json));
     return true;
   } catch (err) {
     if (!warn) return false;
-    console.error('[autosave] Could not save the document:', err);
-    if (!quotaWarned) {
-      quotaWarned = true;
-      alert(t().dialogs.autosaveQuota);
-    }
+    warnStorageFull(STORAGE_KEY, err);
     return false;
   }
+}
+
+/**
+ * One warning for every part of the document that did not fit. Where other documents
+ * share the storage, deleting them is the way out, so the warning says where they are.
+ */
+export function warnStorageFull(key: string, err: unknown): void {
+  console.error('[autosave] Could not save', key, err);
+  if (quotaWarned) return;
+  quotaWarned = true;
+  alert(otherDocumentsStored() ? t().dialogs.autosaveQuotaOthers : t().dialogs.autosaveQuota);
 }
 
 if (typeof document !== 'undefined') {
@@ -97,16 +128,16 @@ async function offerSnapshot(): Promise<object | null> {
 // `onLost`: the stored document was given up or unreadable, so the app starts empty and
 // must drop that document's page setup, headers and styles along with it.
 export async function loadDocument(onLost?: () => void): Promise<object | null> {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (localStorage.getItem(BOOT_KEY)) {
-    localStorage.removeItem(BOOT_KEY);
+  const raw = docStore.getItem(STORAGE_KEY);
+  if (docStore.getItem(BOOT_KEY)) {
+    docStore.removeItem(BOOT_KEY);
     // The user decides: a reload that cut a slow start short is the usual cause, and
     // another try costs nothing a reload would not fix. Given up, the document is parked
     // and the versions the autosave kept aside are offered in its place.
     if (!raw || !confirm(t().dialogs.documentNotLoaded)) {
       if (raw) {
-        localStorage.setItem(BROKEN_KEY, raw);
-        localStorage.removeItem(STORAGE_KEY);
+        docStore.setItem(BROKEN_KEY, raw);
+        docStore.removeItem(STORAGE_KEY);
       }
       const rescued = await offerSnapshot();
       if (!rescued) {
@@ -115,7 +146,7 @@ export async function loadDocument(onLost?: () => void): Promise<object | null> 
       }
       // Under the same flag as any other document: one that freezes the editor again
       // brings this question back instead of repeating the freeze.
-      localStorage.setItem(BOOT_KEY, '1');
+      docStore.setItem(BOOT_KEY, '1');
       return rescued;
     }
   }
@@ -127,7 +158,7 @@ export async function loadDocument(onLost?: () => void): Promise<object | null> 
     onLost?.();
     return null;
   }
-  localStorage.setItem(BOOT_KEY, '1');
+  docStore.setItem(BOOT_KEY, '1');
   const missing = await restoreImages(doc);
   if (missing) requestAnimationFrame(() => alert(t().dialogs.picturesNotRestored(missing)));
   return doc;
@@ -136,9 +167,9 @@ export async function loadDocument(onLost?: () => void): Promise<object | null> 
 // Called once the editor is up and has laid out the document. Until then the boot
 // flag stands, so a document that freezes the editor is skipped on the next load.
 export function markDocumentLoaded(): void {
-  localStorage.removeItem(BOOT_KEY);
+  docStore.removeItem(BOOT_KEY);
 }
 
 export function clearDocument(): void {
-  localStorage.removeItem(STORAGE_KEY);
+  docStore.removeItem(STORAGE_KEY);
 }

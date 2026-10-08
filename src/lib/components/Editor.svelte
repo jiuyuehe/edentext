@@ -1,14 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack, flushSync } from 'svelte';
   import { Editor } from '@tiptap/core';
-  import { Slice, Fragment } from 'prosemirror-model';
-  import type { Node as PmNode, MarkType } from 'prosemirror-model';
   import { extensions } from '../editor/extensions';
   import { buildContextMenu, type MenuEntry, type SpellSection, type GrammarSection } from '../editor/contextMenuItems';
   import { spellErrorAt, spellLangAt } from '../editor/extensions/spellCheck';
   import { grammarErrorAt, grammarFix } from '../editor/extensions/grammarCheck';
   import { ignoreGrammar, type GrammarFix } from '../spell/grammar.svelte';
-  import { spellController } from '../spell/controller';
+  import { spellController, personalDictionary } from '../spell/controller';
   import { isInTable, selectedRect } from '@tiptap/pm/tables';
   import { currentCellFormat, currentCellFormula, currentCellName, guessFormula } from '../editor/extensions/tableFormula';
   import type { CellFormat } from '../utils/cellFormat';
@@ -21,8 +19,7 @@
   import TextBoxToolbar from './TextBoxToolbar.svelte';
   import type { WrapMode } from '../editor/extensions/image';
   import { findTextBox, type ShapeKind } from '../editor/extensions/textBox';
-  import { dropRemoteImages, unwrapPastedBoxes, flattenToInline, plainPastedSpaces } from '../editor/paste';
-  import { inNote } from '../editor/extensions/notes';
+  import { fitPastedSlice } from '../editor/paste';
   import { NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
   import { EditorView } from '@tiptap/pm/view';
   import ContextMenu from './ContextMenu.svelte';
@@ -39,7 +36,7 @@ import { DEFAULT_LINE_NUMBERING, type LineNumbering } from '../storage/lineNumbe
 import { DEFAULT_LINE_GRID, type LineGrid } from '../storage/lineGrid';
 import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   import Ruler from './Ruler.svelte';
-  import { saveDocument, loadDocument, markDocumentLoaded } from '../storage/autosave';
+  import { saveDocument, loadDocument, markDocumentLoaded, withoutDefaults } from '../storage/autosave';
   import { IDB_SRC } from '../storage/imageStore';
   import { applyMarginVars, cmToPx, PX_PER_CM, DEFAULT_MARGINS, type PageMargins } from '../storage/pageMargins';
   import { DEFAULT_TAB_INTERVAL_CM } from '../storage/tabInterval';
@@ -603,7 +600,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       spell = {
         suggestions: spellController.suggest(word, spellLangAt(view.state, range.from)).slice(0, 6),
         onReplace: replaceSpellWord,
-        onAdd: addSpellWord,
+        onAdd: personalDictionary ? addSpellWord : undefined,
         onIgnore: ignoreSpellWord,
       };
     }
@@ -816,6 +813,14 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     tableUi = { visible: true, top, left, bottom: tRect.bottom - cRect.top + container.scrollTop };
   }
 
+  // A frame toolbar anchors above the rotate grip (it protrudes above the frame) so it
+  // never covers it; the frame top when the grip isn't rendered.
+  function toolbarAnchorTop(dom: HTMLElement, r: DOMRect): number {
+    const grip = dom.querySelector('.image-rotate-handle');
+    const gr = grip instanceof HTMLElement ? grip.getBoundingClientRect() : null;
+    return gr && gr.height > 0 ? Math.min(r.top, gr.top) : r.top;
+  }
+
   // --- Floating image wrap toolbar ---
   // Shown when a single image node is selected; positioned just above it.
   let imageUi = $state<{ visible: boolean; top: number; left: number; wrap: WrapMode; inFront: boolean }>({ visible: false, top: 0, left: 0, wrap: 'inline', inFront: false });
@@ -838,7 +843,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     const cRect = container.getBoundingClientRect();
     imageUi = {
       visible: true,
-      top: r.top - cRect.top + container.scrollTop,
+      top: toolbarAnchorTop(dom, r) - cRect.top + container.scrollTop,
       left: r.left - cRect.left + container.scrollLeft,
       wrap: ((sel as NodeSelection).node.attrs.wrap as WrapMode) || 'inline',
       inFront: (sel as NodeSelection).node.attrs.inFront === true,
@@ -867,14 +872,9 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     const r = dom.getBoundingClientRect();
     const cRect = container!.getBoundingClientRect();
     const a = found.node.attrs;
-    // Anchor above the rotate grip (it protrudes above the box) so the toolbar never
-    // covers it; fall back to the box top when the grip isn't rendered.
-    const grip = dom.querySelector('.image-rotate-handle');
-    const gr = grip instanceof HTMLElement ? grip.getBoundingClientRect() : null;
-    const anchorTop = gr && gr.height > 0 ? Math.min(r.top, gr.top) : r.top;
     textBoxUi = {
       visible: true,
-      top: anchorTop - cRect.top + container!.scrollTop,
+      top: toolbarAnchorTop(dom, r) - cRect.top + container!.scrollTop,
       left: r.left - cRect.left + container!.scrollLeft,
       wrap: (a.wrap as WrapMode) || 'inline',
       inFront: a.inFront === true,
@@ -890,7 +890,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   // Table page-break overlay: pageBreaks.ts reports (via pm-pagecount) where a continuous
   // table box crosses a page boundary, each as a band in doc px. Rendered in .band-layer
   // inside the scaled .paper — a mask hides borders in the margins, a stripe is the gap.
-  type BandStyle = { top: number; left: number; width: number; height: number };
+  type BandStyle = { top: number; left: number; width: number; height: number; lines: boolean };
   type GapStripeStyle = { top: number; width: number; height: number; background: string };
   let tableBandsDoc = $state<TableBreakBand[]>([]);
   let bandStyles = $state<BandStyle[]>([]);
@@ -914,7 +914,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       // The band spans the inter-page region (closeY through margin/gap/margin to the
       // next content-top), where pagination guarantees no content, so the mask can't eat
       // content. Matched to the table's content box (b.left/b.width) so the lines align.
-      return { top: b.closeY, left: b.left, width: b.width, height: b.height };
+      return { top: b.closeY, left: b.left, width: b.width, height: b.height, lines: b.lines };
     });
     // Full-page-width gap stripe: the dark page gap + its two edge lines at the surface
     // bottom (closeY + marginBottom). One element covers the whole gap → no seam; painted
@@ -1135,26 +1135,6 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     scheduleTableUi();
   }
 
-  function applyFontToFragment(frag: Fragment, textStyleType: MarkType, fonts: Record<string, string>): Fragment {
-    const nodes: PmNode[] = [];
-    frag.forEach((node: PmNode) => {
-      if (node.isText) {
-        const existingTS = node.marks.find(m => m.type === textStyleType);
-        const missing = Object.entries(fonts).filter(([k]) => !existingTS?.attrs[k]);
-        if (!missing.length) {
-          nodes.push(node);
-        } else {
-          const newAttrs = { ...(existingTS?.attrs ?? {}), ...Object.fromEntries(missing) };
-          const otherMarks = node.marks.filter(m => m.type !== textStyleType);
-          nodes.push(node.mark([...otherMarks, textStyleType.create(newAttrs)]));
-        }
-      } else {
-        nodes.push(node.copy(applyFontToFragment(node.content, textStyleType, fonts)));
-      }
-    });
-    return Fragment.fromArray(nodes);
-  }
-
   // --- Image insertion (drag-drop / paste); the toolbar button lives in
   // ToolbarExpanded.svelte. Shared sizing mirrors the export content-width math. ---
   function imageContentBoxPx(): { maxW: number; maxH: number } {
@@ -1282,6 +1262,9 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       element: hosts[0],
       extensions,
       content: saved || undefined,
+      // Nothing listens for TipTap's delete events, and computing them is quadratic in a
+      // transaction's steps: seconds after a format change across a long document.
+      enableCoreExtensions: { delete: false },
       editorProps: {
         // Our SpellCheck extension draws squiggles; turn off the browser's so
         // they don't double up.
@@ -1316,6 +1299,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
           },
           paste: (view, event) => {
             const e = event as ClipboardEvent;
+            // Word processors add a picture of copied text; the text itself wins.
+            if (e.clipboardData?.getData('text/plain').trim()) return false;
             const files = imageFilesFrom(e.clipboardData);
             if (!files.length) return false;
             e.preventDefault();
@@ -1323,24 +1308,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
             return true;
           },
         },
-        transformPasted(raw, view) {
-          // The direct prop wins over every plugin's, so the fitting fixes run here.
-          const pasted = plainPastedSpaces(raw);
-          const slice = inNote(view.state)
-            ? flattenToInline(pasted, view.state.schema)
-            : unwrapPastedBoxes(pasted);
-          const localImages = dropRemoteImages(slice);
-          const textStyleType = view.state.schema.marks.textStyle;
-          if (!textStyleType) return localImages;
-          const cursorMarks = view.state.storedMarks ?? view.state.selection.$head.marks();
-          // Only an explicit font at the caret is carried over, each half of the pair on
-          // its own: with none, the pasted text inherits the paragraph's style, as it does
-          // in both word processors.
-          const attrs = cursorMarks.find(m => m.type === textStyleType)?.attrs ?? {};
-          const fonts = Object.fromEntries(['fontFamily', 'fontFamilyAsian'].filter((k) => attrs[k]).map((k) => [k, attrs[k] as string]));
-          if (!Object.keys(fonts).length) return localImages;
-          return new Slice(applyFontToFragment(localImages.content, textStyleType, fonts), localImages.openStart, localImages.openEnd);
-        },
+        // The direct prop wins over every plugin's, so the fitting fixes run here.
+        transformPasted: (raw, view) => fitPastedSlice(raw, view.state),
       },
       onTransaction: ({ editor: e, transaction }) => {
         // Deferred: a blur tr arrives synchronously when a pane-layout switch tears
@@ -1362,7 +1331,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
         scheduleCaretPage();
       },
       onUpdate: ({ editor: e, transaction }) => {
-        saveDocument(() => e.getJSON());
+        saveDocument(() => withoutDefaults(e.getJSON(), e.schema));
         const ui = transaction.getMeta('uiEvent');
       },
       onFocus: () => {
@@ -1806,6 +1775,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
           {#each bandStyles as b}
             <div
               class="table-break-band"
+              class:lines={b.lines}
               style="top: {b.top}px; left: {b.left}px; width: {b.width}px; height: {b.height}px;"
             ></div>
           {/each}
@@ -2053,6 +2023,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     position: absolute;
     pointer-events: none;
     background: var(--color-page-bg);
+  }
+  .table-break-band.lines {
     border-top: 1px solid #000;
     border-bottom: 1px solid #000;
     /* Fill matches the table's content box so the close/open lines align with its

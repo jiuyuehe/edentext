@@ -45,6 +45,12 @@ const WINGDINGS_MAP: Record<number, string> = {
   0xa7: '▪',
   0xa8: '□',
   0xd8: '➢',
+  // The arrows Word's bullet library draws as Wingdings 0xDF–0xE2 and 0xE8.
+  0xdf: '←',
+  0xe0: '→',
+  0xe1: '↑',
+  0xe2: '↓',
+  0xe8: '➔',
   0xf0: '⇨',
   0xfc: '✓',
 };

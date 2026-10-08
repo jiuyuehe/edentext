@@ -13,6 +13,8 @@ import { extensions } from '../editor/extensions';
 import { columnPercents } from '../editor/extensions/tableView';
 import { effectiveOrderedDef, formatOrdinal } from '../utils/orderedListTypes';
 import { defaultBulletChar } from '../utils/bulletListTypes';
+import { styleSheet } from '../styles/sheet.svelte';
+import { outlineLabel } from '../styles/outlineNumbering';
 import { deriveFilename } from '../storage/documentName';
 import { BAR_STRIP_CM, commentListHtml, markReviewBlocks, printedComments, reviewPrintCss, type CommentLabels, type PrintedComment } from './reviewPrint';
 
@@ -37,6 +39,8 @@ export interface PdfOptions {
   commentLabels?: CommentLabels;
   /** Whether the review markup prints at all (`storage/printMarkup`); default on. */
   printMarkup?: boolean;
+  /** The share of the pages rastered so far (0…1). */
+  onProgress?: (done: number) => void;
 }
 
 type Run = { str: string; x: number; y: number; h: number }; // doc px, relative to .paper top-left
@@ -87,6 +91,10 @@ function buildClone(paper: HTMLElement, pageW: number, markup: boolean): { holde
    color() value html2canvas cannot parse, which aborted the whole capture. */
 [data-pdf-export] .ProseMirror-selectednode { background:none !important; outline:none !important; box-shadow:none !important; }
 [data-pdf-export] .tiptap .is-editor-empty::before { content:none !important; }
+[data-pdf-export] .tiptap [style*="--pdf-outline"]::before { content:var(--pdf-outline) !important; }
+/* The ¶ prints transparent and out of flow (in flow only in a columns section), but
+   html2canvas copies every style of a pseudo-element, thousands of times over. */
+[data-pdf-export] .tiptap :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10):not(.columns-node *)::after { content:none !important; }
 [data-pdf-export] .hf-bar { display:none !important; }
 [data-pdf-export] .tiptap [data-color] { color:var(--font-color, currentColor) !important; }
 `;
@@ -198,32 +206,59 @@ function listMarkerGlyph(li: HTMLElement, root: HTMLElement): string {
 }
 
 // html2canvas can't paint our markers (counter() numbering, counters() chains), so each
-// marker becomes a real span at the same hanging indent editor.css gives the ::before —
-// which the class switches off — keeping it beside float-pushed lines and in the text layer.
+// marker becomes a real span boxed exactly as editor.css boxes the ::before — floated, or
+// inline where a sized label grows the line — which the class then switches off.
+const MARKER_BOX = ['float', 'display', 'position', 'top', 'right', 'min-width', 'margin-left',
+  'white-space', 'line-height', 'text-indent', 'vertical-align',
+  'font-family', 'font-weight', 'font-style', 'font-size', 'color'];
 function materializeListMarkers(root: HTMLElement): void {
-  root.classList.add('pdf-list-markers');
-  for (const li of Array.from(root.querySelectorAll<HTMLLIElement>('li'))) {
-    const cs = getComputedStyle(li);
+  // Every box is read before the first span goes in: a write between reads would
+  // restyle the whole copy once per item.
+  const labels = Array.from(root.querySelectorAll<HTMLLIElement>('li')).flatMap((li) => {
     const glyph = listMarkerGlyph(li, root);
-    if (!glyph) continue;
-    const target = li.querySelector(':scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5') ?? li;
+    if (!glyph) return [];
+    const target = li.querySelector<HTMLElement>(':scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5') ?? li;
+    const before = getComputedStyle(target, '::before');
+    return [{ target, glyph, css: MARKER_BOX.map((p) => `${p}:${before.getPropertyValue(p)}`).join(';') }];
+  });
+  root.classList.add('pdf-list-markers');
+  for (const { target, glyph, css } of labels) {
     const label = document.createElement('span');
-    const hang = cs.getPropertyValue('--list-hang').trim() || '0.635cm';
-    const min = li.parentElement?.hasAttribute('data-marker-suffix') ? '0' : `max(0cm, ${hang})`;
-    label.style.cssText = `float:left;min-width:${min};margin-left:calc(-1 * ${hang});white-space:pre;color:${cs.color}`;
-    // Same symbol shim the editor's ::marker uses (glyphs Liberation Serif lacks).
-    label.style.fontFamily = `'EdenText Symbols', ${cs.fontFamily}`;
+    label.style.cssText = css;
     label.textContent = `${glyph} `; // the trailing space editor.css puts in every marker
     label.dataset.pdfMarker = '';
     target.insertBefore(label, target.firstChild);
   }
 }
 
-// Off-screen raster of the live .paper at scale 1, captured to one tall canvas covering
-// every page (page i occupies [i*cycle, i*cycle+pageH]); the caller invokes cleanup() once
-// done reading `clone`. `scale` = oversampling @ A4 (2 ≈ 192 dpi, 3 ≈ 288 dpi).
-export async function renderPaperToCanvas(opts: PdfOptions, scale = 2): Promise<{
-  canvas: HTMLCanvasElement; clone: HTMLElement; pages: number;
+// html2canvas knows no counter-set, which outline numbering rewinds the deeper levels
+// with, so each numbered heading's ::before gets its label as a string, counted the
+// way outlineCss counts: own level up, every deeper one back to its start.
+function materializeOutlineLabels(root: HTMLElement): void {
+  const levels = styleSheet().outline;
+  if (!levels?.length) return;
+  const counts: number[] = [];
+  const heads = root.querySelectorAll<HTMLElement>(`.tiptap :is(${Array.from({ length: 10 }, (_, i) => `h${i + 1}`).join(', ')})`);
+  for (const h of Array.from(heads)) {
+    if (h.closest('td, th, li, .frame-node')) continue;
+    const level = Number(h.tagName.slice(1));
+    if (!levels[level - 1] || levels[level - 1].format === 'none') continue;
+    counts[level - 1] = (counts[level - 1] ?? (levels[level - 1].start ?? 1) - 1) + 1;
+    for (let d = level; d < levels.length; d++) counts[d] = (levels[d]?.start ?? 1) - 1;
+    const label = outlineLabel(levels, level, counts, formatOrdinal).replace(/ /g, '\u00a0');
+    if (label) h.style.setProperty('--pdf-outline', JSON.stringify(label));
+  }
+}
+
+// Device px a strip of pages may be tall: one canvas for a whole long document exceeds
+// every engine's limit and comes out blank (Firefox caps a side at 32767).
+const STRIP_PX = 32000;
+
+// The live .paper's pages as page-sized JPEGs, rastered off screen at scale 1 in
+// strips of pages (page i occupies [i*cycle, i*cycle+pageH]); the caller invokes cleanup()
+// once done reading `clone`. `scale` = oversampling @ A4 (2 ≈ 192 dpi, 3 ≈ 288 dpi).
+export async function renderPages(opts: PdfOptions, scale = 2): Promise<{
+  images: Blob[]; clone: HTMLElement; pages: number;
   pageW: number; pageH: number; cycle: number; scale: number; cleanup: () => void;
 }> {
   const paper = opts.source.closest('.paper') as HTMLElement | null;
@@ -239,35 +274,113 @@ export async function renderPaperToCanvas(opts: PdfOptions, scale = 2): Promise<
   allPagesDrawn.on = false;
   document.head.appendChild(style);
   document.body.appendChild(holder);
-  const cleanup = () => { holder.remove(); style.remove(); };
+  const strip = holder.cloneNode(false) as HTMLElement;
+  const cleanup = () => { holder.remove(); strip.remove(); style.remove(); };
 
   try {
     await document.fonts.ready;
     materializeListMarkers(clone);
+    materializeOutlineLabels(clone);
+    // Nothing hidden paints, yet html2canvas clones and parses it: the editing handles
+    // alone can be a third of a picture-heavy document's elements.
+    Array.from(clone.querySelectorAll('*'))
+      .filter((el) => el instanceof HTMLElement && el.tagName !== 'STYLE' && getComputedStyle(el).display === 'none')
+      .forEach((el) => el.remove());
     const pages = Math.max(1, opts.numPages ?? Math.round((clone.offsetHeight + PAGE_GAP) / cycle));
-
+    const parts = measureParts(clone);
+    const perStrip = Math.max(1, Math.floor(STRIP_PX / (cycle * scale)));
     const html2canvas = (await import('html2canvas')).default;
-    const canvas = await html2canvas(clone, {
-      scale,
-      backgroundColor: '#ffffff',
-      width: pageW,
-      height: pages * cycle,
-      windowWidth: pageW,
-      logging: false,
-    });
-    return { canvas, clone, pages, pageW, pageH, cycle, scale, cleanup };
+    opts.onProgress?.(0);
+    // Encoded off the main thread where the engine can, while the next strip renders.
+    const images: Promise<Blob>[] = [];
+    let encoded = 0;
+    document.body.appendChild(strip);
+    for (let first = 0; first < pages; first += perStrip) {
+      const n = Math.min(perStrip, pages - first);
+      strip.replaceChildren(stripOf(clone, parts, first * cycle - pageH / 2, (first + n) * cycle + pageH / 2));
+      alignStrip(strip.firstElementChild as HTMLElement);
+      const canvas = await html2canvas(strip.firstElementChild as HTMLElement, {
+        scale,
+        backgroundColor: '#ffffff',
+        y: first * cycle,
+        width: pageW,
+        height: n * cycle,
+        windowWidth: pageW,
+        logging: false,
+        // Only the strip: the live editor and the full copy would be cloned for nothing.
+        ignoreElements: (el) => !(strip.contains(el) || el.contains(strip) || document.head.contains(el)),
+      });
+      for (let i = 0; i < n; i++) {
+        images.push(cropPage(canvas, i, pageW, pageH, cycle, scale).then((b) => {
+          opts.onProgress?.(++encoded / pages);
+          return b;
+        }));
+      }
+    }
+    strip.remove();
+    return { images: await Promise.all(images), clone, pages, pageW, pageH, cycle, scale, cleanup };
   } catch (err) {
     cleanup();
     throw err;
   }
 }
 
-// Crop page i's surface [i*cycle, i*cycle+pageH] out of the full capture into a data URL.
-function cropPageDataUrl(
+interface Part { top: number; bottom: number; absolute: boolean }
+
+// What a strip may drop: the text flow's blocks and the page layers' children, by their
+// extent in paper px. Counters no longer reach across blocks: every label is text by now.
+function measureParts(paper: HTMLElement): Part[] {
+  const base = paper.getBoundingClientRect().top;
+  return partsOf(paper).map((el) => {
+    const r = el.getBoundingClientRect();
+    const position = getComputedStyle(el).position;
+    return { top: r.top - base, bottom: r.bottom - base, absolute: position === 'absolute' || position === 'fixed' };
+  });
+}
+
+function partsOf(paper: HTMLElement): HTMLElement[] {
+  const flow = paper.querySelector('.tiptap') as HTMLElement;
+  const layers = Array.from(paper.children).filter((c) => !c.contains(flow));
+  return [...Array.from(flow.children), ...layers.flatMap((l) => Array.from(l.children))] as HTMLElement[];
+}
+
+// A copy of the paper holding only what reaches into [top, bottom]: html2canvas copies the
+// style of every element it clones, so a strip must not carry the whole document. The flow
+// above it folds into one stand-in, sized so the strip's pages land on the full layout's.
+function stripOf(paper: HTMLElement, parts: Part[], top: number, bottom: number): HTMLElement {
+  const copy = paper.cloneNode(true) as HTMLElement;
+  const flow = copy.querySelector('.tiptap') as HTMLElement;
+  const els = partsOf(copy);
+  let first = -1;
+  parts.forEach((p, i) => {
+    const el = els[i];
+    if (p.bottom >= top && p.top <= bottom) {
+      if (first < 0 && el.parentElement === flow) first = i;
+    } else if (el.parentElement === flow || p.absolute) {
+      el.remove();
+    }
+  });
+  if (first < 0) return copy;
+  const standIn = document.createElement('div');
+  standIn.style.cssText = 'display:block !important; margin:0 !important; padding:0 !important; border:0 !important; height:0 !important;';
+  standIn.dataset.pdfTop = String(parts[first].top);
+  els[first].before(standIn);
+  return copy;
+}
+
+function alignStrip(copy: HTMLElement): void {
+  const standIn = copy.querySelector<HTMLElement>('[data-pdf-top]');
+  const block = standIn?.nextElementSibling;
+  if (!standIn || !block) return;
+  const now = block.getBoundingClientRect().top - copy.getBoundingClientRect().top;
+  standIn.style.setProperty('height', `${Math.max(0, Number(standIn.dataset.pdfTop) - now)}px`, 'important');
+}
+
+// Crop page i's surface [i*cycle, i*cycle+pageH] out of a strip starting at page 0 of it.
+function cropPage(
   canvas: HTMLCanvasElement, i: number,
   pageW: number, pageH: number, cycle: number, scale: number,
-  mime = 'image/jpeg', quality = 0.92,
-): string {
+): Promise<Blob> {
   const tmp = document.createElement('canvas');
   tmp.width = Math.round(pageW * scale);
   tmp.height = Math.round(pageH * scale);
@@ -276,7 +389,8 @@ function cropPageDataUrl(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, tmp.width, tmp.height);
   ctx.drawImage(canvas, 0, i * cycle * scale, pageW * scale, pageH * scale, 0, 0, pageW * scale, pageH * scale);
-  return tmp.toDataURL(mime, quality);
+  return new Promise((resolve, reject) => tmp.toBlob(
+    (b) => (b ? resolve(b) : reject(new Error('page image could not be encoded'))), 'image/jpeg', 0.92));
 }
 
 // The page each comment sits on. Only the raster paths can say: they print the editor's
@@ -346,7 +460,7 @@ async function renderCommentPages(
 
 // Render the document to A4 pages (raster + invisible text) and download the PDF.
 export async function exportPdf(opts: PdfOptions): Promise<void> {
-  const { canvas, clone, pages, pageW, pageH, cycle, scale, cleanup } = await renderPaperToCanvas(opts);
+  const { images, clone, pages, pageW, pageH, cycle, scale, cleanup } = await renderPages(opts);
   const landscape = (opts.orientation ?? 'portrait') === 'landscape';
   try {
     const runs = collectRuns(clone);
@@ -362,7 +476,7 @@ export async function exportPdf(opts: PdfOptions): Promise<void> {
 
     for (let i = 0; i < pages; i++) {
       if (i > 0) doc.addPage(fmt, landscape ? 'l' : 'p');
-      doc.addImage(cropPageDataUrl(canvas, i, pageW, pageH, cycle, scale), 'JPEG', 0, 0, pageW * PT, pageH * PT);
+      doc.addImage(new Uint8Array(await images[i].arrayBuffer()), 'JPEG', 0, 0, pageW * PT, pageH * PT);
 
       // Invisible selectable text for this page.
       const top = i * cycle, bottom = i * cycle + pageH;
@@ -400,13 +514,10 @@ export async function exportPdf(opts: PdfOptions): Promise<void> {
 export async function printRaster(opts: PdfOptions): Promise<void> {
   // scale 3 (~288 dpi) for print: near typical printer resolution, sharper on paper
   // than the download's scale-2 raster — at no cost for printing (no file is kept).
-  const { canvas, pages, pageW, pageH, cycle, scale, cleanup } = await renderPaperToCanvas(opts, 3);
-  let imgs: string[];
-  try {
-    imgs = Array.from({ length: pages }, (_, i) => cropPageDataUrl(canvas, i, pageW, pageH, cycle, scale));
-  } finally {
-    cleanup();
-  }
+  const { images, pageW, pageH, cycle, scale, cleanup } = await renderPages(opts, 3);
+  cleanup();
+  const urls = images.map((b) => URL.createObjectURL(b));
+  let imgs = urls;
   const comments = opts.printMarkup === false
     ? [] : withAnchorPages(printedComments(opts.source), opts.source, cycle);
   if (comments.length) imgs = imgs.concat((await renderCommentPages(opts, comments, pageW, pageH, scale)).images);
@@ -436,7 +547,7 @@ img.pg:last-child { break-after: auto; page-break-after: auto; }
   );
   idoc.close();
 
-  const cleanupFrame = () => iframe.remove();
+  const cleanupFrame = () => { iframe.remove(); urls.forEach((u) => URL.revokeObjectURL(u)); };
   const run = async () => {
     // Decode the page images before printing, or the print output comes out blank.
     await Promise.all(Array.from(idoc.images).map((im) =>

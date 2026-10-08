@@ -1,6 +1,6 @@
 import type { EmbeddedFont } from '../fonts/embeddedFonts';
 import { openDb, idbRequest } from './idb';
-import { docKey } from './docScope';
+import { docKey, volatile } from './docScope';
 
 // The current document's embedded fonts, persisted in IndexedDB (not localStorage, whose
 // ~5 MB quota is already tight for images). One record, replaced on each open, so storage
@@ -14,7 +14,7 @@ const request = <T>(db: IDBDatabase, mode: IDBTransactionMode, run: (s: IDBObjec
   idbRequest<T>(db, STORE, mode, run);
 
 export async function saveEmbeddedFonts(fonts: EmbeddedFont[]): Promise<void> {
-  if (typeof indexedDB === 'undefined') return;
+  if (volatile || typeof indexedDB === 'undefined') return;
   try {
     const db = await db_();
     if (fonts.length) await request(db, 'readwrite', (s) => s.put(fonts, KEY));
@@ -24,7 +24,7 @@ export async function saveEmbeddedFonts(fonts: EmbeddedFont[]): Promise<void> {
 }
 
 export async function loadEmbeddedFonts(): Promise<EmbeddedFont[]> {
-  if (typeof indexedDB === 'undefined') return [];
+  if (volatile || typeof indexedDB === 'undefined') return [];
   try {
     const db = await db_();
     const fonts = await request<EmbeddedFont[] | undefined>(db, 'readonly', (s) => s.get(KEY));
@@ -34,7 +34,7 @@ export async function loadEmbeddedFonts(): Promise<EmbeddedFont[]> {
 }
 
 export async function clearEmbeddedFontStore(): Promise<void> {
-  if (typeof indexedDB === 'undefined') return;
+  if (volatile || typeof indexedDB === 'undefined') return;
   try {
     const db = await db_();
     await request(db, 'readwrite', (s) => s.delete(KEY));

@@ -2,9 +2,10 @@
   import type { Editor } from '@tiptap/core';
   import HistoryButton from './HistoryButton.svelte';
   import AlignButton from './AlignButton.svelte';
-  import { ORDERED_LIST_TYPES, type OrderedListType } from '../utils/orderedListTypes';
+  import { orderedTypesFor, type OrderedListType } from '../utils/orderedListTypes';
   import { BULLET_TYPES } from '../utils/bulletListTypes';
-  import { effectiveOrderedTypeAt } from '../editor/extensions/orderedList';
+  import { effectiveOrderedTypeAt, inChapterHeading } from '../editor/extensions/orderedList';
+  import { outlineIsEmpty } from '../styles/outlineNumbering';
   import { listStyleNameAt } from '../editor/extensions/listStyle';
   import { formatOrdinal, orderedTypeDef } from '../utils/orderedListTypes';
   import type { ListStyle } from '../styles/listStyles';
@@ -25,10 +26,11 @@
   }
 
   // The style manager is mounted once in App.svelte; the gallery only asks for it.
-  let { editor, tick, onManageStyles }: {
+  let { editor, tick, onManageStyles, scripts = { cjk: false, cyrillic: false } }: {
     editor: Editor | null;
     tick: number;
     onManageStyles?: (family: StyleFamily) => void;
+    scripts?: { cjk: boolean; cyrillic: boolean };
   } = $props();
 
   // The document's named paragraph styles (LibreOffice model): the gallery lists the
@@ -103,7 +105,9 @@
   let isUnderline  = $derived(tick >= 0 && !!editor?.isActive('underline'));
   let isStrike     = $derived(tick >= 0 && !!editor?.isActive('strike'));
   let isBulletList = $derived(tick >= 0 && !!editor?.isActive('bulletList'));
-  let isOrderedList= $derived(tick >= 0 && !!editor?.isActive('orderedList'));
+  // On a heading the button stands for the chapter numbering it switches.
+  let isOrderedList = $derived(tick >= 0 && !!editor
+    && (editor.isActive('orderedList') || (inChapterHeading(editor.state) && !outlineIsEmpty(sheet.outline))));
 
   // Effective numbering at the cursor's list level — explicit attr, inherited
   // multilevel chain, or the depth default (null when not in an ordered list).
@@ -429,7 +433,7 @@
         {#if olMenuOpen}
           <div class="ol-dropdown" role="menu">
             <div class="ol-section-label">{t().toolbar.numbering}</div>
-            {#each ORDERED_LIST_TYPES as o}
+            {#each orderedTypesFor(scripts, currentOrderedType) as o}
               <button
                 class="ol-option"
                 class:active={currentOrderedType === o.key}
@@ -671,6 +675,9 @@
     padding: 2px;
     display: flex;
     flex-direction: column;
+    /* The toolbar sits at the top of the window; a long menu scrolls inside the rest. */
+    max-height: calc(100vh - 7rem);
+    overflow-y: auto;
   }
 
   .ol-section-label {

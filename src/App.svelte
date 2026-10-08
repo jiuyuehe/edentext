@@ -2,7 +2,7 @@
   import { onMount, tick as domUpdated } from 'svelte';
   import { cubicOut } from 'svelte/easing';
   import type { Content, Editor } from '@tiptap/core';
-  import { EditorState } from '@tiptap/pm/state';
+  import { EditorState, Selection } from '@tiptap/pm/state';
   import EditorComponent from './lib/components/Editor.svelte';
   import Toolbar from './lib/components/Toolbar.svelte';
   import ToolbarExpanded from './lib/components/ToolbarExpanded.svelte';
@@ -10,8 +10,8 @@
   import FindReplaceBar from './lib/components/FindReplaceBar.svelte';
   import type { TiptapNode } from 'odf-kit';
   import { exportPdf, printPdf, printRaster } from './lib/export/pdf';
-  import { supportsFsAccess, saveDocument, openOdt } from './lib/export/saveFile';
-  import { loadRecentFiles, rememberRecentFile, readRecentFile, forgetRecentFile, forgetRecentFiles, pruneRecentFiles, type RecentFile } from './lib/storage/recentFiles';
+  import { supportsFsAccess, saveDocument, openOdt, allowWrite } from './lib/export/saveFile';
+  import { loadRecentFiles, rememberRecentFile, readRecentFile, forgetRecentFile, forgetRecentFiles, pruneRecentFiles, getHandle, type RecentFile } from './lib/storage/recentFiles';
   import { isProtected, decryptPackage, WRONG_PASSWORD } from './lib/crypto/protect';
   import { convertUnsupportedImages } from './lib/import/imageFormats';
   import { repairContent, repairZones } from './lib/import/repairContent';
@@ -19,7 +19,7 @@
   import { getPageBreakDebug } from './lib/editor/extensions/pageBreaks';
   import { RECORDING } from './lib/editor/extensions/trackChanges';
   import { getColumnsFlowDebug } from './lib/editor/extensions/columnsFlow';
-  import { getTextBoxDebug } from './lib/editor/extensions/textBox';
+  import { getTextBoxDebug, withRenderedBoxHeights } from './lib/editor/extensions/textBox';
   import { getTableCellDebug } from './lib/editor/extensions/tableCellAlign';
   import { getFrameDebug } from './lib/editor/extensions/caption';
   import { getColorDebug } from './lib/utils/colorDebug';
@@ -40,8 +40,8 @@
   import { recordChanges, setRecordChanges } from './lib/storage/trackChanges.svelte';
   import { DEFAULT_NOTE_SETTINGS } from './lib/storage/noteSettings';
   import { builtinStyleSheet, type StyleFamily } from './lib/styles/styleSheet';
-  import { loadHfDoc, saveHfDoc, loadHfDistances, saveHfDistances, loadDifferentFirstPage, saveDifferentFirstPage, loadDifferentOddEven, saveDifferentOddEven, hfIsEmpty, DEFAULT_HF_DISTANCES, loadExtraHfSections, saveExtraHfSections, type HfDoc, type HfZone, type HfDistances, type HfSet } from './lib/storage/headerFooter';
-  import { loadDocName, saveDocName, loadDocFormat, saveDocFormat, stripOdtExtension, sanitizeNameForFile, deriveFilename, filenameFor, loadDocProtected, saveDocProtected, type DocumentFormat } from './lib/storage/documentName';
+  import { loadHfDoc, saveHfDoc, loadHfDistances, saveHfDistances, loadDifferentFirstPage, saveDifferentFirstPage, loadDifferentOddEven, saveDifferentOddEven, hfIsEmpty, DEFAULT_HF_DISTANCES, loadExtraHfSections, saveExtraHfSections, loadHfPictures, type HfDoc, type HfZone, type HfDistances, type HfSet } from './lib/storage/headerFooter';
+  import { loadDocName, saveDocName, loadDocFormat, saveDocFormat, stripOdtExtension, sanitizeNameForFile, deriveFilename, filenameFor, loadDocProtected, saveDocProtected, loadDocFile, saveDocFile, type DocumentFormat } from './lib/storage/documentName';
   import { loadDocProperties, saveDocProperties, EMPTY_DOC_PROPERTIES, type DocProperties } from './lib/storage/docProperties';
   import { loadHyphenation, saveHyphenation } from './lib/storage/hyphenation';
   import { loadPageNumbering, savePageNumbering, DEFAULT_PAGE_NUMBERING, type PageNumbering } from './lib/storage/pageNumbering';
@@ -52,17 +52,22 @@
   import { loadFoldMarks, saveFoldMarks } from './lib/storage/foldMarks';
   import { printMarkup } from './lib/storage/printMarkup.svelte';
   import { commentsInPane, changesInPane, markupAttrs, setShowChanges, setShowComments } from './lib/storage/markup.svelte';
-  import { isAsianTag, loadDocumentLanguage, loadDocumentLanguageOther, pickDocumentLanguage, saveDocumentLanguage, saveDocumentLanguageOther, odfFromLanguage, tagForLanguage, westernCode, type DocumentLanguage } from './lib/storage/documentLanguage';
+  import { isAsianTag, loadDocumentLanguage, numberingScripts, loadDocumentLanguageOther, pickDocumentLanguage, saveDocumentLanguage, saveDocumentLanguageOther, odfFromLanguage, tagForLanguage, westernCode, type DocumentLanguage } from './lib/storage/documentLanguage';
   import { setTableLanguage } from './lib/storage/tableOptions.svelte';
   import { spellController } from './lib/spell/controller';
   import { setGrammarLanguage } from './lib/spell/grammar.svelte';
   import LanguagePicker from './lib/components/LanguagePicker.svelte';
+  import BusyIndicator, { type BusyTask } from './lib/components/BusyIndicator.svelte';
   import GrammarToggle from './lib/components/GrammarToggle.svelte';
   import UiLanguagePicker from './lib/components/UiLanguagePicker.svelte';
   import AboutDialog from './lib/components/AboutDialog.svelte';
+  import SettingsDialog from './lib/components/SettingsDialog.svelte';
   import TemplateGalleryDialog from './lib/components/TemplateGalleryDialog.svelte';
   import type { TemplateEntry } from './lib/templates/types';
   import DocPropertiesDialog from './lib/components/DocPropertiesDialog.svelte';
+  import BrowserDocumentsDialog from './lib/components/BrowserDocumentsDialog.svelte';
+  import ResumeCard from './lib/components/ResumeCard.svelte';
+  import { volatile } from './lib/storage/docScope';
   import PasswordDialog from './lib/components/PasswordDialog.svelte';
   import CommentsPane from './lib/components/CommentsPane.svelte';
   import RevisionsPane from './lib/components/RevisionsPane.svelte';
@@ -90,6 +95,7 @@
   import { registerEmbeddedFonts, clearEmbeddedFonts, embeddedFonts } from './lib/fonts/embeddedFonts';
   import { saveEmbeddedFonts, loadEmbeddedFonts, clearEmbeddedFontStore } from './lib/storage/embeddedFontStore';
   import { noteEmbeddedFonts } from './lib/components/ribbon/fontList.svelte';
+  import { OPEN_COMMAND_SEARCH_EVENT } from './lib/components/ribbon/commands';
 
   // launchQueue is not in lib.dom yet; reach it through this shape.
   type WithLaunchQueue = Window & {
@@ -119,10 +125,10 @@
   let numPages: number = $state(1);
   let aboutOpen = $state(false);
   let styleManagerOpen = $state(false);
-  let styleManagerFamily = $state<StyleFamily>('paragraph');
+  let styleManagerFamily = $state<StyleFamily | 'outline'>('paragraph');
   let noteOptionsOpen = $state(false);
 
-  function openStyleManager(family: StyleFamily) {
+  function openStyleManager(family: StyleFamily | 'outline') {
     styleManagerFamily = family;
     styleManagerOpen = true;
   }
@@ -149,6 +155,9 @@
   // Sections past the first; the layer edits them in place, section 1 stays the
   // per-zone state above.
   let extraHfSections: HfSet[] = $state(loadExtraHfSections().map((z) => repairZones(z)));
+  // Counts the zones replaced since start-up: their pictures come back from the image
+  // store afterwards, and only into the zones they were read for.
+  let zoneEpoch = 0;
   let hfEditor: Editor | null = $state(null);
   let hfActive: HfZone | null = $state(null);
   let hfTick: number = $state(0);
@@ -297,6 +306,8 @@
   let documentFormat: DocumentFormat = $state(loadDocFormat());
   let docProps: DocProperties = $state(loadDocProperties());
   let docPropsOpen = $state(false);
+  let browserDocsOpen = $state(false);
+  let settingsOpen = $state(false);
   let hyphenate = $state(loadHyphenation());
   let pageNumbering: PageNumbering = $state(loadPageNumbering());
   let pageDecor: PageDecor = $state(loadPageDecor());
@@ -609,9 +620,10 @@
     return { destroy() { window.removeEventListener('mousedown', handler); } };
   }
 
-  // The file the document is saved to (File System Access API). Session-only: a
-  // reload restores the doc from localStorage but the first Save re-prompts.
+  // The file the document is saved to (File System Access API), and its modification
+  // time as last read or written, so a save notices the file changed elsewhere.
   let fileHandle: FileSystemFileHandle | null = $state(null);
+  let fileModified = 0;
   // The password the document is saved with. Session-only: it is never written to
   // localStorage, and the autosaved copy there stays unencrypted.
   let docPassword: string | null = $state(null);
@@ -629,8 +641,25 @@
   const fsSupported = supportsFsAccess();
   let recentFiles: RecentFile[] = $state(fsSupported ? loadRecentFiles() : []);
   if (fsSupported) void pruneRecentFiles().then((list) => (recentFiles = list));
+  // A reload keeps the document's file, as long as the recent list still holds its handle.
+  const boundFile = fsSupported ? loadDocFile() : null;
+  if (boundFile) void getHandle(boundFile.id).then((h) => {
+    if (h && !fileHandle) { fileHandle = h; fileModified = boundFile.modified; }
+  });
+
+  // Remember the file just opened or saved for the next reload and the next save's check.
+  async function bindFile(): Promise<void> {
+    const id = fileHandle && recentFiles[0]?.id;
+    fileModified = (await fileHandle?.getFile().catch(() => null))?.lastModified ?? 0;
+    saveDocFile(id ? { id, modified: fileModified } : null);
+  }
   let fileInput: HTMLInputElement | null = $state(null);
   let pdfBusy = $state(false);
+  // What the status bar's spinner names; a layout left running after it keeps the name.
+  let busyTask = $state<BusyTask | null>(null);
+  let busyProgress = $state<number | null>(null);
+  // The spinner is painted before a long synchronous step starts, or not until after it.
+  const painted = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
   let exportMenuOpen = $state(false);
   let saveFormatOpen = $state(false);
 
@@ -677,8 +706,12 @@
   // Putting a document in front of the reader is not an edit: while revisions are
   // recorded, the RECORDING meta keeps the whole file from arriving as this author's
   // insertion. Both word processors record what is typed after an open, not the file.
+  // A new document opens at its start: the old caret and scroll offset would drop the
+  // reader deep into a document that has not paginated yet.
   function loadContent(content: Content): void {
-    editor?.chain().setMeta(RECORDING, true).setContent(wrapLooseTextBoxes(content)).run();
+    editor?.chain().setMeta(RECORDING, true).setContent(wrapLooseTextBoxes(content))
+      .command(({ tr }) => { tr.setSelection(Selection.atStart(tr.doc)); return true; }).run();
+    editor?.view.dom.closest('.editor')?.scrollTo({ top: 0 });
   }
 
   // A text box used to be a block of its own; it is inline now, so a document written
@@ -695,6 +728,7 @@
   // Reset every document side-car to its default; the $effects persist these.
   // Shared by New and New-from-template, which then assigns the template's own values.
   function resetDocumentState() {
+    zoneEpoch++;
     hfActive = null;
     headerDoc = null;
     footerDoc = null;
@@ -725,6 +759,8 @@
     docProps = { ...EMPTY_DOC_PROPERTIES };
     saveDocProperties(docProps);
     fileHandle = null;
+    fileModified = 0;
+    saveDocFile(null);
     documentFormat = 'odt';
     documentHasFile = false;
     docPassword = null;
@@ -846,6 +882,8 @@
         if (!opened) return;
         ({ bytes, password } = opened);
       }
+      busyTask = 'loading';
+      await painted();
       const name = sourceName?.toLowerCase() ?? '';
       let isDocx = name.endsWith('.docx') || name.endsWith('.dotx');
       // A template is loaded for its content but never bound as the handle, so the
@@ -878,9 +916,12 @@
       }
 
       const hasContent = editor.state.doc.textContent.length > 0 || editor.state.doc.childCount > 1;
+      busyTask = null;
       if (hasContent && !confirm(t().dialogs.confirmReplace)) {
         return;
       }
+      busyTask = 'loading';
+      await painted();
 
       // Register the document's embedded fonts (and persist them for next reload) before
       // rendering, so its text shows in the right face and isn't flagged as missing below.
@@ -890,6 +931,7 @@
 
       loadContent(content); // onUpdate fires → autosave
       documentEpoch++;
+      zoneEpoch++;
       resetHistory();
       // Adopt the opened file's name as the document name (drives the save filename).
       if (sourceName) documentName = stripOdtExtension(sourceName).replace(/\.do[ct]x$/i, '');
@@ -950,6 +992,7 @@
       documentHasFile = !isTemplate;
       markSaved();
       if (sourceName) recentFiles = await rememberRecentFile(sourceName, isTemplate ? null : handle);
+      await bindFile();
 
       // Warn about fonts the document uses but the browser can't render, so text
       // silently shown in a substitute (Liberation Serif) is at least flagged.
@@ -963,6 +1006,7 @@
       collectFontFamilies(result.footerEven, fontSet);
       const missingFonts = await unavailableFonts(fontSet);
 
+      busyTask = null;
       const warnings = result.warnings.map(localizeImportMessage);
       if (missingFonts.length) warnings.push(t().importWarn.missingFonts(missingFonts.join(', ')));
       if (warnings.length) {
@@ -970,6 +1014,7 @@
         alert(t().dialogs.openedWithLimitations(warnings.join('\n• ')));
       }
     } catch (err) {
+      busyTask = null;
       console.error('[import] Failed to open file:', err);
       alert(err instanceof Error ? localizeImportMessage(err.message) : t().dialogs.couldNotOpen);
     }
@@ -1088,7 +1133,7 @@
   async function buildBytes(kind: DocumentFormat, json: TiptapNode): Promise<Uint8Array> {
     if (kind === 'docx') {
       const { buildDocx } = await import('./lib/export/docx');
-      return buildDocx(json, ...exportArgs());
+      return buildDocx(editor ? withRenderedBoxHeights(editor.view) as TiptapNode : json, ...exportArgs());
     }
     const { buildOdt } = await import('./lib/export/odt');
     return buildOdt(json, ...exportArgs());
@@ -1103,11 +1148,19 @@
     if (!(await ensurePassword())) return;
     const json = editor.getJSON() as TiptapNode;
     try {
+      // Someone else's changes to the file are not overwritten unasked: declining saves
+      // under another name instead.
+      if (fileHandle) {
+        if (!(await allowWrite(fileHandle))) throw new DOMException('', 'NotAllowedError');
+        const { lastModified } = await fileHandle.getFile();
+        if (fileModified && lastModified !== fileModified && !confirm(t().dialogs.fileChangedElsewhere(fileHandle.name))) return handleSaveAs(documentFormat);
+      }
       // A document opened as .docx round-trips through the same format, like both
       // reference word processors — not silently rewritten to .odt under its old name.
       const name = documentFormat === 'docx' ? suggestedFilenameDocx(json) : suggestedFilename(json);
       fileHandle = await saveDocument(await buildBytes(documentFormat, json), name, documentFormat, fileHandle, docPassword);
       recentFiles = await rememberRecentFile(fileHandle?.name ?? name, fileHandle);
+      await bindFile();
       documentHasFile = true;
       markSaved();
     } catch (err) {
@@ -1133,6 +1186,7 @@
       fileHandle = await saveDocument(await buildBytes(kind, json), name, kind, null, docPassword);
       documentFormat = kind;
       recentFiles = await rememberRecentFile(fileHandle?.name ?? name, fileHandle);
+      await bindFile();
       documentHasFile = true;
       markSaved();
     } catch (err) {
@@ -1196,6 +1250,8 @@
     if (!editor || pdfBusy) return;
     exportMenuOpen = false;
     pdfBusy = true;
+    busyTask = 'pdf';
+    await painted();
     try {
       const json = editor.getJSON() as TiptapNode;
       await exportPdf({
@@ -1207,12 +1263,15 @@
         numPages,
         commentLabels: { heading: t().comments.title, onPage: t().comments.onPage },
         printMarkup: printMarkup(),
+        onProgress: (done) => { busyProgress = done; },
       });
     } catch (err) {
       console.error('[pdf] Export failed:', err);
       reportLoadFailure(t().dialogs.couldNotExportPdf, err);
     } finally {
       pdfBusy = false;
+      busyTask = null;
+      busyProgress = null;
     }
   }
 
@@ -1223,6 +1282,8 @@
     if (!editor || pdfBusy) return;
     exportMenuOpen = false;
     pdfBusy = true;
+    busyTask = 'print';
+    await painted();
     try {
       const json = editor.getJSON() as TiptapNode;
       await printRaster({
@@ -1234,12 +1295,15 @@
         numPages,
         commentLabels: { heading: t().comments.title, onPage: t().comments.onPage },
         printMarkup: printMarkup(),
+        onProgress: (done) => { busyProgress = done; },
       });
     } catch (err) {
       console.error('[pdf] Print failed:', err);
       reportLoadFailure(t().dialogs.couldNotPrint, err);
     } finally {
       pdfBusy = false;
+      busyTask = null;
+      busyProgress = null;
     }
   }
 
@@ -1291,6 +1355,18 @@
   }
 
   onMount(() => {
+    void loadHfPictures().then((stored) => {
+      if (!stored || zoneEpoch !== 0 || hfActive) return;
+      const zones = repairZones(stored.zones);
+      headerDoc = zones.header;
+      footerDoc = zones.footer;
+      headerFirstDoc = zones.headerFirst;
+      footerFirstDoc = zones.footerFirst;
+      headerEvenDoc = zones.headerEven;
+      footerEvenDoc = zones.footerEven;
+      extraHfSections = stored.sections.map((z) => repairZones(z));
+      if (stored.missing) alert(t().dialogs.picturesNotRestored(stored.missing));
+    });
     // Re-register the restored document's embedded fonts so it renders in the right face;
     // FontFace load fires 'loadingdone', which Editor.svelte re-paginates on. A file opened
     // while the store was still reading has its own, and registering would replace them.
@@ -1319,6 +1395,7 @@
       [DEFAULT_SHORTCUTS.zoomIn, () => setZoom(zoom + 10)],
       [DEFAULT_SHORTCUTS.zoomOut, () => setZoom(zoom - 10)],
       [DEFAULT_SHORTCUTS.zoomReset, () => setZoom(100)],
+      [DEFAULT_SHORTCUTS.commandSearch, () => window.dispatchEvent(new Event(OPEN_COMMAND_SEARCH_EVENT))],
     ];
 
     function onKeydown(e: KeyboardEvent) {
@@ -1403,7 +1480,6 @@
     <Ribbon
       editor={activeEditor}
       tick={activeTick}
-      bind:chromeMode
       bind:documentName
       {documentFormat}
       {dirty}
@@ -1435,6 +1511,7 @@
       onManageStyles={openStyleManager}
       onManageTableStyles={() => openStyleManager('table')}
       onNoteOptions={() => (noteOptionsOpen = true)}
+      onHeadingNumbering={() => openStyleManager('outline')}
       onEditZone={(zone) => (hfActive = zone)}
       onFind={openFind}
       {namePlaceholder}
@@ -1454,7 +1531,9 @@
       onPrintPdf={handlePrintPdf}
       onPrint={handlePrint}
       onAbout={() => (aboutOpen = true)}
+      onSettings={() => (settingsOpen = true)}
       onDocProperties={() => (docPropsOpen = true)}
+      onBrowserDocuments={() => (browserDocsOpen = true)}
       onProtect={() => (passwordSetOpen = true)}
       hasPassword={docProtected}
       onAutoCorrect={() => (autoCorrectOpen = true)}
@@ -1473,7 +1552,7 @@
     <button class="logo-btn" onclick={() => (aboutOpen = true)} aria-label={t().about.label} title={t().about.label}>
       <img src={appAsset('EdenText.png')} alt="EdenText" class="app-logo" />
     </button>
-    <Toolbar editor={activeEditor} tick={activeTick} onManageStyles={openStyleManager} />
+    <Toolbar editor={activeEditor} tick={activeTick} onManageStyles={openStyleManager} scripts={numberingScripts(documentLanguage, documentLanguageOther, locale())} />
     <div class="header-actions">
       {#snippet saveIcon()}
         <!-- Floppy disk -->
@@ -1571,6 +1650,9 @@
                 <span>{t().app.vectorPdf}</span>
                 <span class="theme-option-hint">{t().app.vectorHint}</span>
               </button>
+              <button class="theme-option" onclick={() => { exportMenuOpen = false; browserDocsOpen = true; }} role="menuitem">
+                <span>{t().browserDocs.title}</span>
+              </button>
               <button class="theme-option" onclick={handleSaveTemplate} role="menuitem">
                 <span>{t().app.template}</span>
                 <span class="theme-option-hint">{t().app.templateHint}</span>
@@ -1636,9 +1718,8 @@
             </svg>
           {:else}
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="1" y="2" width="14" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
-              <line x1="5.5" y1="14" x2="10.5" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              <line x1="8" y1="11" x2="8" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="8" cy="8" r="5.75" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M12.07 3.93a5.75 5.75 0 0 1-8.14 8.14z" fill="currentColor"/>
             </svg>
           {/if}
         </button>
@@ -1669,14 +1750,8 @@
               <span>{t().thesaurus.title}</span>
               <span class="theme-option-hint">{shortcutHint('thesaurus')}</span>
             </button>
-            <div class="theme-heading">{t().ribbon.chrome.title}</div>
-            <button
-              class="theme-option"
-              onclick={() => { chromeMode = 'ribbon'; themeOpen = false; }}
-              role="menuitem"
-            >
-              <span>{t().ribbon.chrome.ribbon}</span>
-              <span class="theme-option-hint">{t().ribbon.chrome.ribbonHint}</span>
+            <button class="theme-option" onclick={() => { themeOpen = false; settingsOpen = true; }} role="menuitem">
+              <span>{t().settings.title}</span>
             </button>
           </div>
         {/if}
@@ -1857,6 +1932,7 @@
       <GrammarToggle value={documentLanguage} other={documentLanguageOther} {editor} {tick} />
     </div>
     <div class="sb-right">
+    <BusyIndicator {editor} task={busyTask} progress={busyProgress} />
     <div class="zoom-controls">
       <button class="zoom-btn" onclick={() => setZoom(zoom - 10)} disabled={zoom <= MIN_ZOOM} title={t().status.zoomOut}>−</button>
       <input
@@ -1880,6 +1956,20 @@
   <AutoCorrectDialog bind:open={autoCorrectOpen} />
   <AutoTextDialog bind:open={autoTextOpen} editor={activeEditor} />
   <ThesaurusDialog bind:open={thesaurusOpen} editor={activeEditor} />
+  <BrowserDocumentsDialog bind:open={browserDocsOpen} />
+  <SettingsDialog
+    bind:open={settingsOpen}
+    {themeMode}
+    onSelectTheme={selectTheme}
+    bind:showRuler
+    bind:showFormattingMarks
+    bind:showFieldShading
+    bind:chromeMode
+    recentCount={recentFiles.length}
+    onClearRecent={() => { forgetRecentFiles(); recentFiles = []; }}
+    onAutoCorrect={() => (autoCorrectOpen = true)}
+  />
+  <ResumeCard show={!volatile && tick >= 0 && !!editor && !isDocNonEmpty()} onShowAll={() => (browserDocsOpen = true)} />
   <DocPropertiesDialog bind:open={docPropsOpen} props={docProps} onApply={(p) => { docProps = p; saveDocProperties(p); }} />
   <PasswordDialog
     bind:open={passwordSetOpen}
@@ -1898,7 +1988,7 @@
   />
   <!-- One instance for every entry point (styles gallery, insert-table menu): the
        callers only say which family to land on. -->
-  <StyleManagerDialog bind:open={styleManagerOpen} family={styleManagerFamily} editor={activeEditor} asianDocument={isAsianTag(tagForLanguage(documentLanguage) ?? '')} />
+  <StyleManagerDialog bind:open={styleManagerOpen} family={styleManagerFamily} editor={activeEditor} asianDocument={isAsianTag(tagForLanguage(documentLanguage) ?? '')} scripts={numberingScripts(documentLanguage, documentLanguageOther, locale())} />
   <NoteOptionsDialog bind:open={noteOptionsOpen} />
   <SaveFormatDialog bind:open={saveFormatOpen} onPick={handleSaveAs} />
 </main>
@@ -2588,7 +2678,9 @@
   .sb-right {
     flex: 1;
     display: flex;
+    align-items: center;
     justify-content: flex-end;
+    gap: 12px;
   }
 
   .zoom-controls {

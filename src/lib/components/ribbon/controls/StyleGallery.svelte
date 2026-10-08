@@ -78,6 +78,7 @@
     {#each paraStyles as s}
       <button
         class="tile"
+        data-cmd={`style-${s.name}`}
         class:active={current === s.name}
         onclick={() => apply(s.name)}
         title={styleShortcut(s.name) ? `${styleLabel(s.name)} (${styleShortcut(s.name)})` : styleLabel(s.name)}

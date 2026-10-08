@@ -1,7 +1,8 @@
 import OrderedListBase from '@tiptap/extension-ordered-list';
 import type { EditorState } from '@tiptap/pm/state';
 import type { ResolvedPos } from '@tiptap/pm/model';
-import { childCycle, defaultOrderedTypeAt, orderedTypeAttrAt, ROOT_ORDERED_CYCLE, type OrderedCycle, type OrderedListType } from '../../utils/orderedListTypes';
+import { childCycle, defaultOrderedTypeAt, orderedTypeAttrAt, orderedTypeDef, ROOT_ORDERED_CYCLE, type OrderedCycle, type OrderedListType } from '../../utils/orderedListTypes';
+import { decimalOutline, MAX_OUTLINE_LEVELS, outlineIsEmpty, type OutlineNumbering } from '../../styles/outlineNumbering';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -61,10 +62,37 @@ export function effectiveOrderedTypeAt(state: EditorState): OrderedListType | nu
   return defaultOrderedTypeAt(baseCycleAt($from, ctx.innermost));
 }
 
+// The chapter numbering the list commands switch on a heading, the sheet's (extensions.ts).
+export type HeadingNumbering = { get: () => OutlineNumbering | null | undefined; set: (outline: OutlineNumbering | null) => void };
+
+// A heading the chapter numbering counts: not in a list, a cell or a frame (outlineCss).
+const LOOSE_PARENTS = new Set(['listItem', 'tableCell', 'tableHeader', 'textBox']);
+export function inChapterHeading(state: EditorState): boolean {
+  const { $from } = state.selection;
+  if ($from.parent.type.name !== 'heading') return false;
+  for (let d = $from.depth - 1; d > 0; d--) if (LOOSE_PARENTS.has($from.node(d).type.name)) return false;
+  return true;
+}
+
+// A numbering format picked on a heading numbers every level with it; multilevel is 1 / 1.1.
+function outlineFor(key: OrderedListType): OutlineNumbering {
+  if (key === 'multilevel') return decimalOutline();
+  const def = orderedTypeDef(key);
+  return Array.from({ length: MAX_OUTLINE_LEVELS }, () => ({
+    format: def.numFormat, prefix: '', suffix: `${def.numSuffix} `, displayLevels: 1, start: 1,
+  }));
+}
+
 // OrderedList with a `listStyleType` attr (an ORDERED_LIST_TYPES key; null = the
 // per-depth default cycle 1. → a. → i.), rendered as `data-list-style` on the <ol>:
 // editor.css maps it to the on-screen marker, export/odt.ts to style:num-format.
-export const OrderedList = OrderedListBase.extend({
+// On a heading both commands set the document's chapter numbering instead, as a word
+// processor's numbering bound to the heading styles; a numbered DOCX heading reads back so.
+export const OrderedList = OrderedListBase.extend<{ headingNumbering: HeadingNumbering | null } & typeof OrderedListBase.options>({
+  addOptions() {
+    return { ...this.parent!(), headingNumbering: null };
+  },
+
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -81,14 +109,27 @@ export const OrderedList = OrderedListBase.extend({
   },
 
   addCommands() {
+    const parent = this.parent?.();
+    const numbering = this.options.headingNumbering;
     return {
-      ...this.parent?.(),
+      ...parent,
+      toggleOrderedList:
+        () =>
+        (props) => {
+          if (!numbering || !inChapterHeading(props.state)) return parent!.toggleOrderedList!()(props);
+          if (props.dispatch) numbering.set(outlineIsEmpty(numbering.get()) ? decimalOutline() : null);
+          return true;
+        },
       // setNodeMarkup on exactly the target list (updateAttributes would rewrite
       // ancestor lists too). 'multilevel' is list-wide: it goes on the outermost
       // ordered list and clears explicit styles below so the whole chain renders.
       setOrderedListType:
         (key) =>
         ({ state, tr, dispatch }) => {
+          if (numbering && inChapterHeading(state)) {
+            if (dispatch) numbering.set(outlineFor(key));
+            return true;
+          }
           const ctx = orderedContext(state);
           if (!ctx) return false;
           const { $from } = state.selection;

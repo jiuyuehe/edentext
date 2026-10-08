@@ -1,115 +1,9 @@
 {
  "chromium/darwin": {
   "docs/showcase/book.docx": {
-   "pages": 99,
-   "lines": 3640,
-   "ms": 800,
-   "starts": [
-    "Alice’s Adventures in Wonderland",
-    "Contents",
-    "Chapter I",
-    "to think about stopping herself before s",
-    "walk with their heads downward! The Anti",
-    "found herself in a long, low hall, which",
-    "ore,” said Alice,) and round the neck of",
-    "of a candle is like after the candle is ",
-    "cake, but Alice had got so much into the",
-    "",
-    "Chapter II",
-    "“You ought to be ashamed of yourself,” s",
-    "n is—oh dear! I shall never get to twent",
-    "soon found out that the cause of this wa",
-    "very likely it can talk: at any rate, th",
-    "“We indeed!” cried the Mouse, who was tr",
-    "Chapter III",
-    "“I beg your pardon!” said the Mouse, fro",
-    "“What is a Caucus-race?” said Alice; not",
-    "“Only a thimble,” said Alice sadly.",
-    "‘I’ll be judge, I’ll be jury,’ Said cunn",
-    "you can’t think! And oh, I wish you coul",
-    "Chapter IV",
-    "“How queer it seems,” Alice said to hers",
-    "herself “Now I can do no more, whatever ",
-    "Presently the Rabbit came up to the door",
-    "She waited for some time without hearing",
-    "“So you did, old fellow!” said the other",
-    "It sounded an excellent plan, no doubt, ",
-    "only been the right size to do it! Oh de",
-    "Chapter V",
-    "Which brought them back again to the beg",
-    "“You are old, Father William,” the young",
-    "“What size do you want to be?” it asked.",
-    "at last she stretched her arms round it",
-    "but the tops of the trees under which sh",
-    "one with such a neck as that! No, no! Yo",
-    "an open place, with a little house in it",
-    "Chapter VI",
-    "ry noise going on within—a constant howl",
-    "“Oh, there’s no use in talking to him,”",
-    "reach at the Duchess and the baby—the fi",
-    "While the Duchess sang the second verse",
-    "not like the look of the thing at all. “",
-    "“Then it doesn’t matter which way you go",
-    "“By-the-bye, what became of the baby?” s",
-    "Chapter VII",
-    "“Come, we shall have some fun now!” thou",
-    "The March Hare took the watch and looked",
-    "“I don’t know what you mean,” said Alice",
-    "“Well, I’d hardly finished the first ver",
-    "“Once upon a time there were three littl",
-    "remarked, “If you can’t be civil, you’d",
-    "“They were learning to draw,” the Dormou",
-    "and began by taking the little golden ke",
-    "",
-    "Chapter VIII",
-    "Queen was to find it out, we should all",
-    "“My name is Alice, so please your Majest",
-    "the soldiers remaining behind to execute",
-    "frightened tone. “The Queen will hear yo",
-    "dreadfully fond of beheading people here",
-    "“Who are you talking to?” said the King,",
-    "By the time she had caught the flamingo",
-    "eared; so the King and the executioner r",
-    "",
-    "Chapter IX",
-    "right height to rest her chin upon Alice",
-    "“Oh, I know!” exclaimed Alice, who had n",
-    "“A fine day, your Majesty!” the Duchess",
-    "that’s a good thing!” she said to hersel",
-    "So they sat down, and nobody spoke for s",
-    "“We had the best of educations—in fact,",
-    "Alice did not feel encouraged to ask any",
-    "“That’s enough about lessons,” the Gryph",
-    "",
-    "Chapter X",
-    "“—as far out to sea as you can—”",
-    "not, could not, would not, could not, wo",
-    "“I can tell you more than that, if you l",
-    "“I could tell you my adventures—beginnin",
-    "[later editions continued as follows Whe",
-    "“What is the use of repeating all that s",
-    "“What trial is it?” Alice panted as she ",
-    "Chapter XI",
-    "little girls of her age knew the meaning",
-    "“Not yet, not yet!” the Rabbit hastily i",
-    "confusion he bit a large piece out of hi",
-    "“Of course twinkling begins with a T!” s",
-    "“If that’s all you know about it, you ma",
-    "“Collar that Dormouse,” the Queen shriek",
-    "",
-    "Chapter XII",
-    "anything but sit with its mouth open, ga",
-    "The King turned pale, and shut his note-",
-    "“Read them,” said the King.",
-    "at them with one eye; “I seem to see som",
-    "“Off with her head!” the Queen shouted a",
-    "The long grass rustled at her feet as th"
-   ]
-  },
-  "docs/showcase/book.odt": {
    "pages": 104,
-   "lines": 3640,
-   "ms": 800,
+   "lines": 3351,
+   "ms": 1500,
    "starts": [
     "Alice’s Adventures in Wonderland",
     "Contents",
@@ -127,7 +21,118 @@
     "As she said this she looked down at her",
     "Just then she heard something splashing",
     "pool, “and she sits purring so nicely by",
-    "Dodo, a Lory and an Eaglet, and several ",
+    "Dodo, a Lory and an Eaglet, and several",
+    "",
+    "Chapter III",
+    "m the Conqueror, whose cause was favoure",
+    "either!” And the Eaglet bent down its he",
+    "not got into it), and handed them round",
+    "“Fury said to a mouse, That he met in th",
+    "“And who is Dinah, if I might venture to",
+    "Chapter IV",
+    "this, she came upon a neat little house,",
+    "there was not even room for this, and sh",
+    "“Mary Ann! Mary Ann!” said the voice. “F",
+    "were two little shrieks, and more sounds",
+    "Last came a little feeble, squeaking voi",
+    "“The first thing I’ve got to do,” said A",
+    "This seemed to Alice a good opportunity ",
+    "Chapter V",
+    "then after that into a butterfly, I shou",
+    "“Well, I’ve tried to say “How doth the l",
+    "“Not quite right, I’m afraid,” said Alic",
+    "“Of the mushroom,” said the Caterpillar,",
+    "As there seemed to be no chance of getti",
+    "“Well! What are you?” said the Pigeon. “",
+    "It was so long since she had been anythi",
+    "Chapter VI",
+    "Fish-Footman was gone, and the other was",
+    "It was, no doubt: only Alice did not lik",
+    "“They all can,” said the Duchess; “and m",
+    "of lullaby to it as she did so, and givi",
+    "grunted in reply (it had left off sneezi",
+    "“Cheshire Puss,” she began, rather timid",
+    "“Call it what you like,” said the Cat. “",
+    "ause the chimneys were shaped like ears",
+    "",
+    "Chapter VII",
+    "“Your hair wants cutting,” said the Hatt",
+    "Alice considered a little, and then said",
+    "“Nor I,” said the March Hare.",
+    "“It goes on, you know,” the Hatter conti",
+    "“Tell us a story!” said the March Hare.",
+    "The Dormouse again took a minute or two",
+    "This answer so confused poor Alice, that",
+    "Once more she found herself in the long ",
+    "",
+    "Chapter VIII",
+    "watching them, and he checked himself su",
+    "upon their faces, so that they couldn’t",
+    "“Leave off that!” screamed the Queen. “Y",
+    "“What for?” said Alice.",
+    "time the Queen was in a furious passion,",
+    "“How do you like the Queen?” said the Ca",
+    "The hedgehog was engaged in a fight with",
+    "Alice could think of nothing else to say",
+    "",
+    "Chapter IX",
+    "“Perhaps it hasn’t one,” Alice ventured",
+    "“Right, as usual,” said the Duchess: “wh",
+    "“Just about as much right,” said the Duc",
+    "“It’s the thing Mock Turtle Soup is made",
+    "So they went up to the Mock Turtle, who",
+    "“Yes, we went to school in the sea, thou",
+    "“Yes,” said Alice doubtfully: “it means—",
+    "This was quite a new idea to Alice, and",
+    "",
+    "Chapter X",
+    "“Of course,” the Mock Turtle said: “adva",
+    "will you, won’t you, will you join the d",
+    "“The reason is,” said the Gryphon, “that",
+    "“Of course not,” said the Mock Turtle: “",
+    "of the Lobster Quadrille, that she hardl",
+    "[later editions continued as follows The",
+    "“Chorus again!” cried the Gryphon, and t",
+    "Chapter XI",
+    "“And that’s the jury-box,” thought Alice",
+    "On this the White Rabbit blew three blas",
+    "Here the Queen put on her spectacles, an",
+    "“I’m a poor man, your Majesty,” the Hatt",
+    "which tied up at the mouth with strings:",
+    "“Well, if I must, I must,” the King said",
+    "",
+    "Chapter XII",
+    "said to herself; “I should think it woul",
+    "“You are,” said the King.",
+    "“If you didn’t sign it,” said the King,",
+    "him,) “I’ll give him sixpence. I don’t b",
+    "“It’s a pun!” the King added in an offen",
+    "First, she dreamed of little Alice herse",
+    "her childhood: and how she would gather "
+   ]
+  },
+  "docs/showcase/book.odt": {
+   "pages": 104,
+   "lines": 3351,
+   "ms": 1000,
+   "starts": [
+    "Alice’s Adventures in Wonderland",
+    "Contents",
+    "Chapter I",
+    "fortunately was just in time to see it p",
+    "ice to say it over) “—yes, that’s about",
+    "Alice was not a bit hurt, and she jumped",
+    "way things had happened lately, that Ali",
+    "And so it was indeed: she was now only t",
+    "it,” said Alice, “and if it makes me gro",
+    "",
+    "Chapter II",
+    "Just then her head struck against the ro",
+    "“I’m sure I’m not Ada,” she said, “for h",
+    "As she said this she looked down at her",
+    "Just then she heard something splashing",
+    "pool, “and she sits purring so nicely by",
+    "Dodo, a Lory and an Eaglet, and several",
     "",
     "Chapter III",
     "m the Conqueror, whose cause was favoure",
@@ -194,11 +199,11 @@
     "Chapter X",
     "“Of course,” the Mock Turtle said: “adva",
     "will you, won’t you, will you join the d",
-    "“The reason is,” said the Gryphon , “tha",
+    "“The reason is,” said the Gryphon, “that",
     "“Of course not,” said the Mock Turtle: “",
     "of the Lobster Quadrille, that she hardl",
     "[later editions continued as follows The",
-    "“Chorus again!” cried the Gryphon , and ",
+    "“Chorus again!” cried the Gryphon, and t",
     "Chapter XI",
     "“And that’s the jury-box,” thought Alice",
     "On this the White Rabbit blew three blas",
@@ -219,7 +224,7 @@
   },
   "docs/showcase/newsletter.docx": {
    "pages": 2,
-   "lines": 151,
+   "lines": 134,
    "ms": 100,
    "starts": [
     "Eden Astronomy Society",
@@ -228,7 +233,7 @@
   },
   "docs/showcase/newsletter.odt": {
    "pages": 2,
-   "lines": 151,
+   "lines": 134,
    "ms": 100,
    "starts": [
     "Eden Astronomy Society",
@@ -237,7 +242,7 @@
   },
   "docs/showcase/thesis-review.docx": {
    "pages": 13,
-   "lines": 662,
+   "lines": 525,
    "ms": 700,
    "starts": [
     "Widow and Orphan Control in Browser-Base",
@@ -257,7 +262,7 @@
   },
   "docs/showcase/thesis-review.odt": {
    "pages": 13,
-   "lines": 662,
+   "lines": 525,
    "ms": 600,
    "starts": [
     "Widow and Orphan Control in Browser-Base",
@@ -277,7 +282,7 @@
   },
   "docs/showcase/thesis.docx": {
    "pages": 13,
-   "lines": 658,
+   "lines": 521,
    "ms": 600,
    "starts": [
     "Widow and Orphan Control in Browser-Base",
@@ -297,7 +302,7 @@
   },
   "docs/showcase/thesis.odt": {
    "pages": 13,
-   "lines": 658,
+   "lines": 521,
    "ms": 600,
    "starts": [
     "Widow and Orphan Control in Browser-Base",
@@ -316,25 +321,24 @@
    ]
   },
   "fuzz/seed-1.odt": {
-   "pages": 2,
-   "lines": 25,
-   "ms": 600,
+   "pages": 1,
+   "lines": 33,
+   "ms": 100,
    "starts": [
-    "Lorem",
-    "ipsum ipsum it's €42 dolor"
+    "fünf ipsum fünf \"quote\""
    ]
   },
   "fuzz/seed-10.odt": {
    "pages": 1,
-   "lines": 9,
+   "lines": 3,
    "ms": 0,
    "starts": [
-    "🙂 ok"
+    "🙂ok"
    ]
   },
   "fuzz/seed-2.odt": {
    "pages": 1,
-   "lines": 11,
+   "lines": 8,
    "ms": 100,
    "starts": [
     "ipsum Lorem sit"
@@ -342,7 +346,7 @@
   },
   "fuzz/seed-3.odt": {
    "pages": 1,
-   "lines": 5,
+   "lines": 2,
    "ms": 0,
    "starts": [
     ""
@@ -350,15 +354,15 @@
   },
   "fuzz/seed-4.odt": {
    "pages": 1,
-   "lines": 19,
+   "lines": 31,
    "ms": 100,
    "starts": [
-    "€42 Lorem ipsum it's €42 \"quote\" dolor x"
+    "sit a&b <tag> a&b fünf"
    ]
   },
   "fuzz/seed-5.odt": {
    "pages": 1,
-   "lines": 16,
+   "lines": 9,
    "ms": 0,
    "starts": [
     "sit Lorem"
@@ -366,7 +370,7 @@
   },
   "fuzz/seed-6.odt": {
    "pages": 1,
-   "lines": 66,
+   "lines": 32,
    "ms": 100,
    "starts": [
     "Lorem a&b fünf fünf <tag>"
@@ -374,15 +378,15 @@
   },
   "fuzz/seed-7.odt": {
    "pages": 1,
-   "lines": 49,
+   "lines": 31,
    "ms": 100,
    "starts": [
-    "🙂 ok"
+    "🙂ok"
    ]
   },
   "fuzz/seed-8.odt": {
    "pages": 1,
-   "lines": 32,
+   "lines": 14,
    "ms": 100,
    "starts": [
     "ipsum ipsum dolor a&b"
@@ -390,7 +394,7 @@
   },
   "fuzz/seed-9.odt": {
    "pages": 1,
-   "lines": 13,
+   "lines": 9,
    "ms": 100,
    "starts": [
     "<tag> dolor Größe €42 a&b"
@@ -398,25 +402,25 @@
   },
   "tests/corpus/01-flow.docx": {
    "pages": 2,
-   "lines": 912,
+   "lines": 120,
    "ms": 200,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "18. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "18. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/01-flow.odt": {
    "pages": 2,
-   "lines": 1008,
+   "lines": 120,
    "ms": 100,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "18. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "18. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/02-blocks.docx": {
    "pages": 1,
-   "lines": 153,
+   "lines": 24,
    "ms": 0,
    "starts": [
     "Document Title"
@@ -424,7 +428,7 @@
   },
   "tests/corpus/02-blocks.odt": {
    "pages": 1,
-   "lines": 174,
+   "lines": 24,
    "ms": 100,
    "starts": [
     "Document Title"
@@ -432,23 +436,23 @@
   },
   "tests/corpus/03-fonts.docx": {
    "pages": 1,
-   "lines": 261,
+   "lines": 37,
    "ms": 0,
    "starts": [
-    "Lorem ipsum dolor sit amet , consectetur"
+    "Lorem ipsum dolor sit amet, consectetur "
    ]
   },
   "tests/corpus/03-fonts.odt": {
    "pages": 1,
-   "lines": 290,
+   "lines": 37,
    "ms": 0,
    "starts": [
-    "Lorem ipsum dolor sit amet , consectetur"
+    "Lorem ipsum dolor sit amet, consectetur "
    ]
   },
   "tests/corpus/04-table.docx": {
    "pages": 1,
-   "lines": 47,
+   "lines": 26,
    "ms": 0,
    "starts": [
     "Before the table"
@@ -456,7 +460,7 @@
   },
   "tests/corpus/04-table.odt": {
    "pages": 1,
-   "lines": 55,
+   "lines": 26,
    "ms": 0,
    "starts": [
     "Before the table"
@@ -464,61 +468,61 @@
   },
   "tests/corpus/05-breaks.docx": {
    "pages": 2,
-   "lines": 1212,
+   "lines": 159,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "minim veniam , quis nostrud exercitation"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "minim veniam, quis nostrud exercitation "
    ]
   },
   "tests/corpus/05-breaks.odt": {
    "pages": 2,
-   "lines": 1335,
+   "lines": 159,
    "ms": 100,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "minim veniam , quis nostrud exercitation"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "minim veniam, quis nostrud exercitation "
    ]
   },
   "tests/corpus/06-calibri.docx": {
    "pages": 2,
-   "lines": 800,
+   "lines": 100,
    "ms": 100,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "19. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "19. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/06-calibri.odt": {
    "pages": 2,
-   "lines": 840,
+   "lines": 100,
    "ms": 100,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "19. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "19. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/07-nowidow.docx": {
    "pages": 2,
-   "lines": 912,
+   "lines": 119,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "labore et dolore magna aliqua . Ut enim "
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "labore et dolore magna aliqua. Ut enim a"
    ]
   },
   "tests/corpus/07-nowidow.odt": {
    "pages": 2,
-   "lines": 1008,
+   "lines": 119,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "labore et dolore magna aliqua . Ut enim "
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "labore et dolore magna aliqua. Ut enim a"
    ]
   },
   "tests/corpus/08-lists.docx": {
    "pages": 1,
-   "lines": 50,
+   "lines": 17,
    "ms": 0,
    "starts": [
     "Bullets"
@@ -526,7 +530,7 @@
   },
   "tests/corpus/08-lists.odt": {
    "pages": 1,
-   "lines": 78,
+   "lines": 17,
    "ms": 0,
    "starts": [
     "Bullets"
@@ -534,25 +538,25 @@
   },
   "tests/corpus/09-headerfooter.docx": {
    "pages": 2,
-   "lines": 1150,
+   "lines": 160,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "18. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "18. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/09-headerfooter.odt": {
    "pages": 2,
-   "lines": 1270,
+   "lines": 160,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "18. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "18. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/10-tabs.docx": {
    "pages": 1,
-   "lines": 47,
+   "lines": 15,
    "ms": 0,
    "starts": [
     "Default tabs follow:"
@@ -560,15 +564,15 @@
   },
   "tests/corpus/10-tabs.odt": {
    "pages": 1,
-   "lines": 54,
+   "lines": 15,
    "ms": 0,
    "starts": [
-    "Default tabs follow :"
+    "Default tabs follow:"
    ]
   },
   "tests/corpus/11-marks.docx": {
    "pages": 1,
-   "lines": 47,
+   "lines": 15,
    "ms": 0,
    "starts": [
     "underlined struck highlighted colored su"
@@ -576,7 +580,7 @@
   },
   "tests/corpus/11-marks.odt": {
    "pages": 1,
-   "lines": 47,
+   "lines": 15,
    "ms": 0,
    "starts": [
     "underlined struck highlighted colored su"
@@ -584,7 +588,7 @@
   },
   "tests/corpus/12-notes.docx": {
    "pages": 1,
-   "lines": 46,
+   "lines": 14,
    "ms": 0,
    "starts": [
     "A claim 1 and another 2 in one paragraph"
@@ -592,7 +596,7 @@
   },
   "tests/corpus/12-notes.odt": {
    "pages": 1,
-   "lines": 46,
+   "lines": 14,
    "ms": 0,
    "starts": [
     "A claim 1 and another 2 in one paragraph"
@@ -600,7 +604,7 @@
   },
   "tests/corpus/13-images.docx": {
    "pages": 1,
-   "lines": 39,
+   "lines": 7,
    "ms": 0,
    "starts": [
     "Before after."
@@ -608,7 +612,7 @@
   },
   "tests/corpus/13-images.odt": {
    "pages": 1,
-   "lines": 39,
+   "lines": 7,
    "ms": 0,
    "starts": [
     "Before after."
@@ -616,7 +620,7 @@
   },
   "tests/corpus/14-formulas.docx": {
    "pages": 1,
-   "lines": 44,
+   "lines": 12,
    "ms": 100,
    "starts": [
     "Inline in the sentence."
@@ -624,7 +628,7 @@
   },
   "tests/corpus/14-formulas.odt": {
    "pages": 1,
-   "lines": 45,
+   "lines": 13,
    "ms": 0,
    "starts": [
     "Inline in the sentence."
@@ -632,7 +636,7 @@
   },
   "tests/corpus/15-chapters.docx": {
    "pages": 3,
-   "lines": 228,
+   "lines": 36,
    "ms": 100,
    "starts": [
     "Introduction",
@@ -642,7 +646,7 @@
   },
   "tests/corpus/15-chapters.odt": {
    "pages": 3,
-   "lines": 260,
+   "lines": 36,
    "ms": 0,
    "starts": [
     "Introduction",
@@ -652,27 +656,27 @@
   },
   "tests/corpus/16-hf-variants.docx": {
    "pages": 3,
-   "lines": 1528,
+   "lines": 208,
    "ms": 100,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "18. Lorem ipsum dolor sit amet , consect",
-    "35. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "18. Lorem ipsum dolor sit amet, consecte",
+    "35. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/16-hf-variants.odt": {
    "pages": 3,
-   "lines": 1688,
+   "lines": 208,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "18. Lorem ipsum dolor sit amet , consect",
-    "35. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "18. Lorem ipsum dolor sit amet, consecte",
+    "35. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/17-sections.docx": {
    "pages": 3,
-   "lines": 181,
+   "lines": 50,
    "ms": 600,
    "starts": [
     "Portrait first",
@@ -682,7 +686,7 @@
   },
   "tests/corpus/17-sections.odt": {
    "pages": 3,
-   "lines": 205,
+   "lines": 50,
    "ms": 600,
    "starts": [
     "Portrait first",
@@ -692,7 +696,7 @@
   },
   "tests/corpus/18-table-sections.docx": {
    "pages": 3,
-   "lines": 141,
+   "lines": 42,
    "ms": 600,
    "starts": [
     "Before the tables",
@@ -702,7 +706,7 @@
   },
   "tests/corpus/18-table-sections.odt": {
    "pages": 3,
-   "lines": 159,
+   "lines": 42,
    "ms": 600,
    "starts": [
     "Before the tables",
@@ -712,27 +716,27 @@
   },
   "tests/corpus/19-index-sections.docx": {
    "pages": 3,
-   "lines": 161,
+   "lines": 22,
    "ms": 600,
    "starts": [
     "Chapter One",
-    "Chapter One ............................",
+    "No headings yet — add an H1/H2/H3 to bui",
     "Chapter Three"
    ]
   },
   "tests/corpus/19-index-sections.odt": {
    "pages": 3,
-   "lines": 183,
+   "lines": 22,
    "ms": 500,
    "starts": [
     "Chapter One",
-    "Chapter One ............................",
+    "No headings yet — add an H1/H2/H3 to bui",
     "Chapter Three"
    ]
   },
   "tests/corpus/20-index-footer.docx": {
    "pages": 6,
-   "lines": 162,
+   "lines": 130,
    "ms": 200,
    "starts": [
     "Chapter 1",
@@ -745,11 +749,11 @@
   },
   "tests/corpus/20-index-footer.odt": {
    "pages": 6,
-   "lines": 527,
+   "lines": 130,
    "ms": 100,
    "starts": [
     "Chapter 1",
-    "Opening note for the chapter .",
+    "Opening note for the chapter.",
     "Chapter 28",
     "Chapter 42",
     "Chapter 56",
@@ -758,16 +762,16 @@
   },
   "tests/corpus/word/01-flow.docx": {
    "pages": 2,
-   "lines": 1008,
+   "lines": 120,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "18. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "18. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/word/02-blocks.docx": {
    "pages": 1,
-   "lines": 174,
+   "lines": 24,
    "ms": 0,
    "starts": [
     "Document Title"
@@ -775,15 +779,15 @@
   },
   "tests/corpus/word/03-fonts.docx": {
    "pages": 1,
-   "lines": 290,
+   "lines": 37,
    "ms": 0,
    "starts": [
-    "Lorem ipsum dolor sit amet , consectetur"
+    "Lorem ipsum dolor sit amet, consectetur "
    ]
   },
   "tests/corpus/word/04-table.docx": {
    "pages": 1,
-   "lines": 59,
+   "lines": 18,
    "ms": 0,
    "starts": [
     "Before the table"
@@ -791,34 +795,34 @@
   },
   "tests/corpus/word/05-breaks.docx": {
    "pages": 2,
-   "lines": 1335,
+   "lines": 159,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "minim veniam , quis nostrud exercitation"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "minim veniam, quis nostrud exercitation "
    ]
   },
   "tests/corpus/word/06-calibri.docx": {
    "pages": 2,
-   "lines": 840,
+   "lines": 100,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "19. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "19. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/word/07-nowidow.docx": {
    "pages": 2,
-   "lines": 1008,
+   "lines": 119,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "labore et dolore magna aliqua . Ut enim "
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "labore et dolore magna aliqua. Ut enim a"
    ]
   },
   "tests/corpus/word/08-lists.docx": {
    "pages": 1,
-   "lines": 78,
+   "lines": 17,
    "ms": 0,
    "starts": [
     "Bullets"
@@ -826,16 +830,16 @@
   },
   "tests/corpus/word/09-headerfooter.docx": {
    "pages": 2,
-   "lines": 1270,
+   "lines": 160,
    "ms": 0,
    "starts": [
-    "1. Lorem ipsum dolor sit amet , consecte",
-    "18. Lorem ipsum dolor sit amet , consect"
+    "1. Lorem ipsum dolor sit amet, consectet",
+    "18. Lorem ipsum dolor sit amet, consecte"
    ]
   },
   "tests/corpus/word/10-tabs.docx": {
    "pages": 1,
-   "lines": 47,
+   "lines": 15,
    "ms": 0,
    "starts": [
     "Default tabs follow:"
@@ -843,7 +847,7 @@
   },
   "tests/corpus/word/11-marks.docx": {
    "pages": 1,
-   "lines": 59,
+   "lines": 15,
    "ms": 0,
    "starts": [
     "underlined struck highlighted colored su"
@@ -851,7 +855,7 @@
   },
   "tests/corpus/word/12-notes.docx": {
    "pages": 1,
-   "lines": 64,
+   "lines": 14,
    "ms": 0,
    "starts": [
     "A claim 1 and another 2 in one paragraph"
@@ -859,15 +863,15 @@
   },
   "tests/corpus/word/13-images.docx": {
    "pages": 1,
-   "lines": 45,
+   "lines": 7,
    "ms": 0,
    "starts": [
-    "Before after ."
+    "Before after."
    ]
   },
   "tests/corpus/word/14-formulas.docx": {
    "pages": 1,
-   "lines": 44,
+   "lines": 12,
    "ms": 100,
    "starts": [
     "Inline in the sentence."

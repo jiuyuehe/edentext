@@ -50,27 +50,23 @@
   overflow-x: clip;
 
   /* The sheets themselves are one box per page (PageSheetLayer), since a section on its
-     own paper makes them differ in size. They sit at z-index -3, under a shape behind
-     the text (-2), a header's page background (.hf-bg-layer, -1) and the body text. */
+     own paper makes them differ in size. They sit at z-index -200, under the frames
+     behind the text (stackZ), a header's page background (.hf-bg-layer, -1) and the text. */
 }
 
 /* View ▸ Field Shadings: the grey every field is drawn on, switched from one place
    (class on .paper, Editor.svelte) rather than per field. Off leaves the fields plain. */
 .paper {
   --color-field-shade: transparent;
-  --color-field-shade-strong: transparent;
 }
 
 .paper.field-shading {
   --color-field-shade: rgba(0, 0, 0, 0.08);
-  /* An index entry is a 3px bar — at the shade of a whole field it would not be seen. */
-  --color-field-shade-strong: rgba(0, 0, 0, 0.18);
 }
 
 /* The allBlack theme paints the sheet itself dark, so black on black shows nothing. */
 [data-theme="allBlack"] .paper.field-shading {
   --color-field-shade: rgba(255, 255, 255, 0.14);
-  --color-field-shade-strong: rgba(255, 255, 255, 0.24);
 }
 
 /* While a freshly opened document is still finding its pagination (Editor.svelte).
@@ -282,6 +278,9 @@
    where `align-items: last baseline` puts it — a word processor never truncates one. */
 .paper .tiptap .toc-text {
   flex: 0 1 auto;
+  /* A tab after the number reaches the next grid stop from the row's indent, which is
+     the hanging indent of a level style that hangs its number. */
+  white-space: pre-wrap;
 }
 /* Leader dots filling the gap: the row grants the span the space that is left and
    clips the dots that do not fit, so the page number stays put. */
@@ -294,6 +293,15 @@
 .paper .tiptap .toc-page {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+/* A level style's hanging indent is the entry text's; inherited here, it would pull the
+   number left of the row's edge by that indent. */
+.paper .tiptap :is(.toc-leader, .toc-page) {
+  text-indent: 0;
+}
+/* An index in columns (tableOfContents.ts paginateColumns): a row never splits between two. */
+.paper .tiptap .toc-cols .toc-entry {
+  break-inside: avoid;
 }
 
 /* Footnotes and endnotes (notes.ts). Sizes and indents are LibreOffice's own Footnote
@@ -330,12 +338,12 @@
   text-indent: 0;
 }
 /* A note style declares its indent as a hanging pair (fo:margin-left with a negative
-   fo:text-indent) and the style model has no first-line half, so its margin alone would
-   just push the note right. The hanging pair stays LibreOffice's; the font, size and
-   colour are the file's. */
+   fo:text-indent), which the note's padding and marker already draw. The hanging pair
+   stays LibreOffice's; the font, size and colour are the file's. */
 .paper .tiptap .note[data-style] {
   margin-left: 0;
   margin-right: 0;
+  text-indent: -0.6cm;
 }
 /* A footnote is lifted out of the flow to the foot of its anchor's page; pageBreaks.ts
    sets `top` in document px and marks the first note of each page. The margin custom
@@ -453,6 +461,7 @@
   width: 100%;
   height: 100%;
   display: block;
+  cursor: move;
 }
 .paper .tiptap .image-node.image-selected .image-crop {
   outline: 2px solid var(--color-primary);
@@ -476,6 +485,13 @@
 .paper .tiptap .textbox-node.textbox-active .image-rotate-handle {
   display: block;
 }
+/* A line shows its two ends instead of a box: no frame, no box handles, no rotation. */
+.paper .tiptap .textbox-node:not(.textbox-is-line) .textbox-line-end,
+.paper .tiptap .textbox-node.textbox-is-line .image-resize-handle:not(.textbox-line-end),
+.paper .tiptap .textbox-node.textbox-is-line .image-rotate-handle {
+  display: none;
+}
+.paper .tiptap .textbox-line-end { cursor: crosshair; }
 .paper .tiptap .image-resize-nw { top: -5px; left: -5px; cursor: nwse-resize; }
 .paper .tiptap .image-resize-n  { top: -5px; left: 50%; margin-left: -5px; cursor: ns-resize; }
 .paper .tiptap .image-resize-ne { top: -5px; right: -5px; cursor: nesw-resize; }
@@ -551,9 +567,30 @@
   outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
+.paper .tiptap .textbox-node.textbox-is-line .textbox-rotor { outline: none; }
 /* Grab affordance on the frame edge (outside the text area). */
 .paper .tiptap .textbox-rotor {
   cursor: move;
+}
+/* A shape drawn as an outline is hit where it is painted, its text where the lines are:
+   everywhere else on the shape grabs it, and the empty corners of its box hit the page. */
+.paper .tiptap .textbox-node:is(.textbox-outlined, .textbox-is-line),
+.paper .tiptap :is(.textbox-outlined, .textbox-is-line) .textbox-rotor,
+.paper .tiptap .textbox-outlined .textbox-content {
+  pointer-events: none;
+}
+/* A line is hit along its stroke, widened by a transparent path of its own. */
+.paper .tiptap .textbox-is-line .textbox-line path {
+  pointer-events: stroke;
+  cursor: move;
+}
+.paper .tiptap .textbox-outlined .textbox-outline path {
+  pointer-events: visible;
+  cursor: move;
+}
+.paper .tiptap .textbox-outlined .textbox-content > *,
+.paper .tiptap :is(.textbox-outlined, .textbox-is-line) :is(.image-resize-handle, .image-rotate-handle) {
+  pointer-events: auto;
 }
 /* The outline of a shape CSS can't draw, behind the text. Such a frame carries no
    padding of its own (the text inset moves to .textbox-content), so the padding box
@@ -777,6 +814,14 @@
   color: var(--marker-color, inherit);
 }
 
+/* A level sized apart from its text (listMarker.ts) sits in the line, whose first line
+   then takes the label's own height — the larger bullet LibreOffice measures there. */
+.paper .tiptap li.marker-sized > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before {
+  float: none;
+  display: inline-block;
+  text-indent: 0;
+}
+
 /* A label set against the far end of the hanging indent grows into the margin instead
    of into the text — what keeps Word's Roman numerals off the words they label. */
 .paper .tiptap :is(ol, ul)[data-marker-align="right"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before {
@@ -846,6 +891,63 @@
   suffix: "";
 }
 
+/* Letters that repeat past the last one (z, aa, bb; я, аа, бб), as LibreOffice's
+   num-letter-sync and its "аа, бб" formats count, and the Russian alphabet LibreOffice
+   counts with: ы is in, ё, й, ъ and ь are not. Upper Cyrillic capitalises the first
+   letter only (Аа, Бб), so the lists draw the lower style capitalised. */
+.paper .tiptap :is(ol, ul)[data-eff-list-style="lower-alpha-sync"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-alpha-sync) ". "; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="lower-alpha-sync-paren"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-alpha-sync) ") "; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="upper-alpha-sync"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-upper-alpha-sync) ". "; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="upper-alpha-sync-paren"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-upper-alpha-sync) ") "; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="lower-cyrillic"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-cyrillic) ". "; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="lower-cyrillic-paren"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-cyrillic) ") "; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="upper-cyrillic"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-cyrillic) ". "; text-transform: capitalize; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="upper-cyrillic-paren"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-cyrillic) ") "; text-transform: capitalize; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="lower-cyrillic-sync"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-cyrillic-sync) ". "; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="lower-cyrillic-sync-paren"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-cyrillic-sync) ") "; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="upper-cyrillic-sync"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-cyrillic-sync) ". "; text-transform: capitalize; }
+.paper .tiptap :is(ol, ul)[data-eff-list-style="upper-cyrillic-sync-paren"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before { content: counter(list-item, edt-cyrillic-sync) ") "; text-transform: capitalize; }
+
+@counter-style edt-alpha-sync {
+  system: symbolic;
+  symbols: "a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z";
+  suffix: "";
+}
+
+@counter-style edt-upper-alpha-sync {
+  system: symbolic;
+  symbols: "A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z";
+  suffix: "";
+}
+
+@counter-style edt-cyrillic {
+  system: alphabetic;
+  symbols: "а" "б" "в" "г" "д" "е" "ж" "з" "и" "к" "л" "м" "н" "о" "п" "р" "с" "т" "у" "ф" "х" "ц" "ч" "ш" "щ" "ы" "э" "ю" "я";
+  suffix: "";
+}
+
+@counter-style edt-cyrillic-sync {
+  system: symbolic;
+  symbols: "а" "б" "в" "г" "д" "е" "ж" "з" "и" "к" "л" "м" "н" "о" "п" "р" "с" "т" "у" "ф" "х" "ц" "ч" "ш" "щ" "ы" "э" "ю" "я";
+  suffix: "";
+}
+
+/* Chapter labels cannot be capitalised part by part, so they take the capitals as
+   symbols; past я they fall back to lower case. */
+@counter-style edt-upper-cyrillic {
+  system: fixed 1;
+  symbols: "А" "Б" "В" "Г" "Д" "Е" "Ж" "З" "И" "К" "Л" "М" "Н" "О" "П" "Р" "С" "Т" "У" "Ф" "Х" "Ц" "Ч" "Ш" "Щ" "Ы" "Э" "Ю" "Я";
+  fallback: edt-cyrillic;
+  suffix: "";
+}
+
+@counter-style edt-upper-cyrillic-sync {
+  system: fixed 1;
+  symbols: "А" "Б" "В" "Г" "Д" "Е" "Ж" "З" "И" "К" "Л" "М" "Н" "О" "П" "Р" "С" "Т" "У" "Ф" "Х" "Ц" "Ч" "Ш" "Щ" "Ы" "Э" "Ю" "Я";
+  fallback: edt-cyrillic-sync;
+  suffix: "";
+}
+
 /* Legal/outline numbering (1., 1.1., 1.2.1. …): the plugin tags the multilevel list and
    every attr-less member of its chain with data-eff-list-style="multilevel". */
 .paper .tiptap :is(ol, ul)[data-eff-list-style="multilevel"] > li > :is(p, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)::before {
@@ -909,6 +1011,9 @@
      margin-left/-right here (tableView.ts), which is what the export writes. */
   margin: 0;
   overflow-x: auto;
+  /* A table never sits beside a float: LibreOffice starts it below the frame (probed),
+     where a box beside a column-wide one squeezed the table to nothing. */
+  clear: both;
   /* The table's space above adds to the block above it, as a paragraph's does. */
   padding-top: var(--space-before);
 }
@@ -1163,15 +1268,17 @@
   user-select: none;
 }
 
-/* Spell-check: red wavy underline under misspelled words (drawn by spellCheck.ts).
+/* Spell-check: red wavy underline under misspelled words (painted by spellCheck.ts).
    skip-ink:none keeps the wave continuous under descenders. */
-.tiptap .pm-spell-error {
+.tiptap .pm-spell-error,
+::highlight(spell-error) {
   text-decoration: red wavy underline;
   text-decoration-skip-ink: none;
 }
 
 /* Grammar check: a blue wave, so a grammar finding reads apart from a spelling one. */
-.tiptap .pm-grammar-error {
+.tiptap .pm-grammar-error,
+::highlight(grammar-error) {
   text-decoration: #2b6cb0 wavy underline;
   text-decoration-skip-ink: none;
 }
@@ -1198,16 +1305,19 @@
 /* Recorded revisions (trackChanges.ts). Both word processors underline an insertion
    and strike a deletion, in the reviewer's colour; one colour here, since the editor
    has a single author. */
-/* An index entry is a place, not text: a thin grey bar the way both word processors
-   shade a field, so it can be seen and deleted without taking room in the line. */
+/* An index entry is a place, not text: hidden like other editing aids, and with the
+   formatting marks a thin bar whose margins cancel its width, so lines never move. */
 .tiptap .pm-index-entry {
+  display: none;
+}
+.paper.show-formatting-marks .tiptap .pm-index-entry {
   display: inline-block;
-  width: 3px;
+  width: 2px;
   height: 0.9em;
-  margin: 0 1px;
+  margin: 0 -1px;
   vertical-align: -0.05em;
-  border-radius: 1px;
-  background: var(--color-field-shade-strong);
+  background: var(--color-primary);
+  opacity: 0.6;
 }
 
 /* A cell holding a formula shows its result on the field shade, since that result is
@@ -1306,7 +1416,9 @@
 
   /* Squiggles are an editing aid, never printed. */
   .tiptap .pm-spell-error,
-  .tiptap .pm-grammar-error {
+  .tiptap .pm-grammar-error,
+  ::highlight(spell-error),
+  ::highlight(grammar-error) {
     text-decoration: none;
   }
 
@@ -1334,7 +1446,6 @@
   /* The field shade is an editing aid; LibreOffice never puts it on paper either. */
   .paper.field-shading {
     --color-field-shade: transparent;
-    --color-field-shade-strong: transparent;
   }
 }
 

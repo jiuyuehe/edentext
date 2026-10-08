@@ -12,8 +12,9 @@
 
   // Word's Picture Format and Shape Format: the same wrap modes, plus a shape's
   // own fill, outline and kind.
-  let { editor, which, wrap, inFront = false, alt = '', shapeKind, fillColor, strokeColor, strokeWidthPt, textVertical = false, textVAlign = 'top' }: {
+  let { editor, tick, which, wrap, inFront = false, alt = '', shapeKind, fillColor, strokeColor, strokeWidthPt, textVertical = false, textVAlign = 'top' }: {
     editor: Editor | null;
+    tick: number;
     which: 'picture' | 'shape';
     wrap: WrapMode;
     inFront?: boolean;
@@ -45,18 +46,34 @@
     { key: 'bottom', icon: 'alignBottom', label: () => t().textBox.vAlignBottom },
   ];
 
+  // Over or under the other free frames; only those overlap, so a frame in the flow has none.
+  const ORDERS = [
+    { key: 'forward', icon: 'orderForward', label: () => t().image.orderForward },
+    { key: 'backward', icon: 'orderBackward', label: () => t().image.orderBackward },
+    { key: 'front', icon: 'orderFront', label: () => t().image.orderFront },
+    { key: 'back', icon: 'orderBack', label: () => t().image.orderBack },
+  ] as const;
+  const canOrder = $derived(tick >= 0 && !!editor ? Object.fromEntries(ORDERS.map((o) => [o.key, editor.can().restackFrame(o.key)])) : {});
+
   let captionOpen = $state(false);
 
   function setWrap(w: WrapChoice) {
     const mode: WrapMode = w === 'behind' || w === 'front' ? 'through' : w;
     if (which === 'picture') editor?.chain().focus().setImageWrap(mode, w === 'front').run();
-    else editor?.chain().focus().setTextBoxAttrs({ wrap: mode, ...droppedFrameAttrs(mode, w === 'front') }).run();
+    else editor?.chain().focus().setTextBoxAttrs({ wrap: mode, ...droppedFrameAttrs(mode, w === 'front', wrap) }).run();
   }
 </script>
 
 <RibbonGroup label={t().ribbon.groups.arrange}>
   {#each WRAPS as w}
-    <RibbonButton variant="big" icon={w.icon} label={w.label()} title={w.label()} active={active === w.key} onclick={() => setWrap(w.key)} />
+    <RibbonButton variant="big" icon={w.icon} cmd={`wrap-${w.key}`} label={w.label()} title={w.label()} active={active === w.key} onclick={() => setWrap(w.key)} />
+  {/each}
+  {#each [ORDERS.slice(0, 2), ORDERS.slice(2)] as col}
+    <div class="rb-col">
+      {#each col as o}
+        <RibbonButton variant="small" icon={o.icon} cmd={`order-${o.key}`} label={o.label()} title={o.label()} disabled={!canOrder[o.key]} onclick={() => editor?.chain().focus().restackFrame(o.key).run()} />
+      {/each}
+    </div>
   {/each}
 </RibbonGroup>
 
@@ -81,7 +98,7 @@
   <!-- The alt text has always ridden along in both formats, filled in from the
        file name and never editable. -->
   <RibbonGroup label={t().ribbon.groups.accessibility}>
-    <label class="field alt">
+    <label class="field alt" data-cmd="altText">
       <span>{t().ribbon.altText}</span>
       <input
         type="text"
@@ -97,14 +114,14 @@
   <div class="ribbon-sep"></div>
 
   <RibbonGroup label={t().ribbon.groups.shapeStyles}>
-    <div class="rb-captioned" use:captionClicks>
+    <div class="rb-captioned" data-cmd="shape" use:captionClicks>
       <ShapePicker
         value={shapeKind ?? 'textbox'}
         onPick={(k) => editor?.chain().focus().setTextBoxAttrs({ shapeKind: k }).run()}
       />
       <span class="rb-caption">{t().textBox.shape}</span>
     </div>
-    <div class="rb-captioned" use:captionClicks>
+    <div class="rb-captioned" data-cmd="fillColor" use:captionClicks>
       <ColorPicker
         {editor}
         currentColor={fillColor ?? null}
@@ -118,7 +135,7 @@
       />
       <span class="rb-caption">{t().textBox.fillColor}</span>
     </div>
-    <div class="rb-captioned" use:captionClicks>
+    <div class="rb-captioned" data-cmd="borderColor" use:captionClicks>
       <ColorPicker
         {editor}
         currentColor={strokeColor ?? null}
@@ -132,7 +149,7 @@
       />
       <span class="rb-caption">{t().textBox.borderColor}</span>
     </div>
-    <label class="field">
+    <label class="field" data-cmd="borderWidth">
       <span>{t().textBox.borderWidth}</span>
       <input
         type="text"
@@ -152,6 +169,7 @@
     <RibbonButton
       variant="big"
       icon="textDirection"
+      cmd="verticalText"
       label={t().textBox.verticalText}
       title={t().textBox.verticalText}
       active={textVertical}
@@ -159,6 +177,7 @@
     />
     {#each VALIGNS as v}
       <RibbonButton
+        cmd={`textAlign-${v.icon.slice(5)}`}
         icon={v.icon}
         title={v.label()}
         active={textVAlign === v.key}

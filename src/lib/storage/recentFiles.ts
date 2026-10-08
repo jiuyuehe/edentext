@@ -1,4 +1,5 @@
 import { openDb, idbRequest } from './idb';
+import { volatile } from './docScope';
 
 // The files this browser can reopen, most recent first. Name and time go in
 // localStorage so the menu draws synchronously; the FileSystemFileHandle that reopens
@@ -39,7 +40,8 @@ function write(list: RecentFile[]): void {
  */
 export async function rememberRecentFile(name: string, handle: FileSystemFileHandle | null): Promise<RecentFile[]> {
   const list = loadRecentFiles();
-  if (!handle) return list;
+  // A file name tells of its content, so nothing is recorded while nothing is to be stored.
+  if (!handle || volatile) return list;
   const existing = (await findByHandle(list, handle)) ?? list.find((f) => f.name === name);
   const id = existing?.id ?? `f${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
   const next = [{ id, name, at: Date.now() }, ...list.filter((f) => f.id !== id)].slice(0, MAX);

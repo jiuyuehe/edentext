@@ -20,7 +20,7 @@ import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { isSvgDataUrl, svgToPngDataUrl } from '../import/imageFormats';
 import { TEXTBOX_PADDING_CM, type TextVAlign } from '../editor/extensions/textBox';
 import { cropOf, type Crop } from '../editor/extensions/image';
-import { SHAPES, isShapeKind, isLineKind, drawingMlPath, type ShapeKind } from '../utils/shapes';
+import { SHAPES, boxHeads, isShapeKind, isLineKind, drawingMlPath, asShapePreset, asTextArea, type PathHeads, type ShapeKind, type DrawingMlPreset, type TextArea } from '../utils/shapes';
 import { cellFormatCode, isCellFormat } from '../utils/cellFormat';
 import { cjkDocFont, isAsianTag, type ExportLanguage } from '../storage/documentLanguage';
 import { DEFAULT_MARGINS, type PageMargins } from '../storage/pageMargins';
@@ -33,7 +33,7 @@ import { DEFAULT_NOTE_SETTINGS, type NoteKind, type NoteNumFormat, type NoteSett
 import { DOCX_SEQ_NAME, seqCategoryOf } from '../editor/extensions/caption';
 import { sanitizeBookmarkName } from '../editor/extensions/bookmark';
 import { isCrossRefFormat, isCrossRefKind, type CrossRefFormat, type CrossRefKind } from '../editor/extensions/crossReference';
-import { indexKindOf, INDEX_TITLES, type IndexKind } from '../editor/extensions/tableOfContents';
+import { indexKindOf, INDEX_TITLES, INDEX_COLUMN_GAP_CM, type IndexKind } from '../editor/extensions/tableOfContents';
 import { citationText, DOCX_BIB_FIELD, DOCX_SOURCE_TYPE, type BibSource } from '../editor/extensions/bibliographyEntry';
 import { DOCX_STYLE_NAME, isCitationStyle, type CitationStyle } from '../utils/citationStyle';
 import { HEADER_SHADE } from '../editor/extensions/tableHeaderRow';
@@ -47,7 +47,7 @@ import { effectiveOrderedDefAt, formatOrdinal, childCycle, orderedTypeDef, ROOT_
 import { effectiveListLevel, listStyleMarginCm, listStyleOverridden, type ListStyle as ListStyleDef } from '../styles/listStyles';
 import { outlineIsEmpty, type OutlineNumbering } from '../styles/outlineNumbering';
 import { defaultBulletChar } from '../utils/bulletListTypes';
-import { normalizeColor, GENERATOR, mergeJoinedParagraphsJson, twinFontName, type HfExport } from './odt';
+import { normalizeColor, GENERATOR, mergeJoinedParagraphsJson, twinFontName, frameRank, type HfExport } from './odt';
 import { MAX_HEADING_LEVEL } from '../styles/headings';
 import { EMPTY_DOC_PROPERTIES, type DocProperties } from '../storage/docProperties';
 import { DEFAULT_PAGE_NUMBERING, type PageNumbering } from '../storage/pageNumbering';
@@ -153,6 +153,14 @@ const ORDERED_FORMAT: Record<string, (typeof LevelFormat)[keyof typeof LevelForm
   A: LevelFormat.UPPER_LETTER,
   i: LevelFormat.LOWER_ROMAN,
   I: LevelFormat.UPPER_ROMAN,
+  // Word has one letter format per alphabet and repeats the letter past the last one;
+  // LibreOffice writes both of its counting modes to it.
+  aa: LevelFormat.LOWER_LETTER,
+  AA: LevelFormat.UPPER_LETTER,
+  'а, б, .., аа, аб, ... (ru)': LevelFormat.RUSSIAN_LOWER,
+  'а, б, .., аа, бб, ... (ru)': LevelFormat.RUSSIAN_LOWER,
+  'А, Б, .., Аа, Аб, ... (ru)': LevelFormat.RUSSIAN_UPPER,
+  'А, Б, .., Аа, Бб, ... (ru)': LevelFormat.RUSSIAN_UPPER,
   // Probed: LibreOffice writes chineseCountingThousand for 一、二、三 and reads
   // chineseCounting as the same thing.
   '一, 二, 三, ...': LevelFormat.CHINESE_COUNTING_THOUSAND,
@@ -975,6 +983,12 @@ function paraOffsetEmu(cm: number): number {
 
 // offsetCm places the frame in the text column (Word's posOffset); without one it is
 // flush to its side. offsetYCm is how far below the anchor paragraph it sits.
+// relativeHeight counts up from where Word numbers a new drawing, by rank and then in
+// document order: readers break a tie differently, so every frame gets its own height.
+const RELATIVE_HEIGHT_BASE = 251658240;
+let frameSeq = 0;
+const relativeHeight = (rank: number) => RELATIVE_HEIGHT_BASE + rank * 65536 + frameSeq++;
+
 function floatingFor(wrap: string, offsetCm: number | null, offsetYCm: number | null, alignH?: string | null, distCm?: number | null, inFront?: boolean, fromPage?: boolean, fromBody?: boolean): IFloating | undefined {
   if (wrap === 'inline') return undefined;
   // The gap beside the frame, on both sides as Word writes it; none above or below.
@@ -1069,12 +1083,13 @@ function imageRun(node: TiptapNode): ImageRun | null {
   const crop = cropOf(node.attrs?.crop);
   docCrops ||= !!crop;
   const mark = crop ? `${CROP}${[crop.l, crop.t, crop.r, crop.b].join(',')}${CROP}` : '';
+  const floating = floatingFor(wrap, offsetCm, offsetYCm, node.attrs?.wrapAlign as string | null, distCm, node.attrs?.inFront === true, node.attrs?.wrapFromPage === true, node.attrs?.wrapFromBody === true);
   return new ImageRun({
     type: decoded.type,
     data: decoded.bytes,
     altText: alt ? { name: alt + mark, title: alt, description: alt } : mark ? { name: mark } : undefined,
     transformation: { width, height, rotation: rotation || undefined },
-    floating: floatingFor(wrap, offsetCm, offsetYCm, node.attrs?.wrapAlign as string | null, distCm, node.attrs?.inFront === true, node.attrs?.wrapFromPage === true, node.attrs?.wrapFromBody === true),
+    floating: floating && { ...floating, zIndex: relativeHeight(frameRank(node.attrs?.zIndex)) },
   });
 }
 
@@ -1093,15 +1108,22 @@ type TextBoxDocx = {
   fromPage: boolean;
   fromBody: boolean;
   inFront: boolean;
+  zIndex: number;
   shapeKind: ShapeKind;
   shapePath: string | null;
+  shapeTextArea: TextArea | null;
+  shapePreset: DrawingMlPreset | null;
+  arrowHeads: PathHeads | null;
   flipV: boolean;
+  flipH: boolean;
   textVertical: boolean;
   textVAlign: TextVAlign;
   fill: string | null;
   stroke: string | null;
   strokeWidthPt: number;
   paddingCm: number;
+  paddingTopCm: number | null;
+  paddingBottomCm: number | null;
   content: TiptapNode[];
 };
 
@@ -1123,9 +1145,14 @@ function textBoxDocxDescriptor(node: TiptapNode): TextBoxDocx {
     fromPage: a.wrapFromPage === true,
     fromBody: a.wrapFromBody === true,
     inFront: a.inFront === true,
+    zIndex: relativeHeight(frameRank(a.zIndex)),
     shapeKind: isShapeKind(a.shapeKind) ? a.shapeKind : 'textbox',
     shapePath: typeof a.shapePath === 'string' && a.shapePath ? a.shapePath : null,
+    shapeTextArea: asTextArea(a.shapeTextArea),
+    shapePreset: typeof a.shapePath === 'string' && a.shapePath ? asShapePreset(a.shapePreset) : null,
+    arrowHeads: a.arrowHeads === 'start' || a.arrowHeads === 'end' || a.arrowHeads === 'both' ? a.arrowHeads : null,
     flipV: a.flipV === true,
+    flipH: a.flipH === true,
     textVertical: a.textVertical === true,
     textVAlign: a.textVAlign === 'middle' || a.textVAlign === 'bottom' ? a.textVAlign : 'top',
     fill: typeof a.fillColor === 'string' && a.fillColor ? a.fillColor : null,
@@ -1133,6 +1160,8 @@ function textBoxDocxDescriptor(node: TiptapNode): TextBoxDocx {
     strokeWidthPt: typeof a.strokeWidthPt === 'number' && a.strokeWidthPt > 0 ? a.strokeWidthPt : 1,
     // The attr is only set where the box disagrees with the editor's own ring.
     paddingCm: typeof a.paddingCm === 'number' && a.paddingCm >= 0 ? a.paddingCm : TEXTBOX_PADDING_CM,
+    paddingTopCm: typeof a.paddingTopCm === 'number' && a.paddingTopCm >= 0 ? a.paddingTopCm : null,
+    paddingBottomCm: typeof a.paddingBottomCm === 'number' && a.paddingBottomCm >= 0 ? a.paddingBottomCm : null,
     content: node.content ?? [],
   };
 }
@@ -1290,6 +1319,9 @@ function txbxParagraphXml(node: TiptapNode, parts: TxbxParts, indentTwip = 0, nu
     const lvl = Math.min(MAX_HEADING_LEVEL, Math.max(1, Number(attrs.level) || 1));
     pPr.push(`<w:pStyle w:val="Heading${lvl}"/>`);
   }
+  // CT_PPr puts both right after the style; an explicit off overrides a heading's keep.
+  if (typeof attrs.keepNext === 'boolean') pPr.push(attrs.keepNext ? '<w:keepNext/>' : '<w:keepNext w:val="0"/>');
+  if (attrs.keepLines === true) pPr.push('<w:keepLines/>');
   pPr.push(numPr, txbxPPrXml(attrs, indentTwip, blockPt(node)));
   const runProps = (marks: TiptapNode['marks']) => txbxRunPropsXml(marks, [attrs.lang, attrs.langAsian]);
   let runs = '';
@@ -1491,26 +1523,35 @@ function textBoxDrawingXml(box: TextBoxDocx, index: number, parts: TxbxParts): s
   const fill = box.fill
     ? `<a:solidFill><a:srgbClr val="${hexColor(box.fill) ?? 'FFFFFF'}"/></a:solidFill>`
     : '<a:noFill/>';
-  // A line is only its stroke, and its heads ride the same <a:ln>.
+  // A line is only its stroke, and its heads ride the same <a:ln> (an outline's too).
   const line = SHAPES[box.shapeKind].line;
-  const ends = line === 'end' ? '<a:tailEnd type="triangle"/>'
-    : line === 'both' ? '<a:headEnd type="triangle"/><a:tailEnd type="triangle"/>' : '';
+  const heads = boxHeads(box.shapeKind, box.arrowHeads, box.shapePath);
+  const ends = (heads.start ? '<a:headEnd type="triangle"/>' : '') + (heads.end ? '<a:tailEnd type="triangle"/>' : '');
   const ln = box.stroke
     ? `<a:ln w="${Math.round(box.strokeWidthPt * EMU_PER_PT)}"><a:solidFill><a:srgbClr val="${hexColor(box.stroke) ?? '000000'}"/></a:solidFill>${ends}</a:ln>`
     : '<a:ln><a:noFill/></a:ln>';
   const inset = Math.round(box.paddingCm * EMU_PER_CM);
+  const insetT = Math.round((box.paddingTopCm ?? box.paddingCm) * EMU_PER_CM);
+  const insetB = Math.round((box.paddingBottomCm ?? box.paddingCm) * EMU_PER_CM);
   // The box keeps the height it declares — LibreOffice's own DOCX export writes this for
   // the same frame, and read as spAutoFit it lays the text out detached from the shape
   // (probed: the text lands in the body, over whatever follows).
   const autofit = '<a:noAutofit/>';
   // A freeform is its own outline: custGeom over the same 0…100 box, in the shape's
-  // own EMU extent so the path needs no second scale.
-  const geom = box.shapePath
-    ? `<a:custGeom><a:avLst/><a:pathLst>${drawingMlPath(box.shapePath, cx, cy)}</a:pathLst></a:custGeom>`
+  // own EMU extent so the path needs no second scale. A preset is only its name.
+  const preset = box.shapePreset;
+  const area = box.shapeTextArea;
+  const rect = area ? `<a:rect l="${Math.round((area[0] * cx) / 100)}" t="${Math.round((area[1] * cy) / 100)}"`
+    + ` r="${Math.round((area[2] * cx) / 100)}" b="${Math.round((area[3] * cy) / 100)}"/>` : '';
+  const geom = preset
+    ? `<a:prstGeom prst="${preset.name}"><a:avLst>${Object.entries(preset.adj)
+      .map(([n, v]) => `<a:gd name="${escapeXml(n)}" fmla="val ${Math.round(v)}"/>`).join('')}</a:avLst></a:prstGeom>`
+    : box.shapePath
+    ? `<a:custGeom><a:avLst/>${rect}<a:pathLst>${drawingMlPath(box.shapePath, cx, cy)}</a:pathLst></a:custGeom>`
     : `<a:prstGeom prst="${SHAPES[box.shapeKind].prst}"><a:avLst/></a:prstGeom>`;
   // Word draws the `line` preset down the frame's diagonal and flips it to reach the
   // other one; a line carries no fill and no text body.
-  const flip = line && box.flipV ? ' flipV="1"' : '';
+  const flip = ((line && box.flipH) || preset?.flipH ? ' flipH="1"' : '') + ((line && box.flipV) || preset?.flipV ? ' flipV="1"' : '');
   const body = line
     ? ''
     : `<wps:txbx><w:txbxContent>${txbxContentXml(box.content, parts)}</w:txbxContent></wps:txbx>`;
@@ -1521,7 +1562,7 @@ function textBoxDrawingXml(box: TextBoxDocx, index: number, parts: TxbxParts): s
     `${geom}${line ? '<a:noFill/>' : fill}${ln}</wps:spPr>` +
     body +
     `<wps:bodyPr rot="0" vert="${box.textVertical ? 'vert' : 'horz'}" wrap="square"` +
-    ` lIns="${inset}" tIns="${inset}" rIns="${inset}" bIns="${inset}" anchor="${box.textVAlign === 'middle' ? 'ctr' : box.textVAlign === 'bottom' ? 'b' : 't'}">${autofit}</wps:bodyPr>` +
+    ` lIns="${inset}" tIns="${insetT}" rIns="${inset}" bIns="${insetB}" anchor="${box.textVAlign === 'middle' ? 'ctr' : box.textVAlign === 'bottom' ? 'b' : 't'}">${autofit}</wps:bodyPr>` +
     `</wps:wsp>`;
   const graphic =
     `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
@@ -1546,7 +1587,7 @@ function textBoxDrawingXml(box: TextBoxDocx, index: number, parts: TxbxParts): s
     : `<wp:align>${align}</wp:align>`;
   return (
     `<w:drawing><wp:anchor ${WP_NS} distT="0" distB="0" distL="${emu(box.distCm ?? 0)}" distR="${emu(box.distCm ?? 0)}"` +
-    ` simplePos="0" relativeHeight="${251658240 + index}" behindDoc="${box.wrap === 'through' && !box.inFront ? 1 : 0}" locked="0" layoutInCell="1" allowOverlap="${box.wrap === 'through' ? 1 : 0}">` +
+    ` simplePos="0" relativeHeight="${box.zIndex}" behindDoc="${box.wrap === 'through' && !box.inFront ? 1 : 0}" locked="0" layoutInCell="1" allowOverlap="${box.wrap === 'through' ? 1 : 0}">` +
     `<wp:simplePos x="0" y="0"/>` +
     `<wp:positionH relativeFrom="margin">${posH}</wp:positionH>` +
     (box.fromPage || box.fromBody
@@ -2724,6 +2765,7 @@ function tableToDocx(node: TiptapNode, contentWidthCm: number, num: Numbering, f
     }
     return new TableRow({
       height: typeof rh === 'number' && rh > 0 ? { value: pxToTwip(rh), rule: HeightRule.ATLEAST } : undefined,
+      ...(row.attrs?.cantSplit === true ? { cantSplit: true } : {}),
       // The flag marks a header row, whether the table asked for the repeat or only the
       // row's own cells say they head it — ODF spells both with one element.
       ...((repeatHeader && rowIndex === 0) || (row.content ?? []).some((c) => c.type === 'tableHeader')
@@ -2767,7 +2809,7 @@ function indexFieldParagraphs(node: TiptapNode, kind: IndexKind, maxLevel: numbe
   const instr =
     // `\n` is a TOC switch that INDEX has no counterpart for; Word ignores the unknown
     // one and regenerates its rows, and this side reads it back.
-    kind === 'alphabetical' ? `INDEX \\c "1" \\e "\t"${noPages ? ' \\n' : ''}`
+    kind === 'alphabetical' ? `INDEX \\c "${indexColumns(node)?.count ?? 1}" \\e "\t"${noPages ? ' \\n' : ''}`
     : kind === 'bibliography' ? 'BIBLIOGRAPHY'
     // `\n` over the whole range: Word's switch takes levels, the editor's index is
     // all-or-nothing.
@@ -2779,11 +2821,15 @@ function indexFieldParagraphs(node: TiptapNode, kind: IndexKind, maxLevel: numbe
   const entries = raw.map((e) => ({
     text: typeof e.text === 'string' ? e.text : '',
     level: typeof e.level === 'number' && e.level >= 1 ? Math.round(e.level) : 1,
-    pages: Array.isArray(e.pages) && e.pages.length ? e.pages.join(', ') : String(typeof e.page === 'number' ? e.page : 1),
+    // '' is a term heading its subentries, which lists no page.
+    pages: Array.isArray(e.pages) ? e.pages.join(', ') : String(typeof e.page === 'number' ? e.page : 1),
   }));
   const noPage = kind === 'bibliography' || noPages;
   const leader = DOCX_LEADER[String(a.leader ?? '')];
-  const tabCm = typeof a.tabPosCm === 'number' && a.tabPosCm > 0 ? a.tabPosCm : contentWidthCm;
+  // In columns the rows end at their column's edge.
+  const cols = indexColumns(node);
+  const rowWidthCm = cols ? (contentWidthCm - cols.gapCm * (cols.count - 1)) / cols.count : contentWidthCm;
+  const tabCm = typeof a.tabPosCm === 'number' && a.tabPosCm > 0 ? a.tabPosCm : rowWidthCm;
   const open = runsFromXml(
     '<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>'
     + `<w:r><w:instrText xml:space="preserve"> ${escapeXml(instr)} </w:instrText></w:r>`
@@ -2807,14 +2853,18 @@ function indexFieldParagraphs(node: TiptapNode, kind: IndexKind, maxLevel: numbe
     tabStops: [{ type: TabStopType.RIGHT, position: cmToTwip(tabCm), ...(leader ? { leader } : {}) }],
     children: [
       ...(i === 0 ? open : []),
-      ...e.text.split('\n').map((part, li) => new TextRun(li ? { text: part, break: 1 } : { text: part })),
-      ...(noPage ? [] : runsFromXml(`<w:r><w:tab/></w:r><w:r><w:t xml:space="preserve">${escapeXml(e.pages)}</w:t></w:r>`)),
+      ...e.text.split('\n').flatMap((line, li) => line.split('\t').flatMap((part, ti) => [
+        ...(ti ? runsFromXml('<w:r><w:tab/></w:r>') : []),
+        new TextRun(li && !ti ? { text: part, break: 1 } : { text: part }),
+      ])),
+      ...(noPage || !e.pages ? [] : runsFromXml(`<w:r><w:tab/></w:r><w:r><w:t xml:space="preserve">${escapeXml(e.pages)}</w:t></w:r>`)),
       ...(i === entries.length - 1 ? close : []),
     ],
   }));
 }
 
-// A text box whose whole content is one table — the editor's floating table.
+// A text box whose whole content is one table — the editor's floating table. w:tblpPr
+// has no place for the frame's own outline or fill; the table's borders carry over.
 function floatingTableOf(node: TiptapNode): TiptapNode | null {
   if (node.type !== 'textBox' || node.content?.length !== 1) return null;
   return node.content[0].type === 'table' ? node.content[0] : null;
@@ -2887,8 +2937,7 @@ function blocksToDocx(content: TiptapNode[], num: Numbering, contentWidthCm: num
       // the heading levels. The title is a plain bold paragraph so it isn't itself
       // listed, and is omitted where the index has none.
       const kind = indexKindOf(node.attrs?.index);
-      const rawTitle = node.attrs?.title;
-      const tocTitle = typeof rawTitle === 'string' ? rawTitle : INDEX_TITLES[kind];
+      const tocTitle = indexTitleOf(node);
       const depth = Number(node.attrs?.maxLevel);
       const maxLevel = depth >= 1 ? Math.min(MAX_HEADING_LEVEL, depth) : MAX_HEADING_LEVEL;
       // The break rides whichever paragraph the index opens with — its title, else the
@@ -2899,6 +2948,18 @@ function blocksToDocx(content: TiptapNode[], num: Numbering, contentWidthCm: num
     }
   }
   return out;
+}
+
+const indexTitleOf = (node: TiptapNode): string => {
+  const raw = node.attrs?.title;
+  return typeof raw === 'string' ? raw : INDEX_TITLES[indexKindOf(node.attrs?.index)];
+};
+
+// The columns an index lays its rows out in, null for one.
+function indexColumns(node: TiptapNode): { count: number; gapCm: number } | null {
+  const n = Number(node.attrs?.columns);
+  if (node.type !== 'tableOfContents' || !(n > 1)) return null;
+  return { count: Math.min(3, Math.round(n)), gapCm: Number(node.attrs?.columnGapCm) || INDEX_COLUMN_GAP_CM };
 }
 
 // One body section: a run of ordinary blocks (columns: null) or one columns node's
@@ -2957,6 +3018,13 @@ function bodyGroups(content: TiptapNode[], num: Numbering, widthCm: (section: nu
         flushPlain();
         cols = { count, gapCm, blocks: [...(node.content ?? [])] };
       }
+    } else if (indexColumns(node)) {
+      // An index in columns is a columns section of its own, its title above it.
+      flushCols();
+      flushPlain();
+      const children = blocksToDocx([node], num, widthCm(section));
+      if (indexTitleOf(node)) groups.push({ section, columns: null, children: children.splice(0, 1) });
+      groups.push({ section, columns: indexColumns(node), children });
     } else {
       flushCols();
       plain.push(node);
@@ -3065,7 +3133,13 @@ function paragraphStyleOf(style: Style): IParagraphStyleOptions {
   const lineRule = fixedPt > 0 ? LineRuleType.EXACT : LineRuleType.AUTO;
   if (Object.keys(spacing).length) paragraph.spacing = { ...spacing, ...(spacing.line ? { lineRule } : {}) };
   if (p.textAlign) paragraph.alignment = alignOf({ textAlign: p.textAlign });
-  if (p.indent != null) paragraph.indent = { left: cmToTwip(p.indent) };
+  const first = typeof p.indentFirst === 'number' ? p.indentFirst : null;
+  if (p.indent != null || first != null) {
+    paragraph.indent = {
+      ...(p.indent != null ? { left: cmToTwip(p.indent) } : {}),
+      ...(first != null ? (first < 0 ? { hanging: cmToTwip(-first) } : { firstLine: cmToTwip(first) }) : {}),
+    };
+  }
   if (style.outlineLevel) paragraph.keepNext = true;
   // The style's own colored field and rule lines.
   const shading = paraShadingOf(p);
@@ -3235,6 +3309,7 @@ export async function buildDocx(
   docxBookmarkNames = new Map();
   docRubies = [];
   docCrops = false;
+  frameSeq = 0;
   docPlaceholders = [];
   docSources = [];
   const num = new Numbering();

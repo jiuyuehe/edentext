@@ -19,7 +19,7 @@ const table: N = { type: 'table', content: [
 
 const doc: N = { type: 'doc', content: [
   { type: 'paragraph', content: [
-    { type: 'textBox', attrs: { width: 372, wrap: 'left', wrapDist: 0.32 }, content: [table] },
+    { type: 'textBox', attrs: { width: 372, wrap: 'left', wrapDist: 0.32, strokeColor: null, fillColor: null }, content: [table] },
     { type: 'text', text: 'beside the frame' },
   ] },
   { type: 'paragraph', content: [{ type: 'text', text: 'Body' }] },
@@ -56,5 +56,8 @@ describe('a floating table', () => {
     expect(cellTexts(box.content[0])).toEqual(['Report', '2018', 'Company', 'Name']);
     // The table is out of the flow: the text it was anchored beside stays with it.
     expect(paraText(back.content[0])).toBe('beside the frame');
+    // Only the table's own borders are drawn, not a frame's outline or fill.
+    expect(box.attrs).toMatchObject({ strokeColor: null, fillColor: null });
   });
+
 });

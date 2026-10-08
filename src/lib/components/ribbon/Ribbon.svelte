@@ -20,7 +20,12 @@
   import BookmarkDialog from '../BookmarkDialog.svelte';
   import CrossRefDialog from '../CrossRefDialog.svelte';
   import FormulaDialog from '../FormulaDialog.svelte';
-  import { clickOutside, isMenuOpen, pinPanels, toggleMenu, closeMenu } from './menu.svelte';
+  import CommandSearch from './CommandSearch.svelte';
+  import { clickOutside, isMenuOpen, pinPanels, toggleMenu, closeMenu, showMenu } from './menu.svelte';
+  import { CONTEXTUAL, RIBBON_COMMANDS, TABS, styleCommands, type RibbonCommand, type Tab } from './commands';
+  import { visibleStyles } from '../../styles/styleSheet';
+  import { showAllStyles, styleSheet } from '../../styles/sheet.svelte';
+  import { tick as settled } from 'svelte';
   import { locale, t } from '../../i18n/i18n.svelte';
   import { withShortcut } from '../../i18n/shortcut';
   import { shortcutHint } from '../../editor/shortcuts';
@@ -29,13 +34,13 @@
   import { OPEN_BOOKMARK_DIALOG_EVENT, bookmarkNames, findBookmark } from '../../editor/extensions/bookmark';
   import { OPEN_CROSS_REF_DIALOG_EVENT } from '../../editor/extensions/crossReference';
   import { EDIT_FORMULA_EVENT } from '../../editor/extensions/formula';
-  import { loadRibbonCollapsed, saveRibbonCollapsed, type ChromeMode, type ThemeMode } from '../../storage/theme';
+  import { loadRibbonCollapsed, saveRibbonCollapsed, type ThemeMode } from '../../storage/theme';
   import type { StyleFamily } from '../../styles/styleSheet';
   import { DEFAULT_MARGINS, type PageMargins } from '../../storage/pageMargins';
   import type { Orientation } from '../../storage/pageOrientation';
   import type { PageFormat } from '../../storage/pageFormat';
   import { DEFAULT_HF_DISTANCES, type HfDistances, type HfSet, type HfZone } from '../../storage/headerFooter';
-  import { isAsianTag, tagForLanguage, type DocumentLanguage } from '../../storage/documentLanguage';
+  import { isAsianTag, numberingScripts, tagForLanguage, type DocumentLanguage } from '../../storage/documentLanguage';
   import { DEFAULT_TAB_INTERVAL_CM } from '../../storage/tabInterval';
   import { DEFAULT_PAGE_NUMBERING, type PageNumbering } from '../../storage/pageNumbering';
   import { EMPTY_PAGE_DECOR, type PageDecor } from '../../storage/pageDecor';
@@ -44,7 +49,6 @@
   let {
     editor,
     tick,
-    chromeMode = $bindable<ChromeMode>('ribbon'),
     documentName = $bindable(''),
     documentFormat = 'odt',
     dirty = false,
@@ -76,6 +80,7 @@
     onManageStyles,
     onManageTableStyles,
     onNoteOptions,
+    onHeadingNumbering,
     onEditZone,
     onFind,
     namePlaceholder = '',
@@ -83,14 +88,13 @@
     onSelectTheme,
     pdfBusy = false,
     hasPassword = false,
-    onNew, onNewFromTemplate, onOpen, onSave, onSaveAs, onSaveTemplate, onExportPdf, onPrintPdf, onPrint, onAbout, onDocProperties, onProtect, onAutoCorrect, onAutoText, onNewComment,
+    onNew, onNewFromTemplate, onOpen, onSave, onSaveAs, onSaveTemplate, onExportPdf, onPrintPdf, onPrint, onAbout, onSettings, onDocProperties, onBrowserDocuments, onProtect, onAutoCorrect, onAutoText, onNewComment,
     navigatorOpen = false, onToggleNavigator,
     recentFiles = [], onOpenRecent, onForgetRecent,
     assetBaseUrl = '',
   }: {
     editor: Editor | null;
     tick: number;
-    chromeMode?: ChromeMode;
     documentName?: string;
     documentFormat?: 'odt' | 'docx';
     dirty?: boolean;
@@ -122,6 +126,7 @@
     onManageStyles?: (family: StyleFamily) => void;
     onManageTableStyles?: (family: StyleFamily) => void;
     onNoteOptions?: () => void;
+    onHeadingNumbering?: () => void;
     onEditZone?: (zone: HfZone | null) => void;
     onFind?: (mode: 'find' | 'replace') => void;
     namePlaceholder?: string;
@@ -141,7 +146,9 @@
     onPrintPdf?: () => void;
     onPrint?: () => void;
     onAbout?: () => void;
+    onSettings?: () => void;
     onDocProperties?: () => void;
+    onBrowserDocuments?: () => void;
     onProtect?: () => void;
     hasPassword?: boolean;
     assetBaseUrl?: string;
@@ -309,6 +316,40 @@
     closeMenu();
     fn?.();
   }
+
+  // A hit opens its tab (or the File menu) and clicks the control itself, so the user
+  // sees where the command lives and a disabled one stays disabled.
+  const tabOf = (c: RibbonCommand) => (c.tab === null ? null : [c.tab].flat().find((x) => shown.includes(x)));
+  let searchable = $derived([
+    ...RIBBON_COMMANDS,
+    ...styleCommands(visibleStyles(styleSheet(), showAllStyles()).map((s) => s.name)),
+  ].filter((c) => c.tab === null || tabOf(c)));
+
+  // A colour split's own half applies the last colour; its palette is behind the chevron.
+  function act(id: string) {
+    const el = document.querySelector(`.ribbon [data-cmd="${CSS.escape(id)}"]`);
+    const target = el?.matches('button, input, select') ? el : el?.querySelector('.color-chevron') ?? el?.querySelector('button, input, select');
+    if (target instanceof HTMLSelectElement || (target instanceof HTMLInputElement && !['checkbox', 'radio'].includes(target.type))) {
+      target.focus();
+      if (target instanceof HTMLInputElement) target.select();
+    } else (target as HTMLElement | null | undefined)?.click();
+  }
+
+  async function runCommand(c: RibbonCommand) {
+    closeMenu();
+    const to = tabOf(c);
+    if (to) {
+      tab = to;
+      collapsed = false;
+    } else showMenu('file');
+    await settled();
+    if (c.via) {
+      act(c.via);
+      await settled();
+    }
+    act(c.id);
+  }
+  const THEME_ICON = { light: 'themeLight', dark: 'themeDark', allBlack: 'themeAllBlack', auto: 'themeAuto' } as const;
 </script>
 
 <div class="ribbon">
@@ -325,37 +366,40 @@
       </button>
       {#if isMenuOpen('file')}
         <RibbonMenu minWidth={230}>
-          <button onclick={() => run(onNew)} disabled={!editor}>
+          <button data-cmd="newDocument" onclick={() => run(onNew)} disabled={!editor}>
             <Icon name="newDoc" size={16} />{t().app.newDocument}
           </button>
-          <button onclick={() => run(onNewFromTemplate)} disabled={!editor}>
+          <button data-cmd="newFromTemplate" onclick={() => run(onNewFromTemplate)} disabled={!editor}>
             <Icon name="foldMarks" size={16} />{t().templates.title}
           </button>
-          <button onclick={() => run(onOpen)} disabled={!editor}>
+          <button data-cmd="open" onclick={() => run(onOpen)} disabled={!editor}>
             <Icon name="folder" size={16} />{t().app.open}
             <span class="menu-key">{shortcutHint('open')}</span>
           </button>
+          <button data-cmd="browserDocuments" onclick={() => run(onBrowserDocuments)}>
+            <Icon name="folder" size={16} />{t().browserDocs.title}
+          </button>
           <hr />
-          <button onclick={() => run(onSave)} disabled={!editor || pdfBusy}>
+          <button data-cmd="save" onclick={() => run(onSave)} disabled={!editor || pdfBusy}>
             <Icon name="save" size={16} />{t().app.save}
             <span class="menu-key">{withShortcut('Ctrl+S')}</span>
           </button>
-          <button onclick={() => run(() => onSaveAs?.('odt'))} disabled={!editor || pdfBusy}>
+          <button data-cmd="saveAsOdt" onclick={() => run(() => onSaveAs?.('odt'))} disabled={!editor || pdfBusy}>
             <Icon name="save" size={16} />{t().ribbon.saveAs} (.odt)
           </button>
-          <button onclick={() => run(() => onSaveAs?.('docx'))} disabled={!editor || pdfBusy}>
+          <button data-cmd="saveAsDocx" onclick={() => run(() => onSaveAs?.('docx'))} disabled={!editor || pdfBusy}>
             <Icon name="save" size={16} />{t().ribbon.saveAs} (.docx)
           </button>
           <hr />
-          <button onclick={() => run(onExportPdf)} disabled={pdfBusy}>
+          <button data-cmd="rasterPdf" onclick={() => run(onExportPdf)} disabled={pdfBusy}>
             <Icon name="export" size={16} />{pdfBusy ? t().app.exporting : t().app.rasterPdf}
             <span class="menu-sub">{t().app.rasterHint}</span>
           </button>
-          <button onclick={() => run(onPrintPdf)}>
+          <button data-cmd="vectorPdf" onclick={() => run(onPrintPdf)}>
             <Icon name="export" size={16} />{t().app.vectorPdf}
             <span class="menu-sub">{t().app.vectorHint}</span>
           </button>
-          <button onclick={() => run(onSaveTemplate)}>
+          <button data-cmd="saveTemplate" onclick={() => run(onSaveTemplate)}>
             <Icon name="export" size={16} />{t().app.template}
             <span class="menu-sub">{t().app.templateHint}</span>
           </button>
@@ -371,18 +415,18 @@
             </button>
           {/if}
           <hr />
-          <button onclick={() => run(onPrint)} disabled={!editor || pdfBusy}>
+          <button data-cmd="print" onclick={() => run(onPrint)} disabled={!editor || pdfBusy}>
             <Icon name="print" size={16} />{t().app.print}
             <span class="menu-key">{withShortcut('Ctrl+P')}</span>
           </button>
-          <button onclick={() => run(onProtect)}>
+          <button data-cmd="protect" onclick={() => run(onProtect)}>
             <Icon name="lock" size={16} />{t().password.menu}
             {#if hasPassword}<span class="menu-key">{t().password.menuOn}</span>{/if}
           </button>
-          <button onclick={() => run(onDocProperties)}>
+          <button data-cmd="docProperties" onclick={() => run(onDocProperties)}>
             <Icon name="info" size={16} />{t().docProps.title}
           </button>
-          <button onclick={() => run(onAbout)}>
+          <button data-cmd="about" onclick={() => run(onAbout)}>
             <Icon name="info" size={16} />{t().about.label}
           </button>
         </RibbonMenu>
@@ -409,6 +453,8 @@
     {/each}
 
     <span class="ribbon-tabs-spacer"></span>
+
+    <CommandSearch commands={searchable} onRun={runCommand} onCancel={() => editor?.commands.focus()} />
 
     <div class="doc-name">
       <span class="doc-name-sizer" aria-hidden="true" bind:clientWidth={docNameSizerWidth}>{documentName || namePlaceholder}</span>
@@ -450,20 +496,10 @@
         aria-haspopup="menu"
         aria-expanded={isMenuOpen('appearance')}
       >
-        <Icon name="ribbon" size={16} />
+        <Icon name={THEME_ICON[themeMode]} size={16} />
       </button>
       {#if isMenuOpen('appearance')}
-        <RibbonMenu align="right" minWidth={220} heading={t().ribbon.chrome.title}>
-          <button class:selected={chromeMode === 'ribbon'} onclick={() => { chromeMode = 'ribbon'; closeMenu(); }}>
-            {t().ribbon.chrome.ribbon}<span class="menu-sub">{t().ribbon.chrome.ribbonHint}</span>
-          </button>
-          {#if import.meta.env.DEV}
-            <button class:selected={chromeMode === 'modern'} onclick={() => { chromeMode = 'modern'; closeMenu(); }}>
-              {t().ribbon.chrome.modern}<span class="menu-sub">{t().ribbon.chrome.modernHint}</span>
-            </button>
-          {/if}
-          <hr />
-          <div class="rb-menu-label">{t().appearance.title}</div>
+        <RibbonMenu align="right" minWidth={220} heading={t().appearance.title}>
           {#each (['light', 'dark', 'allBlack', 'auto'] as const) as m}
             <button class:selected={themeMode === m} onclick={() => { onSelectTheme?.(m); closeMenu(); }}>
               {t().appearance[m]}
@@ -473,6 +509,10 @@
         </RibbonMenu>
       {/if}
     </div>
+
+    <button class="qa-btn" onclick={() => run(onSettings)} title={t().settings.title} aria-label={t().settings.title}>
+      <Icon name="settings" size={16} />
+    </button>
 
     <UiLanguagePicker />
 
@@ -484,13 +524,13 @@
   {#if !collapsed}
   <div class="ribbon-body" use:pinPanels>
     {#if tab === 'home'}
-      <HomeTab {editor} {tick} asianDocument={isAsianTag(tagForLanguage(documentLanguage) ?? '') || isAsianTag(locale())} bind:showFormattingMarks {onManageStyles} {onFind} onParagraphDialog={() => (paragraphDialogOpen = true)} />
+      <HomeTab {editor} {tick} asianDocument={isAsianTag(tagForLanguage(documentLanguage) ?? '') || isAsianTag(locale())} scripts={numberingScripts(documentLanguage, documentLanguageOther, locale())} bind:showFormattingMarks {onManageStyles} {onFind} onParagraphDialog={() => (paragraphDialogOpen = true)} />
     {:else if tab === 'insert'}
       <InsertTab {editor} {tick} {hfActive} {pageMargins} {pageOrientation} {pageFormat} bind:hfDistances bind:differentFirstPage bind:differentOddEven {onEditZone} {onManageTableStyles} {onAutoText} />
     {:else if tab === 'layout'}
       <LayoutTab {editor} {tick} {hfActive} bind:pageMargins bind:pageOrientation bind:pageFormat bind:extraHfSections bind:hyphenate bind:pageNumbering bind:pageDecor bind:lineNumbering bind:foldMarks onParagraphDialog={() => (paragraphDialogOpen = true)} />
     {:else if tab === 'references'}
-      <ReferencesTab {editor} {tick} {hfActive} {onNoteOptions} />
+      <ReferencesTab {editor} {tick} {hfActive} {onNoteOptions} {onHeadingNumbering} />
     {:else if tab === 'review'}
       <ReviewTab {editor} {tick} {documentLanguage} {documentLanguageOther} {onLanguage} {onAutoCorrect} {onNewComment} />
     {:else if tab === 'view'}
@@ -502,6 +542,7 @@
     {:else if tab === 'pictureFormat' || tab === 'shapeFormat'}
       <FrameTabs
         {editor}
+        {tick}
         which={tab === 'pictureFormat' ? 'picture' : 'shape'}
         wrap={(frameAttrs?.wrap ?? 'inline') as never}
         inFront={frameAttrs?.inFront === true}

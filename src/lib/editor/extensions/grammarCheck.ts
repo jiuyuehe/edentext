@@ -4,7 +4,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import type { Node as PmNode } from '@tiptap/pm/model';
-import { changedRanges, blockLangOf, type Range } from './spellCheck';
+import { changedRanges, blockLangOf, HIGHLIGHTS, paintHighlight, type Range } from './spellCheck';
 import { hasGrammar } from '../../storage/documentLanguage';
 import { grammarLanguage, grammarReady, lintText, subscribeGrammar, type GrammarFix, type GrammarLint } from '../../spell/grammar.svelte';
 import { isPaginating } from './pageBreaks';
@@ -137,7 +137,7 @@ export const GrammarCheck = Extension.create({
         },
         props: {
           decorations(state) {
-            return grammarKey.getState(state)?.set;
+            return HIGHLIGHTS ? null : grammarKey.getState(state)?.set;
           },
         },
         view(view: EditorView) {
@@ -215,6 +215,7 @@ export const GrammarCheck = Extension.create({
             schedule();
           });
           schedule();
+          const painter = paintHighlight(view, 'grammar-error', (s) => grammarKey.getState(s)?.set);
 
           return {
             update(v, prevState) {
@@ -222,8 +223,10 @@ export const GrammarCheck = Extension.create({
                 lastEdit = Date.now();
                 schedule();
               }
+              painter.update();
             },
             destroy() {
+              painter.destroy();
               unsubscribe();
             },
           };

@@ -46,7 +46,7 @@
   const activeWrap = $derived<WrapChoice>(wrap === 'through' ? (inFront ? 'front' : 'behind') : wrap);
   function setWrap(m: WrapChoice) {
     const mode: WrapMode = m === 'behind' || m === 'front' ? 'through' : m;
-    set({ wrap: mode, ...droppedFrameAttrs(mode, m === 'front') });
+    set({ wrap: mode, ...droppedFrameAttrs(mode, m === 'front', wrap) });
   }
   function wrapTitle(m: WrapChoice): string {
     return m === 'inline' ? t().textBox.wrapInline

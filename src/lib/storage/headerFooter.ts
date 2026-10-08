@@ -6,7 +6,9 @@ import type { PageMargins } from './pageMargins';
 import type { PageFormat } from './pageFormat';
 import type { Orientation } from './pageOrientation';
 import type { NoteNumFormat } from './noteSettings';
-import { docKey } from './docScope';
+import { docKey, docStore, volatile } from './docScope';
+import { stashImages, putImages, restoreImages, isStored, IDB_SRC } from './imageStore';
+import { warnStorageFull } from './autosave';
 
 export type HfZone = 'header' | 'footer';
 export type HfVariant = 'default' | 'first' | 'even';
@@ -77,7 +79,7 @@ export function hfSetIsEmpty(s: HfSet): boolean {
 const EXTRA_KEY = docKey('edentext-hf-sections');
 
 export function loadExtraHfSections(): HfSet[] {
-  const raw = localStorage.getItem(EXTRA_KEY);
+  const raw = docStore.getItem(EXTRA_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -87,9 +89,36 @@ export function loadExtraHfSections(): HfSet[] {
   }
 }
 
+type EachDoc = (f: (doc: HfDoc) => HfDoc) => unknown;
+const latest = new Map<string, object>();
+
+// Pictures go to the image store as the body's do (imageStore.ts). The write is at once,
+// naming the pictures the store has confirmed and keeping the others inline until it has.
+// A full storage loses the zones as it loses the body, under the same warning; a throw
+// here would abort the rest of the effects that adopt an opened document.
+function store(key: string, each: EachDoc): void {
+  const token = {};
+  latest.set(key, token);
+  const write = () => {
+    const json = volatile ? each((d) => d) : each((d) => d && (stashImages(d, isStored).json as HfDoc));
+    try { docStore.setItem(key, JSON.stringify(json)); } catch (err) { warnStorageFull(key, err); }
+  };
+  write();
+  if (volatile) return;
+  const blobs = new Map<string, string>();
+  each((d) => {
+    if (d) for (const [k, v] of stashImages(d).blobs) if (!isStored(k)) blobs.set(k, v);
+    return d;
+  });
+  if (blobs.size) void putImages(blobs, false).then((ok) => { if (ok && latest.get(key) === token) write(); });
+}
+
+const eachOfSets = (sections: HfSet[]): EachDoc => (f) =>
+  sections.map((s) => ({ ...s, ...Object.fromEntries(HF_ZONE_KEYS.map((z) => [z, f(s[z])])) }));
+
 export function saveExtraHfSections(sections: HfSet[]): void {
-  if (sections.length) localStorage.setItem(EXTRA_KEY, JSON.stringify(sections));
-  else localStorage.removeItem(EXTRA_KEY);
+  if (sections.length) store(EXTRA_KEY, eachOfSets(sections));
+  else { latest.delete(EXTRA_KEY); docStore.removeItem(EXTRA_KEY); }
 }
 
 const KEYS: Record<HfZone, Record<HfVariant, string>> = {
@@ -103,21 +132,21 @@ const DIFFERENT_FIRST_KEY = docKey('edentext-hf-different-first');
 const DIFFERENT_ODD_EVEN_KEY = docKey('edentext-hf-odd-even');
 
 export function loadDifferentFirstPage(): boolean {
-  return localStorage.getItem(DIFFERENT_FIRST_KEY) === 'true';
+  return docStore.getItem(DIFFERENT_FIRST_KEY) === 'true';
 }
 
 export function saveDifferentFirstPage(on: boolean): void {
-  if (on) localStorage.setItem(DIFFERENT_FIRST_KEY, 'true');
-  else localStorage.removeItem(DIFFERENT_FIRST_KEY);
+  if (on) docStore.setItem(DIFFERENT_FIRST_KEY, 'true');
+  else docStore.removeItem(DIFFERENT_FIRST_KEY);
 }
 
 export function loadDifferentOddEven(): boolean {
-  return localStorage.getItem(DIFFERENT_ODD_EVEN_KEY) === 'true';
+  return docStore.getItem(DIFFERENT_ODD_EVEN_KEY) === 'true';
 }
 
 export function saveDifferentOddEven(on: boolean): void {
-  if (on) localStorage.setItem(DIFFERENT_ODD_EVEN_KEY, 'true');
-  else localStorage.removeItem(DIFFERENT_ODD_EVEN_KEY);
+  if (on) docStore.setItem(DIFFERENT_ODD_EVEN_KEY, 'true');
+  else docStore.removeItem(DIFFERENT_ODD_EVEN_KEY);
 }
 
 // Default distance from the page edge to the header/footer text; the body margin stays
@@ -141,7 +170,7 @@ export function clampHfDistance(n: number): number {
 }
 
 export function loadHfDistances(): HfDistances {
-  const raw = localStorage.getItem(DIST_KEY);
+  const raw = docStore.getItem(DIST_KEY);
   if (!raw) return { ...DEFAULT_HF_DISTANCES };
   try {
     const p = JSON.parse(raw);
@@ -155,11 +184,11 @@ export function loadHfDistances(): HfDistances {
 }
 
 export function saveHfDistances(d: HfDistances): void {
-  localStorage.setItem(DIST_KEY, JSON.stringify(d));
+  docStore.setItem(DIST_KEY, JSON.stringify(d));
 }
 
 export function loadHfDoc(zone: HfZone, variant: HfVariant = 'default'): HfDoc {
-  const raw = localStorage.getItem(KEYS[zone][variant]);
+  const raw = docStore.getItem(KEYS[zone][variant]);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
@@ -169,9 +198,28 @@ export function loadHfDoc(zone: HfZone, variant: HfVariant = 'default'): HfDoc {
   }
 }
 
+/**
+ * The stored zones, read again with their pictures back from the image store — null when
+ * they name none. `missing` counts the keys the store no longer had.
+ */
+export async function loadHfPictures(): Promise<{ zones: Record<HfZoneKey, HfDoc>; sections: HfSet[]; missing: number } | null> {
+  const zones: Record<HfZoneKey, HfDoc> = {
+    header: loadHfDoc('header'), footer: loadHfDoc('footer'),
+    headerFirst: loadHfDoc('header', 'first'), footerFirst: loadHfDoc('footer', 'first'),
+    headerEven: loadHfDoc('header', 'even'), footerEven: loadHfDoc('footer', 'even'),
+  };
+  const sections = loadExtraHfSections();
+  const docs = [...Object.values(zones), ...sections.flatMap((s) => HF_ZONE_KEYS.map((z) => s[z]))].filter((d) => d != null);
+  if (!docs.some((d) => JSON.stringify(d).includes(`"${IDB_SRC}`))) return null;
+  let missing = 0;
+  for (const d of docs) missing += await restoreImages(d);
+  return { zones, sections, missing };
+}
+
 export function saveHfDoc(zone: HfZone, doc: HfDoc, variant: HfVariant = 'default'): void {
-  if (hfIsEmpty(doc)) localStorage.removeItem(KEYS[zone][variant]);
-  else localStorage.setItem(KEYS[zone][variant], JSON.stringify(doc));
+  const key = KEYS[zone][variant];
+  if (hfIsEmpty(doc)) { latest.delete(key); docStore.removeItem(key); }
+  else store(key, (f) => f(doc));
 }
 
 type ZoneNode = { type?: string; content?: ZoneNode[]; attrs?: Record<string, unknown> };

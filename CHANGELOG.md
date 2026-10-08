@@ -2,6 +2,43 @@
 
 <!-- Newest release first. New entries go here: ## [x.y.z] — YYYY-MM-DD -->
 
+## [0.8.0] — 2026-10-03
+
+EdenText now installs as a desktop app on macOS, Windows and Linux, and speaks Ukrainian. Shapes
+and frames get most of the work: Word presets, formula shapes, groups and connectors open instead of
+dropping, keep their shading and arrow heads, and stack forward and back. On a phone the ribbon,
+dialogs and zoom fit the screen.
+
+### Added
+- **A desktop app** — unsigned installers for macOS (dmg), Windows (exe) and Linux (AppImage, deb)
+  on every release, saving straight to files on disk
+- **Ukrainian as a program and document language**, and Russian list numbering with letters that
+  repeat past the end of the alphabet
+- **Shapes open instead of dropping** — ODF groups, shapes built from formulas and arcs, Word
+  connector presets — and keep their shading, text area, preset and the arrow heads of an open outline
+- **Bring frames forward or send them back**
+- **Ribbon command search** (Alt+Q)
+- **A recent documents list** for the browser's autosaved documents, and a new tab starts on an
+  empty document
+- **On a phone**, pinch zooms only the document, the ribbon tab strip scrolls sideways and the
+  ruler starts hidden
+
+### Fixed
+- Rotated shapes and images keep their place in LibreOffice, every DOCX frame gets its own stacking
+  height, and a frame out of the flow turns about its own centre
+- A shape behind the text takes clicks and drags again, is grabbed anywhere off its text, and
+  switching between behind and in front of the text keeps its place
+- Dragging an image shows its frame at once, with the move cursor, and the image toolbar leaves the
+  rotate grip free
+- A reopened file keeps its column sections and starts at its first page
+- A heading in a box or cell reads back without its style as direct formatting, and a paragraph in
+  a text box keeps its keep options in DOCX
+- Every import warning appears in the UI language
+- Spelling squiggles no longer shorten hyphenated lines and paint only near the viewport
+- Menus, dropdowns and dialogs fit the window, scroll when taller and stay legible under a dark theme
+- A closed tab no longer lists its document as open, and setting a language for all text leaves the
+  view where it was
+
 ## [0.7.0] — 2026-09-29
 
 EdenText now speaks Japanese, and Chinese and Japanese documents get the typography they need:
@@ -472,9 +509,9 @@ The gap against Word/LibreOffice, most valuable first. Reviewed 2026-09-13.
 
 **Content an imported document loses**
 - Charts are **drawn** from the file (`import/chart.ts`: DrawingML `chartN.xml` and ODF `chart:chart`), but as a picture, not a chart object — a re-export carries the drawing and the numbers behind it are no longer editable. The same holds for an **EMF** metafile (`import/emf.ts`): it is drawn, but as the SVG picture it was rebuilt into, and only from the record set a plot consists of — a hatched brush, a clipping region or a rotated bitmap is skipped. **WMF/SVM** metafiles and OLE objects still keep their box and a placeholder label, and export writes that back out: WMF is a different (16-bit) record format, SVM is StarOffice-proprietary, and an OLE object cannot be rendered without its application
-- An ODF **shape group** (`draw:g`) still drops with the "Drawings were removed" warning; DOCX drawing groups open as their individual frames
+- A **shape group** opens as its individual frames in both formats (`draw:g`, `wpg:wgp`), so it is no longer one object to move
 - **Nested tables** flatten to paragraphs on import and cannot be authored. A section has at most three columns; tables and text boxes inside a multi-column section move outside that section on import
-- A drawing tool: a freeform, a polygon or a connector **imports, draws and saves** (see below), but there is no way to author one here. A Word connector preset (`bentConnector3`) is also still dropped — Word resolves that geometry and writes no path for it
+- A drawing tool: a freeform, a polygon or a connector **imports, draws and saves** (see below), but there is no way to author one here. A shape built from formulas and arcs (any LibreOffice shape, all 187 Word presets, a `custGeom` with guides) opens with its shading, text area and arrow heads, and a Word preset stays one through both formats; its handles cannot be dragged, LibreOffice's own shape types and a `custGeom` keep the outline of their size at import, and a VML shape with formulas is still dropped
 
 **Unavailable when authoring**
 - Hyphenation's zone and ladder count (`fo:hyphenation-ladder-count`, `w:hyphenationZone`) — CSS exposes neither

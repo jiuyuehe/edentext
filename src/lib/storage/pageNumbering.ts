@@ -1,5 +1,5 @@
 import type { NoteNumFormat } from './noteSettings';
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 // How the page-number field counts: Word's Insert ▸ Page Number ▸ Format Page Numbers,
 // LibreOffice's page style ▸ Layout Settings. ODF keeps the format on the page layout
@@ -42,7 +42,7 @@ export function clampPageStart(n: number): number {
 
 export function loadPageNumbering(): PageNumbering {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = docStore.getItem(KEY);
     if (!raw) return { ...DEFAULT_PAGE_NUMBERING };
     const data = JSON.parse(raw) as Partial<PageNumbering>;
     return {
@@ -55,6 +55,6 @@ export function loadPageNumbering(): PageNumbering {
 }
 
 export function savePageNumbering(value: PageNumbering): void {
-  if (value.format === '1' && value.start === 1) localStorage.removeItem(KEY);
-  else localStorage.setItem(KEY, JSON.stringify(value));
+  if (value.format === '1' && value.start === 1) docStore.removeItem(KEY);
+  else docStore.setItem(KEY, JSON.stringify(value));
 }

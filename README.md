@@ -24,7 +24,7 @@
 
 ---
 
-EdenText is a web-based, powerful word processor for everything from quick notes to full-length books. No server, no account — processing runs locally and your documents never leave your computer. Just one URL away, or completely offline as a slim browser app — under 2 MB on first load[^1]. The interface comes in English, German, Spanish, French, Portuguese, Russian, Japanese and Chinese (simplified and traditional).
+EdenText is a web-based, powerful word processor for everything from quick notes to full-length books. No server, no account — processing runs locally and your documents never leave your computer. Just one URL away, or completely offline as a slim browser app — it opens with under 2 MB of download, dictionaries and fonts follow as needed[^1]. The interface comes in English, German, Spanish, French, Portuguese, Russian, Ukrainian, Japanese and Chinese (simplified and traditional).
 
 > [!NOTE]
 > EdenText is young, in **beta** and actively developed — more features are on
@@ -60,13 +60,17 @@ EdenText is a web-based, powerful word processor for everything from quick notes
   citations & bibliography, alphabetical index, formulas (LaTeX)
 - **Review tools** — track changes and threaded comments with margin balloons,
   printable markup, spell check and synonyms (English, German, Spanish, French,
-  Portuguese and Russian), grammar check (English)
+  Portuguese, Russian and Ukrainian), grammar check (English)
 - **Private by design** — your documents never leave your computer, all
   processing runs locally; works offline as an installable app. The site counts
-  anonymous visits (GoatCounter, EU-hosted, no cookies); the editor sends nothing
+  anonymous visits (GoatCounter, EU-hosted, no cookies); the editor sends nothing.
+  Documents are autosaved in the browser; Recent documents can drop closed ones
+  at the next start or not save them there at all, and a private window leaves
+  nothing behind once it is closed
 - **Any current browser** — in Chrome and Edge, Save writes back to the opened
-  file; other browsers receive each save as a download, so turn on "Always ask
-  where to save" in their settings to pick the location
+  file, and so does Brave once `brave://flags/#file-system-access-api` is
+  enabled; otherwise each save is a download, so turn on "Always ask where to
+  save" in the browser settings to pick the location
 
 Where the browser keeps EdenText from matching Word or LibreOffice exactly is
 described under [Known limitations](CHANGELOG.md#known-limitations).
@@ -89,6 +93,18 @@ both public domain.
 </tr>
 </table>
 
+## Desktop app
+
+Each release also carries unsigned desktop installers built with Electron:
+
+- **macOS** — `EdenText-<version>-arm64.dmg` (Apple silicon) or `EdenText-<version>.dmg` (Intel).
+  Drag the app into Applications. As it is unsigned, open it the first time via
+  right-click → Open, or run `xattr -d com.apple.quarantine /Applications/EdenText.app`.
+- **Windows** — `EdenText-Setup-<version>.exe`. SmartScreen warns about an unknown
+  publisher: More info → Run anyway.
+- **Linux** — `EdenText-<version>.AppImage` (`chmod +x`, then run it) or the `.deb`
+  (`sudo apt install ./edentext_*.deb`).
+
 ## Development
 
 ```bash
@@ -96,6 +112,7 @@ npm install
 npm run dev      # dev server with hot-reload
 npm test         # test suite
 npm run build    # production build → dist/
+cd desktop && npm install && npm start   # desktop app on the same build
 ```
 
 Built with Svelte 5, TypeScript, Vite and TipTap 3 (ProseMirror).
@@ -196,7 +213,7 @@ own licenses — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 *EdenText is an independent project, not affiliated with Microsoft or The
 Document Foundation. `.docx` and `.odt` are supported for interoperability.*
 
-[^1]: Over the wire, compressed: ~0.4 MB of app code, the rest the bundled fonts a
-    page shows and the spell checker with its dictionary. Further fonts, dictionaries
-    and thesauri load on demand; the complete offline install is ~30 MB, or ~38 MB with
-    the English grammar check switched on.
+[^1]: Over the wire, compressed: ~0.6 MB of app code, the rest the spell checker with
+    the dictionary for the browser's language and the fonts a page shows. Everything else
+    is fetched and kept for offline use once it is needed; all fonts, dictionaries and
+    thesauri together are ~15 MB, or ~23 MB with the English grammar check.

@@ -25,6 +25,7 @@ export type ParaProps = {
   spaceBefore?: number; // pt
   spaceAfter?: number;  // pt
   indent?: number;      // cm
+  indentFirst?: number; // cm the first line starts right of the others; negative hangs
   backgroundColor?: string;
   borderTop?: string;
   borderRight?: string;
@@ -408,6 +409,7 @@ function declarations(r: ResolvedStyle): string[] {
   if (p.spaceAfter != null) out.push(`margin-bottom: ${p.spaceAfter}pt`, `--space-after: ${p.spaceAfter}pt`);
   // Plus the section inset, which .tiptap's own padding can't draw (editor.css).
   if (p.indent != null) out.push(`margin-left: calc(var(--sec-inset-left, 0px) + ${p.indent}cm)`);
+  if (p.indentFirst != null) out.push(`text-indent: ${p.indentFirst}cm`);
   const background = normalizeColor(p.backgroundColor);
   if (background) out.push(`background-color: ${background}`);
   const drawn: Record<string, boolean> = {};
@@ -496,6 +498,7 @@ export function propsFromBlock(node: BlockNode, marks: BlockMark[] = []): Resolv
   if (typeof a.spaceBefore === 'number') para.spaceBefore = a.spaceBefore;
   if (typeof a.spaceAfter === 'number') para.spaceAfter = a.spaceAfter;
   if (typeof a.indent === 'number' && a.indent > 0) para.indent = a.indent;
+  if (typeof a.indentFirst === 'number' && a.indentFirst !== 0) para.indentFirst = a.indentFirst;
   if (typeof a.backgroundColor === 'string' && a.backgroundColor) para.backgroundColor = a.backgroundColor;
   for (const side of ['borderTop', 'borderRight', 'borderBottom', 'borderLeft'] as const) {
     const v = a[side];

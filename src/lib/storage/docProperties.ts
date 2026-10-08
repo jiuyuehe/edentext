@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 // The document's descriptive metadata — LibreOffice's File ▸ Properties, Word's
 // File ▸ Info. Written to ODF meta.xml and DOCX docProps/core.xml, read back on import.
@@ -22,7 +22,7 @@ export const EMPTY_DOC_PROPERTIES: DocProperties = {
 
 export function loadDocProperties(): DocProperties {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = docStore.getItem(KEY);
     if (!raw) return { ...EMPTY_DOC_PROPERTIES };
     const data = JSON.parse(raw) as Partial<DocProperties>;
     return { ...EMPTY_DOC_PROPERTIES, ...pickStrings(data) };
@@ -32,8 +32,8 @@ export function loadDocProperties(): DocProperties {
 }
 
 export function saveDocProperties(props: DocProperties): void {
-  if (isEmptyDocProperties(props)) localStorage.removeItem(KEY);
-  else localStorage.setItem(KEY, JSON.stringify(props));
+  if (isEmptyDocProperties(props)) docStore.removeItem(KEY);
+  else docStore.setItem(KEY, JSON.stringify(props));
 }
 
 export function isEmptyDocProperties(props: DocProperties): boolean {

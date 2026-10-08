@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 // The page's own decoration: LibreOffice's Format ▸ Page Style ▸ Area and Borders, and
 // its Format ▸ Watermark. All three are page-level and all three ride the page layout
@@ -85,7 +85,7 @@ export function isEmptyPageDecor(d: PageDecor): boolean {
 
 export function loadPageDecor(): PageDecor {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = docStore.getItem(KEY);
     return raw ? normalizePageDecor(JSON.parse(raw)) : EMPTY_PAGE_DECOR;
   } catch {
     return EMPTY_PAGE_DECOR;
@@ -93,6 +93,6 @@ export function loadPageDecor(): PageDecor {
 }
 
 export function savePageDecor(decor: PageDecor): void {
-  if (isEmptyPageDecor(decor)) localStorage.removeItem(KEY);
-  else localStorage.setItem(KEY, JSON.stringify(decor));
+  if (isEmptyPageDecor(decor)) docStore.removeItem(KEY);
+  else docStore.setItem(KEY, JSON.stringify(decor));
 }

@@ -5,6 +5,7 @@ export type ThemeMode = 'light' | 'dark' | 'allBlack' | 'auto';
 export type ChromeMode = 'modern' | 'ribbon';
 
 const THEME_KEY = 'edentext-theme';
+const ACCENT_KEY = 'edentext-accent';
 const TOOLBAR_KEY = 'edentext-toolbar-expanded';
 const CHROME_KEY = 'edentext-chrome';
 const RIBBON_COLLAPSED_KEY = 'edentext-ribbon-collapsed';
@@ -13,6 +14,7 @@ const FIELD_SHADING_KEY = 'edentext-field-shading';
 const RULER_KEY = 'edentext-ruler';
 const SPLIT_KEY = 'edentext-split';
 const PAGE_COLUMNS_KEY = 'edentext-page-columns';
+const RECENT_COMMANDS_KEY = 'edentext-recent-commands';
 
 // Pages side by side. Each column is a live view of the whole document, so the
 // count is capped — LibreOffice's own spinner goes further.
@@ -52,6 +54,20 @@ export function loadRibbonCollapsed(): boolean {
 
 export function saveRibbonCollapsed(collapsed: boolean): void {
     localStorage.setItem(RIBBON_COLLAPSED_KEY, String(collapsed));
+}
+
+// The command search's ids, most recent first.
+export function loadRecentCommands(): string[] {
+    try {
+        const ids = JSON.parse(localStorage.getItem(RECENT_COMMANDS_KEY) ?? '[]');
+        return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
+    } catch {
+        return [];
+    }
+}
+
+export function saveRecentCommands(ids: string[]): void {
+    localStorage.setItem(RECENT_COMMANDS_KEY, JSON.stringify(ids));
 }
 
 export function loadFormattingMarks(): boolean {
@@ -109,4 +125,23 @@ function resolveMode(mode: ThemeMode): 'light' | 'dark' | 'allBlack' {
 
 export function applyTheme(mode: ThemeMode): void {
   document.documentElement.setAttribute('data-theme', resolveMode(mode));
+}
+
+// The chrome's accent colour; 'slate' is the logo's and stays the stored-nothing default.
+export const ACCENTS = ['slate', 'blue', 'teal', 'green', 'violet', 'berry', 'graphite'] as const;
+export type Accent = (typeof ACCENTS)[number];
+
+export function loadAccent(): Accent {
+  const saved = localStorage.getItem(ACCENT_KEY);
+  return (ACCENTS as readonly string[]).includes(saved ?? '') ? (saved as Accent) : 'slate';
+}
+
+export function saveAccent(accent: Accent): void {
+  if (accent === 'slate') localStorage.removeItem(ACCENT_KEY);
+  else localStorage.setItem(ACCENT_KEY, accent);
+}
+
+export function applyAccent(accent: Accent): void {
+  if (accent === 'slate') document.documentElement.removeAttribute('data-accent');
+  else document.documentElement.setAttribute('data-accent', accent);
 }

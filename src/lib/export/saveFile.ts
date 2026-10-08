@@ -26,7 +26,9 @@ const FORMATS: Record<Kind, { mime: string; type: { description: string; accept:
 };
 
 // The open picker also accepts templates; opening one never binds it as the file.
+// The picker preselects the first entry, so it lists both formats together.
 const OPEN_PICKER_TYPES = [
+  { description: 'Text Document', accept: { [ODT_MIME]: ['.odt'], [OTT_MIME]: ['.ott'], [DOCX_MIME]: ['.docx'], [DOTX_MIME]: ['.dotx'] } },
   { description: 'OpenDocument Text', accept: { [ODT_MIME]: ['.odt'], [OTT_MIME]: ['.ott'] } },
   { description: 'Word Document', accept: { [DOCX_MIME]: ['.docx'], [DOTX_MIME]: ['.dotx'] } },
 ];
@@ -94,6 +96,18 @@ export async function saveDocument(
   const target = handle ?? (await (window as WinFs).showSaveFilePicker!({ suggestedName, types: [FORMATS[kind].type] }));
   await writeHandle(target, out);
   return target;
+}
+
+// A handle restored after a reload has lost its permission until asked again, inside
+// the click that saves; Electron grants it without asking.
+export async function allowWrite(handle: FileSystemFileHandle): Promise<boolean> {
+  const h = handle as FileSystemFileHandle & {
+    queryPermission?: (d: { mode: string }) => Promise<PermissionState>;
+    requestPermission?: (d: { mode: string }) => Promise<PermissionState>;
+  };
+  let state = (await h.queryPermission?.({ mode: 'readwrite' })) ?? 'granted';
+  if (state === 'prompt') state = (await h.requestPermission?.({ mode: 'readwrite' })) ?? 'denied';
+  return state === 'granted';
 }
 
 // Prompt for an .odt/.ott/.docx to open, capturing its handle so a later save can

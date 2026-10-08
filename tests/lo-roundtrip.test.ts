@@ -147,6 +147,7 @@ function normalize(node: N, inBox = false): N {
     if (k === 'width' || k === 'height') { attrs[k] = Math.round((v as number) / 3) * 3; continue; } // ±unit noise
     if (k === 'rotation') { attrs.rotation = 'R'; continue; } // exact angle checked leniently below
     if (k === 'wrap') { attrs.wrap = 'W'; continue; } // float survives; exact mode checked leniently
+    if (k === 'zIndex') continue; // LibreOffice numbers every object afresh; wrap-through.test.ts keeps the order
     if (k === 'strokeWidthPt') { attrs.strokeWidthPt = Math.round((v as number) * 4) / 4; continue; } // pt↔in noise
     // Cell borders: LO re-saves widths with pt↔cm noise; quantize to 0.25pt steps.
     if (k.startsWith('border') && typeof v === 'string' && v !== 'none') {
@@ -639,6 +640,40 @@ describe.skipIf(!SOFFICE)('LibreOffice round-trip (needs soffice on PATH)', () =
     const defaults = style('Standard');
     check('LO resolve: the default font arrives', /Times New Roman/.test(defaults), defaults);
     check('LO resolve: the default size arrives', /fo:font-size="12pt"/.test(defaults), defaults);
+  });
+
+  it('survives a `soffice` re-save of preset and shaded shapes, both formats', { timeout: 240000 }, async () => {
+    const { buildDocx } = await import('../src/lib/export/docx');
+    const { importDocx } = await import('../src/lib/import/docx');
+    const { presetGeometry } = await import('../src/lib/utils/shapePresets');
+    // A Word preset with an adjust value and a flip, and the same geometry as a freeform
+    // whose shaded faces and own text area LibreOffice has to keep.
+    const preset = { name: 'cube', adj: { adj: 40000 }, flipH: true };
+    const cube = presetGeometry(preset, 192 * 9525, 96 * 9525);
+    const style = { fillColor: '#FFD320', strokeColor: '#3465A4' };
+    const doc: N = { type: 'doc', content: [
+      PBX({ width: 192, height: 96, ...style, shapePath: cube.path, shapeTextArea: cube.textArea, shapePreset: preset }, P(null, T('preset'))),
+      PBX({ width: 192, height: 96, ...style, shapePath: cube.path, shapeTextArea: [10, 20, 80, 90] }, P(null, T('freeform'))),
+    ] };
+    mkdirSync('/tmp/lo-rt', { recursive: true });
+    writeFileSync('/tmp/lo-rt/shapes.odt', await buildOdt(doc, margins, 'portrait'));
+    writeFileSync('/tmp/lo-rt/shapes.docx', await buildDocx(doc, margins, 'portrait'));
+    for (const ext of ['odt', 'docx'] as const) {
+      execSync(`soffice --headless --convert-to ${ext} --outdir /tmp/lo-rt/shapesout /tmp/lo-rt/shapes.${ext}`, { stdio: 'pipe', timeout: 120000 });
+      const bytes = new Uint8Array(readFileSync(`/tmp/lo-rt/shapesout/shapes.${ext}`));
+      const res = ext === 'odt' ? importOdt(bytes) : importDocx(bytes);
+      check(`LO ${ext}: no warnings`, res.warnings.length === 0, [...res.warnings]);
+      const [kept, free] = boxesIn(res.content);
+      check(`LO ${ext}: the preset stays one, adjust value and flip included`,
+        JSON.stringify(kept?.attrs?.shapePreset) === JSON.stringify(preset), kept?.attrs?.shapePreset);
+      check(`LO ${ext}: the freeform keeps its shaded faces`,
+        (free?.attrs?.shapePath?.match(/[HIJK]/g) ?? []).join('') === 'IK', free?.attrs?.shapePath);
+      // LibreOffice's DOCX scales its `a:rect` out of the box, which reads as none.
+      const area: number[] = free?.attrs?.shapeTextArea ?? [];
+      if (ext === 'odt') check('LO odt: the freeform keeps its text area',
+        area.length === 4 && [10, 20, 80, 90].every((v, i) => Math.abs(area[i] - v) < 0.5), area);
+      else check('LO docx: a text area out of the box is dropped', !free?.attrs?.shapeTextArea, area);
+    }
   });
 
   it('survives a `soffice` re-save of the record-changes flag', { timeout: 180000 }, async () => {

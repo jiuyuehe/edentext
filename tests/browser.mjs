@@ -65,6 +65,11 @@ export async function openApp(port, opts = {}) {
   const benign = /ResizeObserver loop/;
   page.on('pageerror', (err) => { if (!benign.test(String(err))) pageErrors.push(String(err)); });
   page.on('dialog', (d) => d.accept());
+  // Chromium can leave a close unanswered for good (after a download still running, or
+  // the page grid), idle as the page is; a run then ends anyway and Playwright's exit
+  // hook takes the browser down with the process.
+  const close = browser.close.bind(browser);
+  browser.close = () => Promise.race([close(), new Promise((r) => setTimeout(r, 10_000).unref())]);
   return { browser, page, pageErrors };
 }
 

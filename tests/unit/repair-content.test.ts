@@ -13,9 +13,9 @@ describe('repairContent', () => {
     expect(r).toEqual({ content: doc, error: null });
   });
 
-  it('gives a list item that starts with a heading its paragraph', () => {
+  it('gives a list item that starts with a sub-list its paragraph', () => {
     const doc = { type: 'doc', content: [{ type: 'orderedList', content: [{ type: 'listItem', content: [
-      { type: 'heading', attrs: { level: 1 }, content: [text('chapter')] },
+      { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [text('chapter')] }] }] },
     ] }] }] };
     const r = repairContent(doc, schema);
     expect(r.error).toBeTruthy();

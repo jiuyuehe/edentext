@@ -5,7 +5,7 @@ import { buildOdt } from '../src/lib/export/odt';
 import { importOdt } from '../src/lib/import/odt';
 import { buildDocx } from '../src/lib/export/docx';
 import { importDocx } from '../src/lib/import/docx';
-import { normalize, firstDiff, stripFontHoist } from './normalize';
+import { normalize, firstDiff, stripFontHoist, stripBoxGrowth } from './normalize';
 import { kitchenSinkDoc, kitchenSinkSheet, kitchenSinkOptions } from './kitchenSink';
 
 type N = any;
@@ -37,7 +37,7 @@ function stripSectionBreak(node: N): N {
   return node;
 }
 
-const clean = (n: N) => stripSectionBreak(hoistFloats(stripColwidth(stripFontHoist(normalize(structuredClone(n))))));
+const clean = (n: N) => stripBoxGrowth(stripSectionBreak(hoistFloats(stripColwidth(stripFontHoist(normalize(structuredClone(n)))))));
 
 const o = kitchenSinkOptions();
 const args = [{ top: 2, bottom: 2, left: 2, right: 2 }, 'portrait', o.hf, o.language, 'A4',

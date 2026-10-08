@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 // cm. `mirrored` = ODF style:page-usage="mirrored" / Word's mirror margins: left and
 // right are the inner/outer pair, and an even (left-hand) page swaps them.
@@ -55,7 +55,7 @@ function clampCm(n: number): number {
 }
 
 export function loadPageMargins(): PageMargins {
-  const raw = localStorage.getItem(KEY);
+  const raw = docStore.getItem(KEY);
   if (!raw) return { ...DEFAULT_MARGINS };
   try {
     const parsed = JSON.parse(raw);
@@ -72,7 +72,7 @@ export function loadPageMargins(): PageMargins {
 }
 
 export function savePageMargins(m: PageMargins): void {
-  localStorage.setItem(KEY, JSON.stringify(m));
+  docStore.setItem(KEY, JSON.stringify(m));
 }
 
 // Sets --user-margin-{top,bottom,left,right} (in px) on the document root, where

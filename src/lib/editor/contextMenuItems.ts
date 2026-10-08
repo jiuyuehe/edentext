@@ -17,7 +17,8 @@ export type MenuEntry =
 export interface SpellSection {
   suggestions: string[];
   onReplace: (word: string) => void;
-  onAdd: () => void;
+  /** Absent while there is no personal dictionary. */
+  onAdd?: () => void;
   onIgnore: () => void;
 }
 
@@ -74,7 +75,7 @@ export function buildContextMenu(editor: Editor, opts: { spell?: SpellSection; g
     }
     entries.push({ kind: 'sep' });
     entries.push({ kind: 'item', label: t().spell.ignoreAll, run: onIgnore });
-    entries.push({ kind: 'item', label: t().spell.addToDictionary, run: onAdd });
+    if (onAdd) entries.push({ kind: 'item', label: t().spell.addToDictionary, run: onAdd });
     entries.push({ kind: 'sep' });
   }
 
@@ -109,6 +110,8 @@ export function buildContextMenu(editor: Editor, opts: { spell?: SpellSection; g
     run: () => window.dispatchEvent(new CustomEvent(OPEN_LINK_DIALOG_EVENT)),
   });
   if (onLink) {
+    const href = editor.getAttributes('link').href as string | undefined;
+    if (href) entries.push({ kind: 'item', label: m.copyLink, run: () => void navigator.clipboard.writeText(href) });
     entries.push({
       kind: 'item',
       label: m.removeLink,

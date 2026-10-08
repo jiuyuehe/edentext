@@ -8,10 +8,10 @@ compared. Everything the ribbon drives is the same editor, through the same comm
 
 `chromeMode: 'modern' | 'ribbon'` lives in `storage/theme.ts` beside the other UI-chrome prefs
 (`edentext-chrome`, default `'ribbon'`). `App.svelte` forks on it: the ribbon docks as a plain
-flex child, the island keeps its absolute overlay. Reachable from both sides — the theme dropdown
-in the modern chrome, the strip's appearance menu in the ribbon. The ribbon's menu entry for the
-island is behind `import.meta.env.DEV` until the island catches up — a production build offers no
-way in, but a stored `'modern'` pref still loads it.
+flex child, the island keeps its absolute overlay. The choice sits in *Settings ▸ General*
+(`SettingsDialog.svelte`), reachable from both chromes, and only behind `import.meta.env.DEV`
+until the island catches up — a production build offers no way in, but a stored `'modern'`
+pref still loads it.
 
 `--toolbar-overlay-h` is written **only** in modern mode. `editor.css` reads it as
 `var(--toolbar-overlay-h, 0px)`, so the ribbon's docked layout needs no second rule.
@@ -55,7 +55,7 @@ so the split is invisible there.
 ```
 Ribbon.svelte
 ├─ .ribbon-tabs     File pill · quick access (save, undo, redo) · tabs · contextual tabs
-│                   · spacer · document name · appearance · UI language
+│                   · spacer · command search · document name · appearance · settings · UI language
 │                   one row that scrolls sideways; its menus are pinned fixed
 └─ .ribbon-body     the active tab's groups, a fixed --w-ribbon-h (84px) band
 ```
@@ -94,6 +94,9 @@ at every height. A flex row cannot reserve width in part of its height, so it mo
   picture/shape and Table Layout contextual tabs, which are open anyway when you caption
   something. Each mounts its own `CaptionDialog`; it reads the caret for its category, so the
   copies need no props of their own.
+- **Heading Numbering sits in the table-of-contents group** (LibreOffice keeps it under
+  Tools): it opens the style manager on its Chapters tab, since the numbering is part of
+  the document's style sheet.
 - **Each wrapper names the menu it owns.** One shared open-menu id means every `clickOutside`
   sees every mousedown; without the id each wrapper would close a sibling's open menu, and the
   click on one of its rows would never land.
@@ -109,6 +112,7 @@ at every height. A flex row cannot reserve width in part of its height, so it mo
 | File | Role |
 | --- | --- |
 | `Ribbon.svelte` | Shell, tab state, the File menu, which contextual tabs are shown |
+| `CommandSearch.svelte`, `commands.ts` | The search box and its command index; see *Command search* |
 | `RibbonGroup.svelte` | A group: its controls, its visible label, Word's ↘ dialog launcher |
 | `RibbonButton.svelte` | `big` / `small` / `icon`, plus the split button. Hover paints the **icon box**, not the whole button. A big label wraps onto two lines at a 78px cap and its caret rides beside the icon, so a three-word label costs width instead of a third row; a one- or two-word label takes the width it wraps at instead of the cap, and a German compound wider than the cap therefore widens its button rather than painting over the neighbour |
 | `RibbonMenu.svelte` | The dropdown panel; its look is global CSS, since its rows come from a caller's snippet |
@@ -144,6 +148,25 @@ The ribbon surfaces a good deal the engine already carried with nothing to reach
 underline and strikethrough line styles, Find and Replace as buttons, the page break, section
 breaks, absolute left/right indent, the table-of-contents depth and its page numbers, cell
 margins, Save As.
+
+## Command search
+
+Word's search box (Alt+Q) sits in the tab strip after the spacer. `ribbon/commands.ts` is its
+index: an id, the tab it lives on (`null` for the File menu) and a label read from the existing
+catalog keys. A hit switches to that tab, or opens the File menu, and clicks the control marked
+`data-cmd="<id>"` (`RibbonButton`'s `cmd` prop; a reused picker's wrapper carries it, a
+`display: contents` `.rb-cmd` span where it has none). The control therefore stays the only place a
+command is defined, a disabled one stays disabled, and the user sees where it lives.
+
+A menu entry names its opener in `via`: the opener is clicked first, then the entry. A text field or
+select is focused instead of clicked, and a colour split opens its palette through the chevron. The
+gallery's paragraph styles join the index at run time as `style-<name>`. A command shared by the
+picture and shape tabs lists both and runs in whichever is shown.
+
+Matching folds case and diacritics and ranks a label prefix over a word start over a substring. The
+English label always matches too, so "table" works under every UI language. An empty query lists the
+last five commands used (`edentext-recent-commands`). Contextual-tab commands are offered only while
+their tab is shown. `tests/unit/command-search.test.ts` fails when an indexed id has no control.
 
 ## Dialogs
 

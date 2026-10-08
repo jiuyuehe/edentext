@@ -151,6 +151,21 @@ export function lineKindFor(start: boolean, end: boolean): ShapeKind {
   return start || end ? 'lineArrow' : 'line';
 }
 
+/** Which ends of an open outline carry an arrow head (a connector's, a curve's). */
+export type PathHeads = 'start' | 'end' | 'both';
+
+export function pathHeadsFor(start: boolean, end: boolean): PathHeads | null {
+  return start && end ? 'both' : start ? 'start' : end ? 'end' : null;
+}
+
+/** The ends a box draws heads at: a line kind's own, else its outline's. */
+export function boxHeads(kind: ShapeKind, heads: PathHeads | null, path: string | null): { start: boolean; end: boolean } {
+  const line = SHAPES[kind].line;
+  if (line) return { start: line === 'both', end: line !== 'none' };
+  const own = path ? heads : null;
+  return { start: own === 'start' || own === 'both', end: own === 'end' || own === 'both' };
+}
+
 /** The kinds drawn as a polygon — everything past the three CSS ones. */
 export const POLYGON_KINDS = (Object.keys(SHAPES) as ShapeKind[]).filter((k) => SHAPES[k].points);
 
@@ -176,10 +191,12 @@ function headPath(x: number, y: number, dx: number, dy: number, len: number): st
  * in real pixels rather than the distorted 0…100 box a polygon uses — an arrow head
  * has to stay proportional to the pen however flat the frame is.
  */
-export function linePaths(kind: ShapeKind, w: number, h: number, flip: boolean, headLen: number): { line: string; heads: string[] } | null {
+export function linePaths(kind: ShapeKind, w: number, h: number, flip: boolean, headLen: number, flipH = false): { line: string; heads: string[] } | null {
   const heads = SHAPES[kind].line;
   if (!heads) return null;
-  const [x1, y1, x2, y2] = flip ? [0, h, w, 0] : [0, 0, w, h];
+  // From the top left corner, or from the one each flip moves the start to.
+  const [x1, y1] = [flipH ? w : 0, flip ? h : 0];
+  const [x2, y2] = [w - x1, h - y1];
   const len = Math.hypot(x2 - x1, y2 - y1) || 1;
   const dx = (x2 - x1) / len;
   const dy = (y2 - y1) / len;
@@ -190,6 +207,30 @@ export function linePaths(kind: ShapeKind, w: number, h: number, flip: boolean, 
       : heads === 'end' ? [headPath(x2, y2, dx, dy, cap)]
       : [headPath(x2, y2, dx, dy, cap), headPath(x1, y1, -dx, -dy, cap)],
   };
+}
+
+/**
+ * The heads of an open outline drawn across a `w`×`h` box, in real pixels like a line's:
+ * each points along its stroked parts' own last (or first) segment, a curve's control
+ * point giving that direction.
+ */
+export function pathHeadPaths(path: string, w: number, h: number, heads: PathHeads, headLen: number): string[] {
+  const pts: [number, number][] = [];
+  for (const c of parseSvgPath(outlineLayers(path).stroke)) {
+    if (c.c === 'Z') return [];
+    for (let i = 0; i + 1 < c.p.length; i += 2) pts.push([(c.p[i] * w) / 100, (c.p[i + 1] * h) / 100]);
+  }
+  const head = (tip: [number, number], from: [number, number][]) => {
+    const base = from.find(([x, y]) => Math.hypot(tip[0] - x, tip[1] - y) > 0.01);
+    if (!base) return null;
+    const len = Math.hypot(tip[0] - base[0], tip[1] - base[1]);
+    return headPath(tip[0], tip[1], (tip[0] - base[0]) / len, (tip[1] - base[1]) / len, headLen);
+  };
+  const out: (string | null)[] = [];
+  if (pts.length < 2) return [];
+  if (heads !== 'start') out.push(head(pts[pts.length - 1], pts.slice(0, -1).reverse()));
+  if (heads !== 'end') out.push(head(pts[0], pts.slice(1)));
+  return out.filter((d): d is string => !!d);
 }
 
 /** The outline as an SVG `d`, in the 0…100 box the node view's viewBox uses. */
@@ -252,9 +293,49 @@ function pathTokens(d: string): { cmd: string; n: number[] }[] {
 const PATH_ARITY: Record<string, number> = { M: 2, L: 2, T: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, A: 7, Z: 0 };
 
 /**
- * SVG path data as absolute M/L/C/Z. A quadratic is raised to a cubic and a smooth
- * curve takes its own start as the first control point; an arc is joined by a line —
- * none of the three is what either product writes for a freeform.
+ * An elliptical arc as cubics, in quarter turns at most: centre, radii, the start
+ * angle on the ellipse's own parameter and the sweep, in radians with y pointing down.
+ */
+export function arcBeziers(cx: number, cy: number, rx: number, ry: number, t0: number, sweep: number): PathCmd[] {
+  const out: PathCmd[] = [];
+  const n = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2) - 1e-9));
+  const d = sweep / n;
+  const k = (4 / 3) * Math.tan(d / 4);
+  for (let i = 0, t = t0; i < n; i++, t += d) {
+    const [c0, s0, c1, s1] = [Math.cos(t), Math.sin(t), Math.cos(t + d), Math.sin(t + d)];
+    out.push({ c: 'C', p: [
+      cx + rx * (c0 - k * s0), cy + ry * (s0 + k * c0),
+      cx + rx * (c1 + k * s1), cy + ry * (s1 - k * c1),
+      cx + rx * c1, cy + ry * s1,
+    ] });
+  }
+  return out;
+}
+
+// SVG's endpoint arc as centre and angles (SVG 1.1, appendix F.6.5).
+function svgArc(x1: number, y1: number, a: number[], x2: number, y2: number): PathCmd[] {
+  let [rx, ry] = [Math.abs(a[0]), Math.abs(a[1])];
+  if (!rx || !ry || (x1 === x2 && y1 === y2)) return [{ c: 'L', p: [x2, y2] }];
+  const phi = (a[2] * Math.PI) / 180;
+  if (phi) return [{ c: 'L', p: [x2, y2] }];
+  const [px, py] = [(x1 - x2) / 2, (y1 - y2) / 2];
+  const lam = (px * px) / (rx * rx) + (py * py) / (ry * ry);
+  if (lam > 1) [rx, ry] = [rx * Math.sqrt(lam), ry * Math.sqrt(lam)];
+  const num = rx * rx * ry * ry - rx * rx * py * py - ry * ry * px * px;
+  const f = Math.sqrt(Math.max(0, num / (rx * rx * py * py + ry * ry * px * px))) * (a[3] === a[4] ? -1 : 1);
+  const [cxp, cyp] = [(f * rx * py) / ry, (-f * ry * px) / rx];
+  const [cx, cy] = [cxp + (x1 + x2) / 2, cyp + (y1 + y2) / 2];
+  const t0 = Math.atan2((py - cyp) / ry, (px - cxp) / rx);
+  let dt = Math.atan2((-py - cyp) / ry, (-px - cxp) / rx) - t0;
+  if (a[4] && dt < 0) dt += 2 * Math.PI;
+  if (!a[4] && dt > 0) dt -= 2 * Math.PI;
+  return arcBeziers(cx, cy, rx, ry, t0, dt);
+}
+
+/**
+ * SVG path data as absolute M/L/C/Z. A quadratic is raised to a cubic, a smooth
+ * curve takes its own start as the first control point and an arc becomes cubics;
+ * a rotated arc is joined by a line, which neither product writes for a freeform.
  */
 export function parseSvgPath(d: string): PathCmd[] {
   const out: PathCmd[] = [];
@@ -280,7 +361,7 @@ export function parseSvgPath(d: string): PathCmd[] {
         [x, y] = [px, py];
       } else if (k === 'A') {
         const [px, py] = at(a[5], a[6]);
-        out.push({ c: 'L', p: [px, py] });
+        out.push(...svgArc(x, y, a, px, py));
         [x, y] = [px, py];
       } else {
         const pts: number[] = [];
@@ -318,6 +399,78 @@ export function parseOdfPoints(points: string, closed: boolean): PathCmd[] {
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
+/**
+ * An outline's parts, in ODF's own notation: each ends with `N`, and one marked `F` is
+ * stroked only, one marked `S` filled only — how a preset fills a face once and draws
+ * its features as lines. `H I J K` shade a face darker, a little darker, lighter, a little lighter.
+ */
+export type Shade = 'H' | 'I' | 'J' | 'K';
+export type OutlinePart = { d: string; fill: boolean; stroke: boolean; shade?: Shade };
+
+export function outlineParts(path: string): OutlinePart[] {
+  return path.split('N').map((p) => {
+    const shade = /[HIJK]/.exec(p)?.[0] as Shade | undefined;
+    return { d: p.replace(/[FSHIJK]/g, '').trim(), fill: !p.includes('F'), stroke: !p.includes('S'), ...(shade ? { shade } : {}) };
+  }).filter((p) => p.d);
+}
+
+const flags = (p: OutlinePart) => `${p.shade ? ` ${p.shade}` : ''}${p.fill ? '' : ' F'}${p.stroke ? '' : ' S'} N`;
+
+export function joinOutlineParts(parts: OutlinePart[]): string {
+  // A lone open part is never filled, so its `F` says nothing.
+  const [one] = parts;
+  if (parts.length === 1 && one.stroke && !one.shade && (one.fill || !one.d.includes('Z'))) return one.d;
+  return parts.map((p) => `${p.d}${flags(p)}`).join(' ');
+}
+
+/** The filled parts, one path per shade in drawing order, and the stroked parts as one path. */
+export function outlineLayers(path: string): { fills: { d: string; shade?: Shade }[]; stroke: string } {
+  const parts = outlineParts(path);
+  const fills: { d: string; shade?: Shade }[] = [];
+  for (const p of parts.filter((q) => q.fill)) {
+    const last = fills[fills.length - 1];
+    if (last && last.shade === p.shade) last.d += ` ${p.d}`;
+    else fills.push({ d: p.d, ...(p.shade ? { shade: p.shade } : {}) });
+  }
+  return { fills, stroke: parts.filter((p) => p.stroke).map((p) => p.d).join(' ') };
+}
+
+// LibreOffice's factors and truncation (measured on its render of a cube): darken scales
+// toward black, lighten mixes toward white.
+const SHADE: Record<Shade, number> = { H: -0.4, I: -0.2, J: 0.4, K: 0.2 };
+
+/** A `#rrggbb` fill shaded as a face marked `shade`. */
+export function shadeColor(hex: string, shade?: Shade): string {
+  if (!shade || !/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  const f = SHADE[shade];
+  return `#${[1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16);
+    return Math.floor(f < 0 ? c * (1 + f) : c + (255 - c) * f).toString(16).padStart(2, '0');
+  }).join('')}`;
+}
+
+/** A DrawingML preset as a node keeps it: its name, the adjust values the file set, its flips. */
+export type DrawingMlPreset = { name: string; adj: Record<string, number>; flipH?: boolean; flipV?: boolean };
+export type TextArea = [number, number, number, number];
+
+// Stored attrs and imported text areas checked before use: a text area lies inside the
+// box (LibreOffice's DOCX export scales its own `a:rect` by 635, probed in 26.2).
+export const asTextArea = (v: unknown): TextArea | null => {
+  if (!Array.isArray(v) || v.length !== 4 || !v.every(Number.isFinite)) return null;
+  const [l, t, r, b] = v as TextArea;
+  return l >= -0.5 && t >= -0.5 && r <= 100.5 && b <= 100.5 && l < r && t < b ? v as TextArea : null;
+};
+export const asShapePreset = (v: unknown): DrawingMlPreset | null => {
+  const p = v as DrawingMlPreset | null;
+  return typeof p?.name === 'string' && /^\w+$/.test(p.name) && p.adj && typeof p.adj === 'object'
+    && Object.values(p.adj).every(Number.isFinite) ? p : null;
+};
+
+/** An outline whose stroked parts never close: a line, which may carry arrow heads. */
+export function isOpenOutline(path: string): boolean {
+  return !outlineLayers(path).stroke.includes('Z');
+}
+
 /** The outline mapped from its own viewBox into the 0…100 box the editor draws in. */
 export function fitPath(cmds: PathCmd[], vbW: number, vbH: number, vbX = 0, vbY = 0): string {
   if (!cmds.length || vbW <= 0 || vbH <= 0) return '';
@@ -329,15 +482,29 @@ export function fitPath(cmds: PathCmd[], vbW: number, vbH: number, vbX = 0, vbY 
   return parts.join(' ');
 }
 
-/** ODF's `draw:enhanced-path` for an outline the editor holds in its 0…100 box. */
-export function odfEnhancedPath(path: string): string {
-  const body = parseSvgPath(path).map((c) => (c.c === 'Z' ? 'Z'
-    : `${c.c} ${c.p.map((v) => Math.round((v * VB) / 100)).join(' ')}`)).join(' ');
-  return `${body} N`;
+/**
+ * ODF's `draw:enhanced-path` for an outline the editor holds in its 0…100 box. The
+ * shading letters are LibreOffice's own (`drawooo:`); `plain` leaves them out for `draw:`.
+ */
+export function odfEnhancedPath(path: string, plain = false): string {
+  return outlineParts(path).map((p) => {
+    const body = parseSvgPath(p.d).map((c) => (c.c === 'Z' ? 'Z'
+      : `${c.c} ${c.p.map((v) => Math.round((v * VB) / 100)).join(' ')}`)).join(' ');
+    return `${body}${flags(plain ? { ...p, shade: undefined } : p)}`;
+  }).join(' ');
 }
 
-/** DrawingML's `<a:path>` for the same outline, in a `w`×`h` coordinate space. */
+const ML_SHADE: Record<Shade, string> = { H: 'darken', I: 'darkenLess', J: 'lighten', K: 'lightenLess' };
+export const shadeFromDrawingMl = (fill: string | null): Shade | undefined =>
+  (Object.keys(ML_SHADE) as Shade[]).find((k) => ML_SHADE[k] === fill);
+
+/** DrawingML's `<a:path>`s for the same outline, one per part, in a `w`×`h` space. */
 export function drawingMlPath(path: string, w: number, h: number): string {
+  return outlineParts(path).map(({ d, fill, stroke, shade }) => drawingMlPart(d, w, h,
+    `${!fill ? ' fill="none"' : shade ? ` fill="${ML_SHADE[shade]}"` : ''}${stroke ? '' : ' stroke="0"'}`)).join('');
+}
+
+function drawingMlPart(path: string, w: number, h: number, attrs: string): string {
   const pt = (x: number, y: number) => `<a:pt x="${Math.round((x * w) / 100)}" y="${Math.round((y * h) / 100)}"/>`;
   const body = parseSvgPath(path).map((c) => {
     if (c.c === 'Z') return '<a:close/>';
@@ -347,7 +514,7 @@ export function drawingMlPath(path: string, w: number, h: number): string {
       : c.c === 'L' ? `<a:lnTo>${pts[0]}</a:lnTo>`
       : `<a:cubicBezTo>${pts.join('')}</a:cubicBezTo>`;
   }).join('');
-  return `<a:path w="${w}" h="${h}">${body}</a:path>`;
+  return `<a:path w="${w}" h="${h}"${attrs}>${body}</a:path>`;
 }
 
 // The three line kinds share their names, and the heads a file declares are what

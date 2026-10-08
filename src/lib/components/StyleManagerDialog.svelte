@@ -8,11 +8,15 @@
   } from '../styles/styleSheet';
   import {
     deleteCharacterStyle, deleteListStyle, deleteStyle, deleteTableStyle, putListStyle,
-    putStyle, putTableStyle, renameStyle, resetStyle, styleSheet,
+    putStyle, putTableStyle, renameStyle, resetStyle, setOutline, styleSheet,
   } from '../styles/sheet.svelte';
+  import {
+    decimalOutline, DEFAULT_OUTLINE_LEVEL, MAX_OUTLINE_LEVELS, outlineIsEmpty, outlineLabel,
+    type OutlineFormat, type OutlineLevel,
+  } from '../styles/outlineNumbering';
   import { listStyleMarginCm, MAX_LIST_LEVELS, type ListLevelStyle, type ListStyle } from '../styles/listStyles';
   import { listStyleNameAt } from '../editor/extensions/listStyle';
-  import { formatOrdinal, orderedTypeDef, ORDERED_LIST_TYPES } from '../utils/orderedListTypes';
+  import { formatOrdinal, orderedTypeDef, orderedTypesFor } from '../utils/orderedListTypes';
   import { BULLET_TYPES } from '../utils/bulletListTypes';
   import {
     TABLE_REGIONS, previewCellCss, previewTextCss,
@@ -29,8 +33,8 @@
 
   // LibreOffice's style manager: pick a style, edit its properties, or make a new one
   // from the cursor's formatting. Edits apply live — every block using the style follows.
-  let { open = $bindable(false), editor, family: openFamily = 'paragraph', asianDocument = false }:
-    { open?: boolean; editor: Editor | null; family?: StyleFamily; asianDocument?: boolean } = $props();
+  let { open = $bindable(false), editor, family: openFamily = 'paragraph', asianDocument = false, scripts = { cjk: false, cyrillic: false } }:
+    { open?: boolean; editor: Editor | null; family?: StyleFamily | 'outline'; asianDocument?: boolean; scripts?: { cjk: boolean; cyrillic: boolean } } = $props();
 
   const ALIGNMENTS: AlignValue[] = ['left', 'center', 'right', 'justify'];
   // Beyond this the indent would push the name out of the 14rem pane, so deeper
@@ -42,6 +46,8 @@
   // The tab to land on; the $effect below takes it from the caller on every open, so
   // each entry point (styles gallery vs. table menu) lands where it should.
   let family = $state<StyleFamily>('paragraph');
+  // The chapter-numbering tab: not a style family, so it rides beside `family`.
+  let outlineTab = $state(false);
   let selected = $state(DEFAULT_STYLE);
   let selectedChar = $state('');
   let selectedTable = $state('');
@@ -137,6 +143,36 @@
     return formatOrdinal(def?.startAt ?? 1, type.numFormat) + type.numSuffix;
   }
 
+  // ---- chapter numbering: one document-wide definition, a level at a time.
+  let outlineIdx = $state(0);
+  let outline = $derived(sheet.outline ?? []);
+  let oLevel = $derived<OutlineLevel>(outline[outlineIdx] ?? DEFAULT_OUTLINE_LEVEL);
+  // One entry per number format; the current one stays even where its script is hidden.
+  let outlineFormats = $derived.by(() => {
+    const seen = new Map<OutlineFormat, string>();
+    for (const o of orderedTypesFor(scripts, null, true)) if (!o.multilevel && !seen.has(o.numFormat)) seen.set(o.numFormat, o.label);
+    if (oLevel.format !== 'none' && !seen.has(oLevel.format)) seen.set(oLevel.format, oLevel.format);
+    return [...seen];
+  });
+  const outlineLabelAt = (level: number) => outlineLabel(outline, level, [], formatOrdinal).trim();
+
+  // An undefined patch value clears the level's own property.
+  function editOutline(patch: Partial<OutlineLevel>) {
+    const levels = Array.from({ length: MAX_OUTLINE_LEVELS }, (_, i) => outline[i] ?? { ...DEFAULT_OUTLINE_LEVEL });
+    const next = { ...levels[outlineIdx], ...patch };
+    for (const key of Object.keys(patch) as (keyof OutlineLevel)[]) {
+      if (patch[key] === undefined) delete next[key];
+    }
+    levels[outlineIdx] = next;
+    while (levels.length && levels[levels.length - 1].format === 'none') levels.pop();
+    setOutline(outlineIsEmpty(levels) ? null : levels);
+  }
+
+  // The label hangs out of the title by the indent, which both formats can state.
+  function outlineIndent(cm: number | undefined) {
+    editOutline(cm ? { indentCm: cm, firstIndentCm: -cm, tabCm: cm } : { indentCm: undefined, firstIndentCm: undefined, tabCm: undefined });
+  }
+
   const BORDER_WIDTHS = ['none', '0.5', '0.75', '1', '1.5', '2.25'];
   // The three border controls; the inner ones fall back to the shared innerBorder.
   type BorderKey = 'border' | 'innerBorderH' | 'innerBorderV';
@@ -192,7 +228,9 @@
   });
 
   $effect(() => {
-    if (open) family = openFamily;
+    if (!open) return;
+    outlineTab = openFamily === 'outline';
+    if (openFamily !== 'outline') family = openFamily;
   });
 
   // Follow the cursor's style when the dialog opens (LibreOffice preselects it too).
@@ -428,12 +466,23 @@
     <div class="body">
       <div class="pane">
         <div class="family">
-          <button class:active={family === 'paragraph'} onclick={() => (family = 'paragraph')}>{t().styles.tabs.paragraph}</button>
-          <button class:active={isChar} onclick={() => (family = 'character')}>{t().styles.tabs.character}</button>
-          <button class:active={isTable} onclick={() => (family = 'table')}>{t().styles.tabs.table}</button>
-          <button class:active={isList} onclick={() => (family = 'list')}>{t().styles.tabs.list}</button>
+          <button class:active={!outlineTab && family === 'paragraph'} onclick={() => { outlineTab = false; family = 'paragraph'; }}>{t().styles.tabs.paragraph}</button>
+          <button class:active={!outlineTab && isChar} onclick={() => { outlineTab = false; family = 'character'; }}>{t().styles.tabs.character}</button>
+          <button class:active={!outlineTab && isTable} onclick={() => { outlineTab = false; family = 'table'; }}>{t().styles.tabs.table}</button>
+          <button class:active={!outlineTab && isList} onclick={() => { outlineTab = false; family = 'list'; }}>{t().styles.tabs.list}</button>
+          <button class="wide" class:active={outlineTab} onclick={() => (outlineTab = true)}>{t().styles.tabs.outline}</button>
         </div>
       <ul class="list">
+        {#if outlineTab}
+          {#each Array(MAX_OUTLINE_LEVELS) as _, i}
+            <li>
+              <button class="entry" class:active={outlineIdx === i} onclick={() => (outlineIdx = i)}>
+                <span class="name">{t().styles.level} {i + 1}</span>
+                <span class="badge">{outlineLabelAt(i + 1)}</span>
+              </button>
+            </li>
+          {/each}
+        {:else}
         {#if isList}
           {#each listList as s (s.name)}
             <li>
@@ -527,11 +576,64 @@
             {/if}
           </li>
         {/each}
+        {/if}
       </ul>
       </div>
 
       <div class="fields">
-        {#if isList}
+        {#if outlineTab}
+          <!-- Each level's label as the headings show it, from the definition's start values. -->
+          <div class="preview list-preview">
+            {#each Array(MAX_OUTLINE_LEVELS) as _, i}
+              {#if outlineLabelAt(i + 1)}
+                <div class="lp-line" style="margin-left: {i * 0.6}rem">
+                  <span class="lp-marker">{outlineLabelAt(i + 1)}</span>
+                  <i class="lp-text"></i>
+                </div>
+              {/if}
+            {/each}
+          </div>
+
+          <div class="row">
+            <label>{t().styles.outline.number}
+              <select value={oLevel.format} onchange={(e) => editOutline({ format: e.currentTarget.value as OutlineLevel['format'] })}>
+                <option value="none">{t().styles.outline.none}</option>
+                {#each outlineFormats as [format, label]}
+                  <option value={format}>{label}</option>
+                {/each}
+              </select>
+            </label>
+            <label>{t().styles.startAt}
+              <input type="number" min="0" max="9999" step="1" value={oLevel.start}
+                disabled={oLevel.format === 'none'}
+                onchange={(e) => editOutline({ start: Math.max(0, num(e.currentTarget.value) ?? 1) })} />
+            </label>
+          </div>
+
+          <div class="row">
+            <label>{t().styles.outline.before}
+              <input type="text" value={oLevel.prefix} disabled={oLevel.format === 'none'}
+                onchange={(e) => editOutline({ prefix: e.currentTarget.value })} />
+            </label>
+            <label>{t().styles.outline.after}
+              <input type="text" value={oLevel.suffix} disabled={oLevel.format === 'none'}
+                onchange={(e) => editOutline({ suffix: e.currentTarget.value })} />
+            </label>
+          </div>
+
+          <div class="row">
+            <label>{t().styles.outline.sublevels}
+              <input type="number" min="1" max={outlineIdx + 1} step="1" value={oLevel.displayLevels}
+                disabled={oLevel.format === 'none'}
+                onchange={(e) => editOutline({ displayLevels: Math.min(outlineIdx + 1, Math.max(1, num(e.currentTarget.value) ?? 1)) })} />
+            </label>
+            <label>{t().styles.outline.indent}
+              <input type="number" min="0" max="10" step="0.05" value={oLevel.indentCm ?? ''}
+                placeholder="0" disabled={oLevel.format === 'none'}
+                onchange={(e) => outlineIndent(num(e.currentTarget.value))} />
+            </label>
+          </div>
+        {:else if isList}
           <!-- One sample line per defined level; the box scrolls past six of them. -->
           <div class="preview list-preview">
             {#each lStyle.levels as _, d}
@@ -588,7 +690,7 @@
                   disabled={!!lStyle.multilevel}
                   onchange={(e) => editLevel({ numType: e.currentTarget.value as ListLevelStyle['numType'] })}
                 >
-                  {#each ORDERED_LIST_TYPES.filter((o) => !o.multilevel) as o}
+                  {#each orderedTypesFor(scripts, lLevel.numType, true).filter((o) => !o.multilevel) as o}
                     <option value={o.key}>{o.preview} — {o.label}</option>
                   {/each}
                 </select>
@@ -840,7 +942,11 @@
     </div>
 
     <footer>
-      {#if isList}
+      {#if outlineTab}
+        <button onclick={() => setOutline(decimalOutline())}>{t().styles.outline.decimal}</button>
+        <span class="spacer"></span>
+        <button class="danger" onclick={() => setOutline(null)} disabled={outlineIsEmpty(outline)}>{t().styles.outline.off}</button>
+      {:else if isList}
         <button onclick={newListStyle}>{t().styles.newStyle}</button>
         <span class="spacer"></span>
         {#if lStyle?.builtin}
@@ -958,6 +1064,7 @@
   }
   .family {
     display: flex;
+    flex-wrap: wrap;
     padding: 0.4rem 0.4rem 0;
     gap: 2px;
   }
@@ -977,6 +1084,8 @@
     font-size: 0.72rem;
     cursor: pointer;
   }
+  /* Chapter numbering is no style family: its own row under the four. */
+  .family button.wide { flex-basis: 100%; }
   .family button.active {
     background: var(--color-btn-hover);
     color: var(--color-text);

@@ -43,8 +43,9 @@
     if (scope === 'doc') {
       onChange(code);
       // The document's language is the one everything without an opinion follows, so the
-      // overrides go with it — LibreOffice's "For all text" clears them too.
-      if (canSet) editor!.chain().focus().selectAll().setBlockLanguage(null).setRunLanguage(null).setTextSelection(editor!.state.selection.from).run();
+      // overrides go with it — LibreOffice's "For all text" clears them too. The caret stays
+      // where it was, so the view does too: a caret left above would pull it back up.
+      if (canSet) editor!.chain().focus(null, { scrollIntoView: false }).selectAll().setBlockLanguage(null).setRunLanguage(null).setTextSelection(editor!.state.selection.from).run();
       return;
     }
     const tag = tagForLanguage(code) ?? code;
@@ -116,10 +117,5 @@
 
   select:hover {
     background: var(--color-btn-hover);
-  }
-
-  /* The option list is OS-drawn; keep its text legible in dark themes. */
-  option {
-    color: initial;
   }
 </style>

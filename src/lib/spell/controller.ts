@@ -1,9 +1,14 @@
 import { loadChecker, type Checker } from './dictionary';
 import { loadDocumentLanguage, type DocumentLanguage } from '../storage/documentLanguage';
+import { volatile } from '../storage/docScope';
 
 const PERSONAL_KEY = 'edentext-user-dictionary';
 
+// Off while nothing is to be stored: the words would be the document's own.
+export const personalDictionary = !volatile;
+
 function loadPersonal(): string[] {
+  if (!personalDictionary) return [];
   try {
     const raw = localStorage.getItem(PERSONAL_KEY);
     const arr = raw ? JSON.parse(raw) : [];
@@ -81,7 +86,7 @@ class SpellController {
   }
 
   addWord(word: string): void {
-    if (!word || this.personal.has(word)) return;
+    if (!personalDictionary || !word || this.personal.has(word)) return;
     this.personal.add(word);
     localStorage.setItem(PERSONAL_KEY, JSON.stringify([...this.personal]));
     for (const c of this.checkers.values()) c?.add(word);

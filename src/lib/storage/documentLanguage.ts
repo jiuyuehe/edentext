@@ -3,7 +3,7 @@
 // 'none' disables checking.
 
 import { resolveBrowserLocale } from '../i18n/config';
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 export const NO_LANGUAGE = 'none';
 
@@ -32,7 +32,9 @@ export const LANGUAGES: LanguageDef[] = [
   { code: 'es', label: 'Español (España)', odf: { language: 'es', country: 'ES' } },
   { code: 'fr', label: 'Français', odf: { language: 'fr', country: 'FR' } },
   { code: 'pt', label: 'Português (Portugal)', odf: { language: 'pt', country: 'PT' } },
+  { code: 'el', label: 'Ελληνικά', odf: { language: 'el', country: 'GR' } },
   { code: 'ru', label: 'Русский', odf: { language: 'ru', country: 'RU' } },
+  { code: 'uk', label: 'Українська', odf: { language: 'uk', country: 'UA' } },
   { code: 'ja-JP', label: '日本語', odf: { language: 'ja', country: 'JP' }, noDict: true },
   { code: 'zh-CN', label: '中文（简体）', odf: { language: 'zh', country: 'CN' }, noDict: true },
   { code: 'zh-TW', label: '中文（繁體）', odf: { language: 'zh', country: 'TW' }, noDict: true },
@@ -60,6 +62,16 @@ export function hasDictionary(code: DocumentLanguage): boolean {
 // processors read it only from there. The complex slot (Hebrew, Arabic) is separate.
 export function isAsianTag(tag: string): boolean {
   return /^(zh|ja|ko)\b/i.test(tag.trim());
+}
+
+export function isCyrillicTag(tag: string): boolean {
+  return /^(ru|uk|be|bg|sr|mk)\b/i.test(tag.trim());
+}
+
+// The scripts whose list numbering the menus offer: the UI's and the document's.
+export function numberingScripts(main: DocumentLanguage, other: string | null, uiLocale: string): { cjk: boolean; cyrillic: boolean } {
+  const tags = [tagForLanguage(main) ?? '', other ?? '', uiLocale];
+  return { cjk: tags.some(isAsianTag), cyrillic: tags.some(isCyrillicTag) };
 }
 
 // A tag's slot: a paragraph or a run carries a western and an asian language, and a tag
@@ -116,7 +128,7 @@ function isValid(code: string): boolean {
 // dictionary rather than the US one; resolveBrowserLocale covers the rest. A tag no entry
 // claims leaves checking off rather than guessing.
 export function loadDocumentLanguage(): DocumentLanguage {
-  const code = localStorage.getItem(KEY);
+  const code = docStore.getItem(KEY);
   if (code && isValid(code)) return code;
   const fromTag = codeForTag(navigator.language ?? '');
   if (fromTag) return fromTag;
@@ -125,17 +137,17 @@ export function loadDocumentLanguage(): DocumentLanguage {
 }
 
 export function saveDocumentLanguage(code: DocumentLanguage): void {
-  localStorage.setItem(KEY, code);
+  docStore.setItem(KEY, code);
 }
 
 export function loadDocumentLanguageOther(): string | null {
-  const tag = localStorage.getItem(OTHER_KEY);
+  const tag = docStore.getItem(OTHER_KEY);
   return tag && odfFromTag(tag) ? tag : null;
 }
 
 export function saveDocumentLanguageOther(tag: string | null): void {
-  if (tag) localStorage.setItem(OTHER_KEY, tag);
-  else localStorage.removeItem(OTHER_KEY);
+  if (tag) docStore.setItem(OTHER_KEY, tag);
+  else docStore.removeItem(OTHER_KEY);
 }
 
 // → ODF fo:language/fo:country for export; null when checking is off.

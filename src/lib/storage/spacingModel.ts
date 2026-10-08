@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 // How the space between two blocks is measured. LibreOffice adds the upper block's
 // space-below to the lower one's space-above ('add', its native ODF behaviour) but takes
@@ -8,11 +8,11 @@ export type SpacingModel = 'add' | 'max';
 const KEY = docKey('edentext-spacing-model');
 
 export function loadSpacingModel(): SpacingModel {
-  return localStorage.getItem(KEY) === 'max' ? 'max' : 'add';
+  return docStore.getItem(KEY) === 'max' ? 'max' : 'add';
 }
 
 export function saveSpacingModel(m: SpacingModel): void {
-  localStorage.setItem(KEY, m);
+  docStore.setItem(KEY, m);
 }
 
 // LibreOffice's "add spacing between paragraphs and tables at the beginning of pages"
@@ -23,10 +23,10 @@ export function saveSpacingModel(m: SpacingModel): void {
 const AT_START_KEY = docKey('edentext-spacing-at-page-start');
 
 export function loadSpacingAtPageStart(): boolean {
-  return localStorage.getItem(AT_START_KEY) !== 'false';
+  return docStore.getItem(AT_START_KEY) !== 'false';
 }
 
 export function saveSpacingAtPageStart(on: boolean): void {
-  if (on) localStorage.removeItem(AT_START_KEY);
-  else localStorage.setItem(AT_START_KEY, 'false');
+  if (on) docStore.removeItem(AT_START_KEY);
+  else docStore.setItem(AT_START_KEY, 'false');
 }

@@ -1,6 +1,6 @@
 import { PX_PER_CM } from './pageMargins';
 import type { Orientation } from './pageOrientation';
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 export type PageFormat =
   | 'A3' | 'A4' | 'A5' | 'A6'
@@ -36,12 +36,12 @@ export const PAGE_FORMAT_CM: Record<PageFormat, { w: number; h: number }> = {
 const FORMATS = Object.keys(PAGE_FORMAT_CM) as PageFormat[];
 
 export function loadPageFormat(): PageFormat {
-  const raw = localStorage.getItem(KEY);
+  const raw = docStore.getItem(KEY);
   return (raw && (FORMATS as string[]).includes(raw)) ? (raw as PageFormat) : 'A4';
 }
 
 export function savePageFormat(f: PageFormat): void {
-  localStorage.setItem(KEY, f);
+  docStore.setItem(KEY, f);
 }
 
 // Page box (cm) for a format + orientation; landscape swaps width/height.

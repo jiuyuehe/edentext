@@ -5,7 +5,10 @@ import { buildOdt } from '../../src/lib/export/odt';
 import { buildDocx } from '../../src/lib/export/docx';
 import { importOdt } from '../../src/lib/import/odt';
 import { importDocx } from '../../src/lib/import/docx';
-import { droppedFrameAttrs } from '../../src/lib/editor/extensions/image';
+import { droppedFrameAttrs, restackFrame, stackZ } from '../../src/lib/editor/extensions/image';
+import { getSchema } from '@tiptap/core';
+import { EditorState, NodeSelection } from '@tiptap/pm/state';
+import { zoneExtensions } from '../../src/lib/editor/extensions';
 
 type N = any;
 
@@ -57,13 +60,64 @@ describe('a run-through frame', () => {
 // otherwise export as vertical-rel="page" with an offset that now counts from a paragraph.
 describe('picking a wrap mode by hand', () => {
   it('drops the offsets and the frame of reference they belonged to', () => {
-    const dropped = droppedFrameAttrs('left', false);
+    const dropped = droppedFrameAttrs('left', false, 'through');
     expect(dropped).toMatchObject({ wrapOffset: null, wrapOffsetY: null, wrapFromPage: false, anchorPage: null });
   });
 
   it('keeps inFront for run-through alone', () => {
-    expect(droppedFrameAttrs('through', true).inFront).toBe(true);
-    expect(droppedFrameAttrs('through', false).inFront).toBe(false);
-    expect(droppedFrameAttrs('topBottom', true).inFront).toBe(false);
+    expect(droppedFrameAttrs('through', true, 'left').inFront).toBe(true);
+    expect(droppedFrameAttrs('through', false, 'inline').inFront).toBe(false);
+    expect(droppedFrameAttrs('topBottom', true, 'through').inFront).toBe(false);
+  });
+
+  it('keeps the place between behind and in front of the text, one mode', () => {
+    expect(droppedFrameAttrs('through', true, 'through')).toEqual({ inFront: true });
+  });
+});
+
+describe('the order of free frames', () => {
+  const schema = getSchema(zoneExtensions());
+  // Three pictures behind the text, then one in front; the second is selected.
+  const start = (): EditorState => {
+    const doc = schema.nodeFromJSON({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [
+        IMG({ wrap: 'through' }), IMG({ wrap: 'through' }), IMG({ wrap: 'through' }), IMG({ wrap: 'through', inFront: true }),
+      ] }],
+    });
+    return EditorState.create({ doc, selection: NodeSelection.create(doc, 2) });
+  };
+  const ranks = (s: EditorState) => s.doc.firstChild!.content.content.map((n) => n.attrs.zIndex);
+  const run = (s: EditorState, to: 'forward' | 'backward' | 'front' | 'back') => {
+    let out = s;
+    const ok = restackFrame(s, (tr) => (out = s.apply(tr)), to);
+    return { ok, ranks: ranks(out) };
+  };
+
+  it('moves one step or to the end among those on its side of the text', () => {
+    expect(run(start(), 'forward')).toEqual({ ok: true, ranks: [0, 2, 1, 3] });
+    expect(run(start(), 'backward')).toEqual({ ok: true, ranks: [1, 0, 2, 3] });
+    expect(run(start(), 'front')).toEqual({ ok: true, ranks: [0, 2, 1, 3] });
+    expect(run(start(), 'back')).toEqual({ ok: true, ranks: [1, 0, 2, 3] });
+    const s0 = start();
+    const last = s0.apply(s0.tr.setSelection(NodeSelection.create(s0.doc, 3)));
+    expect(run(last, 'forward').ok).toBe(false);
+    expect(run(last, 'back')).toEqual({ ok: true, ranks: [1, 2, 0, 3] });
+  });
+
+  it('stacks by rank, behind the text every picture over every shape', () => {
+    expect(stackZ(true, 3, false)).toBe('4');
+    expect(stackZ(true, 99, true)).toBe('21');
+    expect(Number(stackZ(false, 0, true))).toBeGreaterThan(Number(stackZ(false, 99, false)));
+    expect(Number(stackZ(false, 99, true))).toBeLessThan(-1);
+  });
+
+  it('keeps the order through both formats', async () => {
+    const doc: N = { type: 'doc', content: [{ type: 'paragraph', content: [
+      IMG({ wrap: 'through', zIndex: 2 }), IMG({ wrap: 'through', zIndex: 0 }), IMG({ wrap: 'through', zIndex: 1 }),
+    ] }] };
+    const order = (d: N) => d.content[0].content.filter((n: N) => n.type === 'image').map((n: N) => n.attrs.zIndex ?? 0);
+    expect(order((await importOdt(await buildOdt(doc, margins, 'portrait'))).content)).toEqual([2, 0, 1]);
+    expect(order(importDocx(await buildDocx(doc, margins, 'portrait')).content)).toEqual([2, 0, 1]);
   });
 });

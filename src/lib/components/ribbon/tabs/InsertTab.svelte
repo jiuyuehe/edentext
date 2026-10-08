@@ -102,6 +102,7 @@
   <RibbonButton
     variant="big"
     icon="pageBreak"
+    cmd="pageBreak"
     label={t().ribbon.pageBreak}
     title={`${t().ribbon.pageBreak} (${shortcutHint('pageBreak')})`}
     disabled={!editor || !!hfActive}
@@ -112,7 +113,7 @@
 <div class="ribbon-sep"></div>
 
 <RibbonGroup label={t().ribbon.groups.tables}>
-  <div class="rb-captioned" use:captionClicks>
+  <div class="rb-captioned" data-cmd="table" use:captionClicks>
     <TablePicker
       {editor}
       bind:open={tableOpen}
@@ -126,10 +127,11 @@
 <div class="ribbon-sep"></div>
 
 <RibbonGroup label={t().ribbon.groups.illustrations}>
-  <RibbonButton variant="big" icon="image" label={t().ribbon.picture} title={t().toolbarExpanded.insertImage} disabled={!editor} onclick={() => imageInput?.click()} />
+  <RibbonButton variant="big" icon="image" cmd="picture" label={t().ribbon.picture} title={t().toolbarExpanded.insertImage} disabled={!editor} onclick={() => imageInput?.click()} />
   <RibbonButton
     variant="big"
     icon="textBox"
+    cmd="textBox"
     label={t().ribbon.textBox}
     title={t().toolbarExpanded.insertTextBox}
     disabled={!editor}
@@ -141,19 +143,19 @@
 
 <RibbonGroup label={t().ribbon.groups.links}>
   <div class="rb-col link-anchor">
-    <RibbonButton variant="small" icon="link" label={t().ribbon.link} title={`${isLink ? t().link.dialogLabel : t().ribbon.link} (${shortcutHint('link')})`} disabled={!editor} onclick={open(OPEN_LINK_DIALOG_EVENT)} />
-    <RibbonButton variant="small" icon="bookmark" label={t().ribbon.bookmark} title={hasSelection ? t().toolbarExpanded.insertBookmark : t().toolbarExpanded.bookmarkNeedsSelection} disabled={!editor || !hasSelection} onclick={open(OPEN_BOOKMARK_DIALOG_EVENT)} />
-    <RibbonButton variant="small" icon="crossRef" label={t().ribbon.crossRef} title={hasRefs ? t().toolbarExpanded.insertCrossRef : t().crossRef.none} disabled={!editor || !hasRefs} onclick={open(OPEN_CROSS_REF_DIALOG_EVENT)} />
+    <RibbonButton variant="small" icon="link" cmd="link" label={t().ribbon.link} title={`${isLink ? t().link.dialogLabel : t().ribbon.link} (${shortcutHint('link')})`} disabled={!editor} onclick={open(OPEN_LINK_DIALOG_EVENT)} />
+    <RibbonButton variant="small" icon="bookmark" cmd="bookmark" label={t().ribbon.bookmark} title={hasSelection ? t().toolbarExpanded.insertBookmark : t().toolbarExpanded.bookmarkNeedsSelection} disabled={!editor || !hasSelection} onclick={open(OPEN_BOOKMARK_DIALOG_EVENT)} />
+    <RibbonButton variant="small" icon="crossRef" cmd="crossRef" label={t().ribbon.crossRef} title={hasRefs ? t().toolbarExpanded.insertCrossRef : t().crossRef.none} disabled={!editor || !hasRefs} onclick={open(OPEN_CROSS_REF_DIALOG_EVENT)} />
   </div>
 </RibbonGroup>
 
 <div class="ribbon-sep"></div>
 
 <RibbonGroup label={t().ribbon.groups.headerFooter}>
-  <RibbonButton variant="big" icon="header" label={t().ribbon.header} title={t().toolbarExpanded.editHeader} disabled={!editor} onclick={() => onEditZone?.('header')} />
-  <RibbonButton variant="big" icon="footer" label={t().ribbon.footer} title={t().toolbarExpanded.editFooter} disabled={!editor} onclick={() => onEditZone?.('footer')} />
+  <RibbonButton variant="big" icon="header" cmd="header" label={t().ribbon.header} title={t().toolbarExpanded.editHeader} disabled={!editor} onclick={() => onEditZone?.('header')} />
+  <RibbonButton variant="big" icon="footer" cmd="footer" label={t().ribbon.footer} title={t().toolbarExpanded.editFooter} disabled={!editor} onclick={() => onEditZone?.('footer')} />
   <div class="rb-menu-wrap" use:clickOutside={'pageField'}>
-    <RibbonButton variant="big" icon="pageNumber" label={t().ribbon.pageNumber} title={t().ribbon.pageNumber} caret active={isMenuOpen('pageField')} onclick={() => toggleMenu('pageField')} />
+    <RibbonButton variant="big" icon="pageNumber" cmd="pageNumber" label={t().ribbon.pageNumber} title={t().ribbon.pageNumber} caret active={isMenuOpen('pageField')} onclick={() => toggleMenu('pageField')} />
     {#if isMenuOpen('pageField')}
       <div class="ribbon-menu" use:anchored role="menu">
         <button onclick={() => insertPageField('pageNumber')}>{t().hf.pageNumber}</button>
@@ -162,7 +164,7 @@
     {/if}
   </div>
   <div class="rb-menu-wrap" use:clickOutside={'hfOptions'}>
-    <RibbonButton variant="big" icon="settings" label={t().ribbon.hfOptions} title={t().toolbarExpanded.headerFooter} caret active={isMenuOpen('hfOptions')} onclick={() => toggleMenu('hfOptions')} />
+    <RibbonButton variant="big" icon="settings" cmd="hfOptions" label={t().ribbon.hfOptions} title={t().toolbarExpanded.headerFooter} caret active={isMenuOpen('hfOptions')} onclick={() => toggleMenu('hfOptions')} />
     {#if isMenuOpen('hfOptions')}
       <div class="ribbon-menu" use:anchored role="menu">
         <label class="check-row" title={t().toolbarExpanded.differentFirstPageHint}>
@@ -198,6 +200,7 @@
   <RibbonButton
     variant="big"
     icon="quickParts"
+    cmd="autoText"
     label={t().autoText.title}
     title={t().autoText.title}
     disabled={!editor || !onAutoText}
@@ -206,12 +209,13 @@
   <RibbonButton
     variant="big"
     icon="ruby"
+    cmd="ruby"
     label={t().ruby.title}
     title={t().ruby.title}
     disabled={!editor}
     onclick={() => (rubyOpen = true)}
   />
-  <div class="rb-captioned" use:captionClicks>
+  <div class="rb-captioned" data-cmd="dateTime" use:captionClicks>
     <DateTimePicker
       bind:open={dateOpen}
       {editor}
@@ -224,7 +228,7 @@
 <div class="ribbon-sep"></div>
 
 <RibbonGroup label={t().ribbon.groups.symbols}>
-  <div class="rb-captioned" use:captionClicks>
+  <div class="rb-captioned" data-cmd="symbol" use:captionClicks>
     <SpecialCharPicker
       bind:open={charOpen}
       {editor}
@@ -232,7 +236,7 @@
     />
     <span class="rb-caption">{t().ribbon.symbol}</span>
   </div>
-  <RibbonButton variant="big" content={equationIcon} label={t().ribbon.equation} title={t().formula.insert} disabled={!editor} onclick={open(EDIT_FORMULA_EVENT)} />
+  <RibbonButton variant="big" content={equationIcon} cmd="equation" label={t().ribbon.equation} title={t().formula.insert} disabled={!editor} onclick={open(EDIT_FORMULA_EVENT)} />
 </RibbonGroup>
 
 <input

@@ -31,7 +31,14 @@ export const STROKED = {
   redo: ['M13.5 6.5H6.75a3.75 3.75 0 0 0 0 7.5H10.5', 'M10.75 3.5 13.5 6.5l-2.75 3'],
   info: ['M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13z', 'M8 7.25v4'],
   lock: ['M3.75 7.25h8.5v6.25h-8.5z', 'M5.75 7.25V5a2.25 2.25 0 0 1 4.5 0v2.25'],
-  ribbon: ['M2 3.25h12v3.5H2z', 'M2 9.5h4v3.25H2z', 'M7.5 9.5h2.5v3.25H7.5z', 'M11.5 9.5H14v3.25h-2.5z'],
+  // The four themes, as the appearance button shows the current one. Auto is a disc split
+  // on the diagonal like its swatch in Settings, its dark half in FILLED.
+  themeLight: [
+    'M8 10.8a2.8 2.8 0 1 0 0-5.6 2.8 2.8 0 0 0 0 5.6z',
+    'M8 1v2M8 13v2M1 8h2M13 8h2M2.93 2.93l1.41 1.41M11.66 11.66l1.41 1.41M2.93 13.07l1.41-1.41M11.66 4.34l1.41-1.41',
+  ],
+  themeDark: ['M13.5 10A6 6 0 0 1 6 2.5a6 6 0 1 0 7.5 7.5z'],
+  themeAuto: ['M8 13.75a5.75 5.75 0 1 0 0-11.5 5.75 5.75 0 0 0 0 11.5z'],
 
   cut: ['M4 2.5 11 12', 'M12 2.5 5 12', 'M3.6 13.9a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z', 'M12.4 13.9a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z'],
   copy: ['M5.5 5.5h7.25v8.25H5.5z', 'M10.5 5.5V2.25H3.25V10.5H5.5'],
@@ -80,10 +87,17 @@ export const STROKED = {
   // The text runs over the frame's outline; in front, the solid frame covers it (FILLED).
   wrapBehind: ['M5 4.5h6v7H5z', 'M2 5.5h12M2 8h12M2 10.5h12'],
   wrapFront: ['M2 5.5h12M2 8h12M2 10.5h12'],
+  // Overlapping frames, the one the command moves filled: a step over or under one
+  // neighbour, or over or under the pair of them.
+  orderForward: ['M2 2h8v8H2z'],
+  orderBackward: ['M6 6h8v8H6z'],
+  orderFront: ['M1.5 1.5h6v6h-6z', 'M8.5 8.5h6v6h-6z'],
+  orderBack: ['M1.5 1.5h6v6h-6z', 'M8.5 8.5h6v6h-6z'],
   // A capital T beside an arrow running down: the text sets vertically.
   textDirection: ['M3 3.75h6M6 3.75v8.5', 'M12.5 4v7.5M10.9 10l1.6 1.6 1.6-1.6'],
   toc: ['M2 3h6M2 6.5h5M2 10h6M2 13.5h4', 'M11 3h3M10 6.5h4M11 10h3M10 13.5h4'],
   tocLevels: ['M2.5 3.5h11M4.5 7h9M6.5 10.5h7M8.5 14h5'],
+  headingNumbering: ['M2 3.5h1.5M3.5 7.5h2.5M5 11.5h3.5', 'M5.5 3.5h8M8 7.5h5.5M10.5 11.5h3'],
   // A turning arrow whose head sits on the end of its arc.
   update: ['M14 8a6 6 0 1 1-6-6c1.68 0 3.29.67 4.49 1.83L14 5.33', 'M14 2v3.33h-3.33'],
   caption: ['M2 2.5h12v7.5H2z', 'M2 13h7'],
@@ -134,13 +148,10 @@ export const STROKED = {
   link: ['M6.6 9.4 9.4 6.6', 'M7.4 4.4 9 2.8a2.7 2.7 0 0 1 3.8 3.8l-1.6 1.6', 'M8.6 11.6 7 13.2a2.7 2.7 0 0 1-3.8-3.8l1.6-1.6'],
   bookmark: ['M4 2.25h8v11.5L8 10.5l-4 3.25z'],
   crossRef: ['M2.5 3.5h6M2.5 6.5h4M2.5 9.5h5', 'M8.5 12.5h5M11 10l2.5 2.5L11 15'],
-  // A cogwheel: rim, hub and eight teeth on the rim. Without the rim the teeth alone
-  // read as a sun.
+  // A cogwheel: six square teeth on one outline, and the hub.
   settings: [
-    'M8 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z',
-    'M8 9.9a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8z',
-    'M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5',
-    'M11.55 4.45 12.6 3.4M3.4 12.6l1.05-1.05M4.45 4.45 3.4 3.4M12.6 12.6l-1.05-1.05',
+    'M6.43 3.68L6.59 1.91A6.25 6.25 0 0 1 9.41 1.91L9.57 3.68A4.6 4.6 0 0 1 10.96 4.48L12.57 3.74A6.25 6.25 0 0 1 13.98 6.17L12.53 7.20A4.6 4.6 0 0 1 12.53 8.80L13.98 9.83A6.25 6.25 0 0 1 12.57 12.26L10.96 11.52A4.6 4.6 0 0 1 9.57 12.32L9.41 14.09A6.25 6.25 0 0 1 6.59 14.09L6.43 12.32A4.6 4.6 0 0 1 5.04 11.52L3.43 12.26A6.25 6.25 0 0 1 2.02 9.83L3.47 8.80A4.6 4.6 0 0 1 3.47 7.20L2.02 6.17A6.25 6.25 0 0 1 3.43 3.74L5.04 4.48A4.6 4.6 0 0 1 6.43 3.68z',
+    'M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
   ],
   // A page with its text and, under the short separator rule, the note at its foot.
   footnote: ['M3 1.75h10v12.5H3z', 'M5.2 4.7h5.6M5.2 7h5.6', 'M5.2 10.5h3', 'M5.2 12.4h5.6'],
@@ -161,10 +172,16 @@ export const STROKED = {
 } as const;
 
 export const FILLED = {
+  themeAllBlack: ['M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z'],
+  themeAuto: ['M12.07 3.93a5.75 5.75 0 0 1-8.14 8.14z'],
   infoDot: ['M8 4.4a.8.8 0 1 0 0 1.6.8.8 0 0 0 0-1.6z'],
   header: ['M5.4 3.8h5.2v1.7H5.4z'],
   footer: ['M5.4 10.5h5.2v1.7H5.4z'],
   wrapFront: ['M5 4.5h6v7H5z'],
+  orderForward: ['M6 6h8v8H6z'],
+  orderBackward: ['M2 2h8v4H6v4H2z'],
+  orderFront: ['M4.5 4.5h7v7h-7z'],
+  orderBack: ['M7.5 4.5h4v4h-3v3h-4v-4h3z'],
 } as const;
 
 // Constant painted stroke rather than proportional scaling: a 1-unit stroke would

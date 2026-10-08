@@ -12,8 +12,9 @@ const ORDERED_DEFAULTS: Record<string, unknown> = {
   fixed: false, key1: '',
   joinPrev: false, // pageBreaks.ts's split marker; the export merges the halves
   marginLeft: 0, marginRight: 0, marginTop: 0, marginBottom: 0, // a table's, once a command has touched them
-  alt: '', inFront: false, paddingCm: 0.15, flipV: false, textVertical: false, textVAlign: 'top', // the editor's own picture and box defaults
+  alt: '', inFront: false, paddingCm: 0.15, flipV: false, flipH: false, textVertical: false, textVAlign: 'top', // the editor's own picture and box defaults
   wrapFromPage: false,
+  cantSplit: false, fixedHeight: false, // tableRow.ts and textBox.ts defaults
   wrapFromBody: false,
   // index attrs the DOCX TOC field has no switch for come back at their defaults
   maxLevel: MAX_HEADING_LEVEL, leader: '.', citationStyle: 'key',
@@ -60,8 +61,23 @@ function canonNoteIds(doc: N): void {
   })(doc);
 }
 
+// A frame's stacking rank compares as its place in the stack: LibreOffice numbers every
+// object afresh on save, ties in document order, which is how the editor breaks them.
+// An inline frame overlaps nothing, and DOCX gives it no rank at all.
+let frameRanks = new WeakMap<object, number>();
+function canonFrameOrder(doc: N): void {
+  const frames: N[] = [];
+  (function walk(n: N) {
+    if ((n.type === 'image' || n.type === 'textBox') && (n.attrs?.wrap ?? 'inline') !== 'inline') frames.push(n);
+    for (const c of n.content ?? []) walk(c);
+  })(doc);
+  const z = (n: N) => Number(n.attrs?.zIndex) || 0;
+  frameRanks = new WeakMap(frames.map((n, i) => ({ n, i })).sort((a, b) => z(a.n) - z(b.n) || a.i - b.i)
+    .map(({ n }, k) => [n, k]));
+}
+
 export function normalize(node: N): N {
-  if (node.type === 'doc') canonNoteIds(node);
+  if (node.type === 'doc') { canonNoteIds(node); canonFrameOrder(node); }
   const out: N = { type: node.type };
   if (node.text != null) out.text = node.text;
   // An inline atom wears the marks of the run around it — a formula's font, a picture's
@@ -91,14 +107,17 @@ export function normalize(node: N): N {
   }
   const attrs: N = {};
   // An auto date/time field re-evaluates on load (the DOCX importer stamps "now"), so
-  // its cached value is presentational; a citation's text label is derived the same way.
+  // its cached value is presentational; a citation's text label is derived the same way,
+  // as a preset box's outline and text area are, from its preset and size.
   const volatileKey = (k: string) =>
     (node.type === 'dateTimeField' && k === 'value' && node.attrs?.fixed !== true)
-    || (node.type === 'bibliographyEntry' && k === 'text');
+    || (node.type === 'bibliographyEntry' && k === 'text')
+    || (node.type === 'textBox' && node.attrs?.shapePreset && (k === 'shapePath' || k === 'shapeTextArea'));
   for (const [k, v] of Object.entries(node.attrs ?? {})) {
     if (v == null) continue;
     if (k in ORDERED_DEFAULTS && ORDERED_DEFAULTS[k] === v) continue;
     if (volatileKey(k)) continue;
+    if (k === 'zIndex') continue;
     if (k === 'colwidth') { attrs.colwidth = 'CW'; continue; } // ratios compared separately
     // The gap beside a frame is drawn on a side wrap only, and zero is no gap at all.
     if (k === 'wrapDist' && !(Number(v) > 0 && (node.attrs?.wrap === 'left' || node.attrs?.wrap === 'right'))) continue;
@@ -108,6 +127,7 @@ export function normalize(node: N): N {
     attrs[k] = v;
   }
   if (node.attrs?.level != null) attrs.level = node.attrs.level;
+  if (frameRanks.get(node)) attrs.zIndex = frameRanks.get(node);
   if (Object.keys(attrs).length) out.attrs = attrs;
   if (node.content?.length) {
     // merge adjacent identical text nodes so run-splitting differences don't matter
@@ -150,6 +170,28 @@ export function unhoist(node: any): any {
     }
   }
   for (const c of node.content ?? []) unhoist(c);
+  return node;
+}
+
+// A .docx box keeps its extent: Word's one growing frame (a:spAutoFit) is drawn detached
+// by LibreOffice, so the export writes a box as tall as it renders and the import reads it
+// back fixed (textBox.ts withRenderedBoxHeights). DOCX legs compare without the flag.
+export function stripBoxGrowth(node: any): any {
+  if (node?.type === 'textBox' && node.attrs?.fixedHeight) {
+    delete node.attrs.fixedHeight;
+    if (!Object.keys(node.attrs).length) delete node.attrs;
+  }
+  for (const c of node?.content ?? []) stripBoxGrowth(c);
+  return node;
+}
+
+// The editor writes Word's 2013 layout, which opens a page a paragraph breaks itself onto
+// without its space above; the import reads that back as a 0. DOCX legs compare without it.
+export function stripBreakSpace(node: any): any {
+  if (node?.attrs?.breakBefore === 'page' && !node.attrs.sectionBreak && 'spaceBefore' in node.attrs) {
+    delete node.attrs.spaceBefore;
+  }
+  for (const c of node?.content ?? []) stripBreakSpace(c);
   return node;
 }
 

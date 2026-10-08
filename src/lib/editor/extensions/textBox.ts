@@ -10,8 +10,9 @@ import type { EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import { placeFromPage, placeInColumn, freeDragX } from './pageBreaks';
-import { HANDLES, MIN_SIZE_PX, clamp, parsePx, frameMargins, pageContentHeightPx, sinkToOffset, applyRunThrough, clearPagePlace, startFreeMove, droppedFrameAttrs, type WrapMode } from './image';
-import { SHAPES, shapePath, linePaths, arrowHeadPx, isShapeKind, isLineKind, type ShapeKind } from '../../utils/shapes';
+import { HANDLES, MIN_SIZE_PX, clamp, parsePx, frameMargins, unstackFloat, pageContentHeightPx, sinkToOffset, applyRunThrough, clearPagePlace, startFreeMove, droppedFrameAttrs, type WrapMode } from './image';
+import { SHAPES, shapePath, linePaths, pathHeadPaths, arrowHeadPx, isShapeKind, isLineKind, outlineLayers, shadeColor, asShapePreset, asTextArea, type PathHeads, type ShapeKind, type DrawingMlPreset, type TextArea } from '../../utils/shapes';
+import type { ResolvedGeometry } from '../../utils/enhancedGeometry';
 import { cmToPx } from '../../storage/pageMargins';
 import { normalizeColor } from '../../utils/color';
 
@@ -56,14 +57,22 @@ export interface TextBoxAttrs {
   wrapFromPage: boolean;      // …or below the top of the page the anchor lands on
   wrapFromBody: boolean;      // …or below the top of that page's body text
   inFront: boolean;           // over the text rather than behind it (run-through only)
+  zIndex: number;             // place among the free frames (restackFrame in image.ts)
   wrapDist: number | null;    // cm of gap to the text beside it
   wrapAlign: string | null;   // 'center'/'right' = set against the middle/far end
   paddingCm: number;          // inset ring around the text (ODF fo:padding)
+  paddingTopCm: number | null;  // its top and bottom where they differ from the sides
+  paddingBottomCm: number | null;  // (Word's tIns/bIns)
   shapeKind: ShapeKind;
   shapePath: string | null;   // a freeform's own outline, in the 0…100 box
+  shapeTextArea: TextArea | null; // where its text goes, same box
+  shapePreset: DrawingMlPreset | null; // a DrawingML preset it stays, shapePath its snapshot
+  arrowHeads: PathHeads | null; // the ends of that outline carrying an arrow head
   flipV: boolean;             // a line runs bottom-left → top-right instead
+  flipH: boolean;             // a line starts at the right, so its head ends on the left
   textVertical: boolean;      // text runs top-to-bottom, right-to-left
   textVAlign: TextVAlign;     // where the text sits in a box taller than it is
+  fixedHeight: boolean;       // exactly `height` tall, clipping what overflows
   fillColor: string | null;
   strokeColor: string | null;
   strokeWidthPt: number;
@@ -171,9 +180,16 @@ export const TextBox = Node.create({
   draggable: true,
   selectable: true,
 
+  // A box is only placed on purpose. ProseMirror's wrap and fit search skips a type with
+  // required attributes; without this it reached a heading through a box (heading → list).
+  onBeforeCreate() {
+    this.editor.schema.nodes.textBox.hasRequiredAttrs = () => true;
+  },
+
   addAttributes() {
     return {
-      // px @96dpi like the image; height is a min-height (content never clips).
+      // px @96dpi like the image; height is a min-height (content grows the box) unless
+      // `fixedHeight` says the box is that tall and clips the rest, as a word processor's is.
       width: {
         default: null,
         parseHTML: el => parsePx((el as HTMLElement).style.width),
@@ -181,7 +197,7 @@ export const TextBox = Node.create({
       },
       height: {
         default: null,
-        parseHTML: el => parsePx((el as HTMLElement).style.minHeight),
+        parseHTML: el => parsePx((el as HTMLElement).style.minHeight || (el as HTMLElement).style.height),
         renderHTML: () => ({}),
       },
       rotation: {
@@ -210,6 +226,12 @@ export const TextBox = Node.create({
       inFront: {
         default: false,
         parseHTML: el => (el as HTMLElement).hasAttribute('data-in-front'),
+        renderHTML: () => ({}),
+      },
+      // Its place among the free frames — as on an image.
+      zIndex: {
+        default: 0,
+        parseHTML: el => parsePx((el as HTMLElement).getAttribute('data-z-index')) ?? 0,
         renderHTML: () => ({}),
       },
       // Whether wrapOffsetY counts from the top of the frame's page — as on an image.
@@ -244,6 +266,16 @@ export const TextBox = Node.create({
         parseHTML: el => parseCmAttr((el as HTMLElement).getAttribute('data-padding')) ?? TEXTBOX_PADDING_CM,
         renderHTML: () => ({}),
       },
+      paddingTopCm: {
+        default: null,
+        parseHTML: el => parseCmAttr((el as HTMLElement).getAttribute('data-padding-top')),
+        renderHTML: () => ({}),
+      },
+      paddingBottomCm: {
+        default: null,
+        parseHTML: el => parseCmAttr((el as HTMLElement).getAttribute('data-padding-bottom')),
+        renderHTML: () => ({}),
+      },
       shapeKind: {
         default: 'textbox',
         parseHTML: el => {
@@ -259,11 +291,41 @@ export const TextBox = Node.create({
         parseHTML: el => (el as HTMLElement).getAttribute('data-shape-path') || null,
         renderHTML: () => ({}),
       },
+      // The text area of that outline: left, top, right, bottom in the same box.
+      shapeTextArea: {
+        default: null,
+        parseHTML: el => asTextArea(((el as HTMLElement).getAttribute('data-shape-text-area') ?? '').split(' ').map(Number)),
+        renderHTML: () => ({}),
+      },
+      // A DrawingML preset the outline came from, redrawn for whatever size the box takes.
+      shapePreset: {
+        default: null,
+        parseHTML: el => {
+          try { return asShapePreset(JSON.parse((el as HTMLElement).getAttribute('data-shape-preset') ?? 'null')); }
+          catch { return null; }
+        },
+        renderHTML: () => ({}),
+      },
+      // Arrow heads on an open outline (a connector's ends): which of them carry one.
+      arrowHeads: {
+        default: null,
+        parseHTML: el => {
+          const v = (el as HTMLElement).getAttribute('data-arrow-heads');
+          return v === 'start' || v === 'end' || v === 'both' ? v : null;
+        },
+        renderHTML: () => ({}),
+      },
       // Which diagonal of the frame a line runs along — the one flag Word's `flipV`
       // and ODF's own endpoints both come down to.
       flipV: {
         default: false,
         parseHTML: el => (el as HTMLElement).getAttribute('data-flip-v') === 'true',
+        renderHTML: () => ({}),
+      },
+      // Which end of that diagonal a line starts at — Word's `flipH`, ODF's endpoint order.
+      flipH: {
+        default: false,
+        parseHTML: el => (el as HTMLElement).getAttribute('data-flip-h') === 'true',
         renderHTML: () => ({}),
       },
       // The text runs top-to-bottom, right-to-left instead of across (Word's
@@ -275,6 +337,11 @@ export const TextBox = Node.create({
       },
       // Where the text sits in a box taller than the text: both formats anchor it
       // top, middle or bottom.
+      fixedHeight: {
+        default: false,
+        parseHTML: el => (el as HTMLElement).hasAttribute('data-fixed-height'),
+        renderHTML: () => ({}),
+      },
       textVAlign: {
         default: 'top' as TextVAlign,
         parseHTML: el => {
@@ -319,7 +386,7 @@ export const TextBox = Node.create({
     const stroke = normalizeColor(a.strokeColor);
     const style = [
       a.width ? `width:${a.width}px` : '',
-      a.height ? `min-height:${a.height}px` : '',
+      a.height ? (a.fixedHeight ? `height:${a.height}px;overflow:hidden` : `min-height:${a.height}px`) : '',
       // A polygon paints itself and a line is only its stroke, so the box behind
       // either of them stays bare.
       fill && !isDrawnShape(a) ? `background:${fill}` : '',
@@ -327,9 +394,9 @@ export const TextBox = Node.create({
         ? `border:${a.strokeWidthPt * PX_PER_PT}px solid ${stroke}` : '',
       a.shapeKind !== 'textbox' ? `border-radius:${shapeRadius(a.shapeKind)}` : '',
       a.rotation ? `transform:rotate(${a.rotation}deg)` : '',
-      `padding:${paddingPx(a.paddingCm).toFixed(2)}px`,
+      `padding:${ringCss(a)}`,
       a.textVAlign !== 'top'
-        ? `display:flex;flex-direction:column;justify-content:${a.textVAlign === 'middle' ? 'center' : 'flex-end'}` : '',
+        ? `display:flex;flex-direction:column;justify-content:${a.textVAlign === 'middle' ? 'safe center' : 'safe flex-end'}` : '',
     ].filter(Boolean).join(';');
     return ['div', mergeAttributes(HTMLAttributes, {
       'data-textbox': '',
@@ -337,17 +404,25 @@ export const TextBox = Node.create({
       ...(a.rotation ? { 'data-rotation': String(a.rotation) } : {}),
       ...(a.wrap !== 'inline' ? { 'data-wrap': a.wrap } : {}),
       ...(a.inFront ? { 'data-in-front': '' } : {}),
+      ...(a.zIndex ? { 'data-z-index': String(a.zIndex) } : {}),
       ...(a.wrapFromPage ? { 'data-wrap-from-page': '' } : {}),
       ...(a.wrapFromBody ? { 'data-wrap-from-body': '' } : {}),
       ...(a.shapeKind !== 'textbox' ? { 'data-shape': a.shapeKind } : {}),
       ...(a.shapePath ? { 'data-shape-path': a.shapePath } : {}),
+      ...(a.shapeTextArea ? { 'data-shape-text-area': a.shapeTextArea.join(' ') } : {}),
+      ...(a.shapePreset ? { 'data-shape-preset': JSON.stringify(a.shapePreset) } : {}),
+      ...(a.arrowHeads ? { 'data-arrow-heads': a.arrowHeads } : {}),
       ...(a.flipV ? { 'data-flip-v': 'true' } : {}),
+      ...(a.flipH ? { 'data-flip-h': 'true' } : {}),
       ...(a.textVertical ? { 'data-text-vertical': 'true' } : {}),
       ...(a.textVAlign !== 'top' ? { 'data-text-valign': a.textVAlign } : {}),
+      ...(a.fixedHeight ? { 'data-fixed-height': '' } : {}),
       ...(fill ? { 'data-fill': fill } : {}),
       ...(stroke ? { 'data-stroke': stroke } : {}),
       ...(a.strokeWidthPt !== 1 ? { 'data-stroke-width': String(a.strokeWidthPt) } : {}),
       ...(a.paddingCm !== TEXTBOX_PADDING_CM ? { 'data-padding': String(a.paddingCm) } : {}),
+      ...(a.paddingTopCm != null ? { 'data-padding-top': String(a.paddingTopCm) } : {}),
+      ...(a.paddingBottomCm != null ? { 'data-padding-bottom': String(a.paddingBottomCm) } : {}),
     }), 0];
   },
 
@@ -401,7 +476,17 @@ export const TextBox = Node.create({
           const found = findTextBox(state);
           if (!found) return false;
           if (dispatch) {
-            dispatch(state.tr.setNodeMarkup(found.pos, undefined, { ...found.node.attrs, ...attrs }));
+            const was = found.node.attrs as TextBoxAttrs;
+            // A box turned into a line leaves the text, in front of it: as LibreOffice
+            // draws a new line, and so that both its ends can be dragged anywhere.
+            const freed = attrs.shapeKind && isLineKind(attrs.shapeKind) && !isLineKind(was.shapeKind)
+              && was.wrap === 'inline' && !attrs.wrap
+              ? { wrap: 'through' as const, ...droppedFrameAttrs('through', true, was.wrap) } : {};
+            const tr = state.tr.setNodeMarkup(found.pos, undefined, { ...was, ...freed, ...attrs });
+            // As in commit(): a selected frame stays selected, its toolbar with it. A line
+            // holds no text, so the caret it had moves out onto the frame.
+            if (state.selection instanceof NodeSelection || isLineKind(attrs.shapeKind ?? was.shapeKind)) tr.setSelection(NodeSelection.create(tr.doc, found.pos));
+            dispatch(tr);
           }
           return true;
         },
@@ -471,13 +556,16 @@ export const TextBox = Node.create({
           clipboardSerializer,
           decorations(state) {
             const { from, to } = state.selection;
+            const selected = state.selection instanceof NodeSelection ? from : -1;
             const decos: Decoration[] = [];
             // A box rides a paragraph's inline content, so the walk has to enter blocks.
             state.doc.descendants((node, pos) => {
               if (node.type.name !== 'textBox') return node.isBlock;
               const end = pos + node.nodeSize;
               const attrs: Record<string, string> = {};
-              if (from >= pos && to <= end) attrs.class = 'textbox-active';
+              // Selected, or the caret inside: a caret just before the box is beside it,
+              // which is where every zone's editor starts out.
+              if (selected === pos || (from > pos && to < end)) attrs.class = 'textbox-active';
               // A frame nobody is editing is an atom to the browser. Left editable it
               // swallows the caret meant for the box's own place in the line — there is
               // no text position beside a box that starts its paragraph — and what is
@@ -503,6 +591,10 @@ const rotorSize = (el: HTMLElement): Size => ({ w: el.offsetWidth, h: el.offsetH
 // frames — 1.4 s on a document holding 450 of them.
 const fitted = new WeakMap<Element, TextBoxView>();
 let fitObserver: ResizeObserver | null = null;
+// The preset table, loaded the first time a box needs it (`resolvePreset`).
+let presetTable: typeof import('../../utils/shapePresets') | null = null;
+let presetsLoading: Promise<void> | null = null;
+const EMU_PER_PX = 9525;
 
 function observeFit(rotor: HTMLElement, view: TextBoxView): void {
   fitted.set(rotor, view);
@@ -536,9 +628,14 @@ class TextBoxView {
   private dragBy: { x: number; y: number } | null = null;
   private dragX = 0;
   // The polygon outline, for a shape CSS cannot draw; null for the three it can.
-  private outline: SVGPathElement | null = null;
+  private outline: SVGSVGElement | null = null;
+  // A preset's outline and text area for the size last drawn (`resolvePreset`).
+  private live: { key: string; geo: ResolvedGeometry } | null = null;
   // The line and its arrow heads, for the kinds that are two endpoints, not a box.
   private lineSvg: SVGSVGElement | null = null;
+  private lineEnds: HTMLElement[] = [];
+  // A line's geometry while one of its ends is dragged, over the node's own attrs.
+  private preview: Partial<TextBoxAttrs> | null = null;
   // Last text-area inset applied; guards the ResizeObserver feedback loop.
   private lastInset = '';
 
@@ -555,7 +652,7 @@ class TextBoxView {
 
     // Padding lives on the rotor, so the inset ring around the text is frame
     // (click-to-select) area rather than content.
-    this.rotor.style.padding = `${paddingPx(this.attrs().paddingCm).toFixed(2)}px`;
+    this.rotor.style.padding = ringCss(this.attrs());
     this.contentDOM = document.createElement('div');
     this.contentDOM.className = 'textbox-content';
     this.rotor.appendChild(this.contentDOM);
@@ -570,6 +667,13 @@ class TextBoxView {
     rot.className = 'image-rotate-handle';
     rot.addEventListener('mousedown', e => this.startRotate(e as MouseEvent));
     this.rotor.appendChild(rot);
+    // A line is grabbed by its two ends instead (CSS shows one set or the other).
+    this.lineEnds = (['start', 'end'] as const).map(end => {
+      const h = document.createElement('span');
+      h.className = 'image-resize-handle textbox-line-end';
+      h.addEventListener('mousedown', e => this.startEndpoint(e as MouseEvent, end));
+      return this.rotor.appendChild(h);
+    });
 
     this.dom.appendChild(this.rotor);
 
@@ -590,7 +694,7 @@ class TextBoxView {
   }
 
   private attrs(): TextBoxAttrs {
-    return this.node.attrs as TextBoxAttrs;
+    return (this.preview ? { ...this.node.attrs, ...this.preview } : this.node.attrs) as TextBoxAttrs;
   }
 
   // The frame's offsets, carrying a running free drag (see ImageView).
@@ -605,17 +709,30 @@ class TextBoxView {
     return a.wrap !== 'inline' && (a.wrapFromBody || a.wrapFromPage) && !!mount?.closest?.('.hf-zone');
   }
 
+  // A fixed box is exactly that tall and clips its overflow; any other grows with its text.
+  private applyHeight(h: number | null): void {
+    const fixed = this.attrs().fixedHeight && h != null;
+    this.rotor.style.minHeight = !fixed && h ? `${h}px` : '';
+    this.rotor.style.height = fixed ? `${h}px` : '';
+    // The content clips, not the rotor: the resize handles sit on the rotor's edge.
+    // Its edge is the inset's, where LibreOffice cuts the text too (probed).
+    this.contentDOM.style.maxHeight = fixed ? '100%' : '';
+    this.contentDOM.style.overflow = fixed ? 'clip' : '';
+  }
+
   private applyAll(): void {
     const a = this.attrs();
-    this.rotor.style.width = a.width ? `${a.width}px` : `${DEFAULT_WIDTH_PX}px`;
-    this.rotor.style.minHeight = a.height ? `${a.height}px` : '';
     // A polygon shape paints its own fill and stroke, so the box behind it stays bare;
     // a line has no box at all, only the two endpoints it is drawn between.
     const poly = !!SHAPES[a.shapeKind]?.points || !!a.shapePath;
     const line = isLineKind(a.shapeKind);
+    // A vertical line is a frame of no width, as a horizontal one is of no height.
+    this.rotor.style.width = `${line ? a.width ?? DEFAULT_WIDTH_PX : a.width || DEFAULT_WIDTH_PX}px`;
+    this.applyHeight(a.height);
+    this.dom.classList.toggle('textbox-is-line', line);
     // The outline covers the padding box, so the frame's own ring moves to the text
     // where a polygon draws it — applyShapeInset adds it back in.
-    this.rotor.style.padding = poly || line ? '0' : `${paddingPx(a.paddingCm).toFixed(2)}px`;
+    this.rotor.style.padding = poly || line ? '0' : ringCss(a);
     const fill = normalizeColor(a.fillColor);
     const strokeColor = normalizeColor(a.strokeColor);
     this.rotor.style.background = !poly && !line && fill ? fill : 'transparent';
@@ -632,7 +749,9 @@ class TextBoxView {
     // Vertical anchor: the handles are absolute, so the rotor can flex its one child.
     this.rotor.style.display = a.textVAlign === 'top' ? '' : 'flex';
     this.rotor.style.flexDirection = 'column';
-    this.rotor.style.justifyContent = a.textVAlign === 'middle' ? 'center' : a.textVAlign === 'bottom' ? 'flex-end' : '';
+    // `safe`: text taller than a fixed box overflows from its top, as LibreOffice sets it.
+    this.rotor.style.justifyContent = a.textVAlign === 'middle' ? 'safe center' : a.textVAlign === 'bottom' ? 'safe flex-end' : '';
+    this.resolvePreset();
     this.applyOutline();
     this.applyLine();
     this.applyWrap();
@@ -649,7 +768,11 @@ class TextBoxView {
     const w = a.width ?? DEFAULT_WIDTH_PX;
     const h = a.height ?? DEFAULT_LINE_HEIGHT_PX;
     const stroke = a.strokeWidthPt * PX_PER_PT;
-    const paths = linePaths(a.shapeKind, w, h, a.flipV, arrowHeadPx(a.strokeWidthPt));
+    const headLen = arrowHeadPx(a.strokeWidthPt);
+    // An outline's heads ride the same real-pixel layer, over the stretched outline.
+    const paths = linePaths(a.shapeKind, w, h, a.flipV, headLen, a.flipH)
+      ?? (a.shapePath && a.arrowHeads && a.strokeColor
+        ? { line: '', heads: pathHeadPaths(this.live?.geo.path || a.shapePath, w, h, a.arrowHeads, headLen) } : null);
     if (!paths) {
       this.lineSvg?.remove();
       this.lineSvg = null;
@@ -665,17 +788,35 @@ class TextBoxView {
     // SVG a zero-high viewport, and that turns rendering off entirely — the stroke needs
     // one of its own, which it then overflows by half as it does in any flat frame.
     const vh = Math.max(h, stroke);
-    this.lineSvg.setAttribute('viewBox', `0 0 ${w} ${vh}`);
-    this.lineSvg.setAttribute('width', `${w}`);
+    const vw = Math.max(w, stroke);
+    this.lineSvg.setAttribute('viewBox', `0 0 ${vw} ${vh}`);
+    this.lineSvg.setAttribute('width', `${vw}`);
     this.lineSvg.setAttribute('height', `${vh}`);
     this.lineSvg.style.height = `${vh}px`;
+    if (isLineKind(a.shapeKind)) {
+      const [x1, y1] = [a.flipH ? w : 0, a.flipV ? h : 0];
+      [[x1, y1], [w - x1, h - y1]].forEach(([x, y], i) => {
+        this.lineEnds[i].style.left = `${x - 5}px`;
+        this.lineEnds[i].style.top = `${y - 5}px`;
+      });
+    }
     this.lineSvg.replaceChildren();
-    const line = document.createElementNS(SVG_NS, 'path');
-    line.setAttribute('d', paths.line);
-    line.setAttribute('fill', 'none');
-    line.setAttribute('stroke', color);
-    line.setAttribute('stroke-width', String(stroke));
-    this.lineSvg.appendChild(line);
+    if (paths.line && isLineKind(a.shapeKind)) {
+      // Wide enough to grab a hairline, and the one thing a line is hit on.
+      const hit = document.createElementNS(SVG_NS, 'path');
+      hit.setAttribute('d', paths.line);
+      hit.setAttribute('stroke', 'transparent');
+      hit.setAttribute('stroke-width', String(Math.max(stroke, 10)));
+      this.lineSvg.appendChild(hit);
+    }
+    if (paths.line) {
+      const line = document.createElementNS(SVG_NS, 'path');
+      line.setAttribute('d', paths.line);
+      line.setAttribute('fill', 'none');
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', String(stroke));
+      this.lineSvg.appendChild(line);
+    }
     for (const d of paths.heads) {
       const head = document.createElementNS(SVG_NS, 'path');
       head.setAttribute('d', d);
@@ -689,28 +830,62 @@ class TextBoxView {
   // width under that distortion.
   private applyOutline(): void {
     const a = this.attrs();
-    const d = shapePath(a.shapeKind, a.shapePath);
+    const d = this.live?.geo.path || shapePath(a.shapeKind, a.shapePath);
+    this.dom.classList.toggle('textbox-outlined', !!d);
     if (!d) {
-      this.outline?.parentElement?.remove();
+      this.outline?.remove();
       this.outline = null;
       return;
     }
     if (!this.outline) {
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'textbox-outline');
-      svg.setAttribute('viewBox', '0 0 100 100');
-      svg.setAttribute('preserveAspectRatio', 'none');
-      this.outline = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      this.outline.setAttribute('vector-effect', 'non-scaling-stroke');
-      svg.appendChild(this.outline);
-      this.rotor.insertBefore(svg, this.rotor.firstChild);
+      this.outline = document.createElementNS(SVG_NS, 'svg');
+      this.outline.setAttribute('class', 'textbox-outline');
+      this.outline.setAttribute('viewBox', '0 0 100 100');
+      this.outline.setAttribute('preserveAspectRatio', 'none');
+      this.rotor.insertBefore(this.outline, this.rotor.firstChild);
     }
-    this.outline.setAttribute('d', d);
-    // An outline that never closes is stroked only, whatever fill its style declares —
-    // which is how both products draw a polyline.
-    this.outline.setAttribute('fill', d.trimEnd().endsWith('Z') ? normalizeColor(a.fillColor) ?? 'none' : 'none');
-    this.outline.setAttribute('stroke', normalizeColor(a.strokeColor) ?? 'none');
-    this.outline.setAttribute('stroke-width', String(a.strokeWidthPt * PX_PER_PT));
+    // Faces filled only, shaded or stroked only (`outlineLayers`) each take a path: the
+    // fills in drawing order, then the lines over them.
+    const { fills, stroke: lines } = outlineLayers(d);
+    const fill = normalizeColor(a.fillColor);
+    const stroke = normalizeColor(a.strokeColor) ?? 'none';
+    // An outline none of whose parts closes is stroked only, whatever fill its style
+    // declares — which is how both products draw a polyline.
+    const layers = fills.map((f) => ({ d: f.d, fill: fill && f.d.includes('Z') ? shadeColor(fill, f.shade) : 'none', stroke: 'none' }));
+    if (layers.length === 1 && fills[0].d === lines) layers[0].stroke = stroke;
+    else layers.push({ d: lines, fill: 'none', stroke });
+    const paths = Array.from(this.outline.children) as SVGPathElement[];
+    layers.forEach((l, i) => {
+      const p = paths[i] ?? this.outline!.appendChild(document.createElementNS(SVG_NS, 'path'));
+      p.setAttribute('vector-effect', 'non-scaling-stroke');
+      p.setAttribute('d', l.d);
+      p.setAttribute('fill', l.fill);
+      p.setAttribute('stroke', l.stroke);
+      p.setAttribute('stroke-width', String(a.strokeWidthPt * PX_PER_PT));
+    });
+    paths.slice(layers.length).forEach((p) => p.remove());
+  }
+
+  // A preset is redrawn from its formulas at the size the box renders at, so a corner
+  // or a depth keeps its measure however the box is stretched. The table loads once;
+  // until then the snapshot in `shapePath` draws.
+  private resolvePreset(size?: Size): void {
+    const preset = this.attrs().shapePreset;
+    if (!preset) { this.live = null; return; }
+    if (!presetTable) {
+      presetsLoading ??= import('../../utils/shapePresets').then((m) => { presetTable = m; });
+      presetsLoading.then(() => { if (this.attrs().shapePreset) this.applyAll(); }, () => {});
+      return;
+    }
+    const a = this.attrs();
+    const { w, h } = size ?? { w: a.width ?? DEFAULT_WIDTH_PX, h: a.height ?? DEFAULT_HEIGHT_PX };
+    if (!w || !h) return;
+    const key = `${JSON.stringify(preset)} ${Math.round(w)} ${Math.round(h)}`;
+    if (this.live?.key === key) return;
+    const geo = presetTable.presetGeometry(preset, w * EMU_PER_PX, h * EMU_PER_PX);
+    this.live = geo.path ? { key, geo } : null;
+    this.applyOutline();
+    this.applyLine();
   }
 
   // Pad the content into the shape's own text area — the ellipse's inscribed rectangle,
@@ -719,7 +894,7 @@ class TextBoxView {
   // ResizeObserver then settles (every ratio below 0.5 converges).
   private applyShapeInset(size?: Size): void {
     const kind = this.attrs().shapeKind;
-    const area = SHAPES[kind]?.textArea;
+    const area = SHAPES[kind]?.textArea ?? (this.live ? this.live.geo.textArea : this.attrs().shapeTextArea);
     if (kind !== 'ellipse' && !area) {
       if (this.contentDOM.style.padding) this.contentDOM.style.padding = '';
       this.lastInset = '';
@@ -756,8 +931,11 @@ class TextBoxView {
   // reserves the right space (same math as ImageView.applyLayout).
   private fitWrapper(size?: Size): void {
     const { w, h } = size ?? rotorSize(this.rotor);
-    if (!w || !h) return;
-    const rad = (this.attrs().rotation * Math.PI) / 180;
+    // A straight line may be flat either way; only the detached frame has neither.
+    if (isLineKind(this.attrs().shapeKind) ? !w && !h : !w || !h) return;
+    // Out of the flow nothing is reserved and the offsets place the unrotated box, as
+    // both formats do, so it turns about a centre that stays put.
+    const rad = this.attrs().wrap === 'through' || this.pastZone() ? 0 : (this.attrs().rotation * Math.PI) / 180;
     const bw = Math.abs(w * Math.cos(rad)) + Math.abs(h * Math.sin(rad));
     const bh = Math.abs(w * Math.sin(rad)) + Math.abs(h * Math.cos(rad));
     // A band-wrapped frame spans the column instead (applyWrap), which is what keeps
@@ -786,16 +964,16 @@ class TextBoxView {
     this.rotor.style.left = '';
     clearPagePlace(d);
     if (a.wrap !== 'through' && this.pastZone()) {
-      applyRunThrough(d, this.offX(), this.offY(), true, a.wrapFromPage, a.wrapFromBody);
+      applyRunThrough(d, this.offX(), this.offY(), true, a.wrapFromPage, a.wrapFromBody, a.zIndex);
     } else if (a.wrap === 'left' || a.wrap === 'right') {
       d.style.float = a.wrap;
       d.style.margin = frameMargins(a.wrap, a.wrapOffset, this.wrapperWidth(), null, a.wrapDist);
+      unstackFloat(d, a.wrap, a.wrapOffset);
     } else if (a.wrap === 'through') {
       // Behind the text, which is what a shape with no run-through of its own exports as
       // — and under a picture behind the text too (-1), which is the order LibreOffice
       // paints a cover page in; a box the file puts in front of the text sits above both.
-      applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true, a.wrapFromBody === true);
-      if (a.inFront !== true) d.style.zIndex = '-2';
+      applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true, a.wrapFromBody === true, a.zIndex);
       // Deferred: the frame has to be laid out before its own page can be read. Its
       // column only needs it in the document, so one already there lands at once.
       if (!a.wrapFromPage && !a.wrapFromBody && d.isConnected) placeInColumn(this.editor.view, d);
@@ -842,9 +1020,12 @@ class TextBoxView {
   }
 
   // Frame hit test: the border plus a few px of the inner padding ring
-  // select the box; anywhere further inside is text area. Rotation-aware (the point
+  // select the box; anywhere further inside is text area. An outline is hit where CSS
+  // lets it be: on the shape but off its text. Rotation-aware (the point
   // is un-rotated into the rotor's own axes) and zoom-aware.
   private isFrameHit(e: MouseEvent): boolean {
+    if (this.outline) return this.outline.contains(e.target as globalThis.Node);
+    if (isLineKind(this.attrs().shapeKind)) return !!this.lineSvg?.contains(e.target as globalThis.Node);
     const r = this.rotor.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
@@ -888,9 +1069,10 @@ class TextBoxView {
         startFreeMove(e, this.dom, { ...this.node.attrs, wrapOffset: this.dragX }, by => { this.dragBy = by; this.applyWrap(); },
           offsets => { if (offsets) this.commit(offsets); });
       }
-    } else if (!this.editing(view.state)) {
+    } else if (!this.editing(view.state) || !e.isTrusted) {
       // Body click on a box nobody is editing: the frame is not editable yet, so the
-      // browser places no caret in it. Do it ourselves at the click point.
+      // browser places no caret in it. Do it ourselves at the click point — also for a
+      // click handed on to a box behind the text, which the browser never saw.
       e.preventDefault();
       const from = pos + 1, to = pos + this.node.nodeSize - 1;
       const hit = view.posAtCoords({ left: e.clientX, top: e.clientY })?.pos;
@@ -909,7 +1091,11 @@ class TextBoxView {
   private commit(attrs: Partial<TextBoxAttrs>): void {
     const pos = this.getPos();
     if (typeof pos !== 'number') return;
-    this.editor.view.dispatch(this.editor.state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, ...attrs }));
+    const { state } = this.editor;
+    const tr = state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, ...attrs });
+    // Replacing the node's markup maps a selection of it to a caret; the frame stays selected.
+    if (state.selection instanceof NodeSelection && state.selection.from === pos) tr.setSelection(NodeSelection.create(tr.doc, pos));
+    this.editor.view.dispatch(tr);
   }
 
   // Largest width the box may take: the page text column.
@@ -965,7 +1151,7 @@ class TextBoxView {
       }
       moved = true;
       this.rotor.style.width = `${lastW}px`;
-      this.rotor.style.minHeight = `${lastH}px`;
+      this.applyHeight(lastH);
       this.applyShapeInset();
       this.fitWrapper();
       this.showBadge(lastW, lastH);
@@ -1006,6 +1192,75 @@ class TextBoxView {
       win.removeEventListener('mousemove', move);
       win.removeEventListener('mouseup', finish);
       if (moved) this.commit({ rotation: lastDeg });
+    };
+    win.addEventListener('mousemove', move);
+    win.addEventListener('mouseup', finish);
+  }
+
+  // Drag one end of a line while the other stays put, as both word processors do. The
+  // frame is the two ends' bounding box and the flips say which corner starts; a rotated
+  // line's ends are rotated into it. Out of the flow the box's corner moves with them.
+  private startEndpoint(event: MouseEvent, end: 'start' | 'end'): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!this.editor.isEditable) return;
+    const a = this.attrs();
+    const w = a.width ?? DEFAULT_WIDTH_PX;
+    const h = a.height ?? DEFAULT_LINE_HEIGHT_PX;
+    const th = (a.rotation * Math.PI) / 180;
+    const turn = ([x, y]: number[]) => [
+      w / 2 + (x - w / 2) * Math.cos(th) - (y - h / 2) * Math.sin(th),
+      h / 2 + (x - w / 2) * Math.sin(th) + (y - h / 2) * Math.cos(th),
+    ];
+    const p0 = [a.flipH ? w : 0, a.flipV ? h : 0];
+    const ends = [turn(p0), turn([w - p0[0], h - p0[1]])];
+    const [moving, fixed] = end === 'start' ? [ends[0], ends[1]] : [ends[1], ends[0]];
+    const free = a.wrap === 'through' || this.pastZone();
+    const view = this.editor.view;
+    if (free) this.dragX = freeDragX(view, this.dom, a.wrapOffset);
+    const zoom = this.dom.getBoundingClientRect().width / this.dom.offsetWidth || 1;
+    const cm = (px: number) => Math.round((px * 2.54 * 1000) / 96) / 1000;
+    const sx = event.clientX;
+    const sy = event.clientY;
+    const win = this.dom.ownerDocument.defaultView ?? window;
+    let geo: Partial<TextBoxAttrs> | null = null;
+    let by = { x: 0, y: 0 };
+    this.resizing = true;
+
+    const move = (e: MouseEvent): void => {
+      if (!e.buttons) { finish(); return; }
+      let dx = moving[0] + (e.clientX - sx) / zoom - fixed[0];
+      let dy = moving[1] + (e.clientY - sy) / zoom - fixed[1];
+      if (e.shiftKey) {
+        const len = Math.hypot(dx, dy);
+        const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+        dx = len * Math.cos(ang);
+        dy = len * Math.sin(ang);
+      }
+      const p = [fixed[0] + dx, fixed[1] + dy];
+      const [s, t] = end === 'start' ? [p, fixed] : [fixed, p];
+      const nw = Math.round(Math.abs(t[0] - s[0]));
+      const nh = Math.round(Math.abs(t[1] - s[1]));
+      if (!nw && !nh) return;
+      geo = { width: nw, height: nh, flipH: s[0] > t[0], flipV: s[1] > t[1], rotation: 0 };
+      by = { x: cm(Math.min(s[0], t[0])), y: cm(Math.min(s[1], t[1])) };
+      this.preview = geo;
+      if (free) this.dragBy = by;
+      this.applyAll();
+      this.showBadge(nw, nh);
+    };
+    const finish = (): void => {
+      win.removeEventListener('mousemove', move);
+      win.removeEventListener('mouseup', finish);
+      this.badge.style.display = 'none';
+      this.resizing = false;
+      this.preview = null;
+      this.dragBy = null;
+      if (!geo) return;
+      const y = a.wrapOffsetY;
+      this.commit(free
+        ? { ...geo, wrapOffset: this.dragX + by.x, wrapOffsetY: (typeof y === 'number' ? y : 0) + by.y }
+        : geo);
     };
     win.addEventListener('mousemove', move);
     win.addEventListener('mouseup', finish);
@@ -1054,6 +1309,7 @@ class TextBoxView {
   // What the shared observer reports, so nothing here reads the rotor back: one
   // frame's write between two reads is a forced layout per frame in the document.
   refit(size: Size): void {
+    this.resolvePreset(size);
     this.applyShapeInset(size);
     this.fitWrapper(size);
     // A right float's margin is computed from the wrapper width just set.
@@ -1076,6 +1332,27 @@ export type TextBoxDebugEntry = {
 
 // Every textBox node's attrs plus its live rendered fill/stroke, for the dev Debug
 // dump. Reads the .textbox-rotor's computed style via the view's DOM lookup.
+// The inset ring as CSS: its top and bottom where the file gives them apart.
+function ringCss(a: TextBoxAttrs): string {
+  const px = (cm: number | null) => `${paddingPx(cm ?? a.paddingCm).toFixed(2)}px`;
+  return `${px(a.paddingTopCm)} ${px(null)} ${px(a.paddingBottomCm)}`;
+}
+
+// The document with every growing box as tall as it renders. A .docx box keeps its extent
+// in Word and LibreOffice alike (a:spAutoFit makes LibreOffice draw the text detached,
+// probed), so the file has to carry the height the text has grown it to.
+export function withRenderedBoxHeights(view: EditorView): ReturnType<PMNode['toJSON']> {
+  const tr = view.state.tr;
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'textBox') return true;
+    const rotor = (view.nodeDOM(pos) as HTMLElement | null)?.querySelector?.<HTMLElement>('.textbox-rotor');
+    const h = rotor?.offsetHeight ?? 0;
+    if (!node.attrs.fixedHeight && h > (node.attrs.height ?? 0) + 0.5) tr.setNodeAttribute(pos, 'height', h);
+    return false;
+  });
+  return tr.doc.toJSON();
+}
+
 export function getTextBoxDebug(view: EditorView): TextBoxDebugEntry[] {
   const out: TextBoxDebugEntry[] = [];
   view.state.doc.descendants((node, pos) => {

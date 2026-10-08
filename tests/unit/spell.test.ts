@@ -140,6 +140,31 @@ describe('Russian spell-check (hunspell-asm)', () => {
   });
 });
 
+describe('Ukrainian spell-check (hunspell-asm)', () => {
+  let uk: Hunspell;
+  beforeAll(async () => {
+    uk = await makeChecker('uk');
+  });
+
+  // The word list writes the apostrophe as ', the .aff maps ’ and ʼ onto it (ICONV).
+  it('accepts ґ, є, ї and every apostrophe form', () => {
+    for (const w of ['ґанок', 'Київ', 'єдність', "м'ясо", 'м’ясо', 'мʼясо']) {
+      expect(uk.spell(w), w).toBe(true);
+    }
+  });
+
+  it('accepts inflected forms', () => {
+    for (const w of ['книжками', 'програми', 'зробленого']) {
+      expect(uk.spell(w), w).toBe(true);
+    }
+  });
+
+  it('flags a genuine misspelling and suggests the correction', () => {
+    expect(uk.spell('компютер')).toBe(false);
+    expect(uk.suggest('компютер')).toContain("комп'ютер");
+  });
+});
+
 describe('British spell-check (hunspell-asm)', () => {
   let gb: Hunspell;
   beforeAll(async () => {

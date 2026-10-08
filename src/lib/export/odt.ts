@@ -34,13 +34,14 @@ import { TEXTBOX_PADDING_CM, type TextVAlign } from '../editor/extensions/textBo
 import { cropOf, type Crop } from '../editor/extensions/image';
 import { imageSizeCm } from '../import/imageFormats';
 import { numberLocale, parseCellNumber, toWriterFormula, type CellRef, type NumberLocale } from '../utils/tableFormula';
-import { SHAPES, arrowHeadCm, isShapeKind, isLineKind, odfEnhancedGeometry, odfEnhancedPath, type ShapeKind } from '../utils/shapes';
+import { presetOdfGeometry } from '../utils/shapePresets';
+import { SHAPES, arrowHeadCm, boxHeads, isShapeKind, isLineKind, odfEnhancedGeometry, odfEnhancedPath, asShapePreset, asTextArea, type PathHeads, type ShapeKind, type DrawingMlPreset, type TextArea } from '../utils/shapes';
 import { normalizeLeader, parseTabStops } from '../editor/extensions/tabStops';
 import { charStyleProps, listMarkerFormat, type MarkerFormat } from '../editor/extensions/listMarker';
-import { orderedTypeDef, effectiveOrderedDef, effectiveOrderedDefAt, childCycle, formatOrdinal, ROOT_ORDERED_CYCLE, type OrderedCycle } from '../utils/orderedListTypes';
+import { orderedTypeDef, effectiveOrderedDef, odfNumFormatAttrs, effectiveOrderedDefAt, childCycle, formatOrdinal, ROOT_ORDERED_CYCLE, type OrderedCycle } from '../utils/orderedListTypes';
 import { ODF_SEQ_NAME, seqCategoryOf, type SeqCategory } from '../editor/extensions/caption';
 import { isCrossRefFormat, isCrossRefKind, type CrossRefFormat, type CrossRefKind } from '../editor/extensions/crossReference';
-import { indexKindOf, INDEX_TITLES, type IndexKind } from '../editor/extensions/tableOfContents';
+import { indexKindOf, INDEX_TITLES, INDEX_COLUMN_GAP_CM, type IndexKind } from '../editor/extensions/tableOfContents';
 import { citationText, isBibType } from '../editor/extensions/bibliographyEntry';
 import { isCitationStyle, rowTemplate, type CitationStyle } from '../utils/citationStyle';
 import { DEFAULT_BULLET_CYCLE, defaultBulletChar } from '../utils/bulletListTypes';
@@ -428,14 +429,15 @@ function replacePageBreaks(doc: TiptapNode): TiptapNode {
 }
 
 // odf-kit writes a list item's first paragraph and nothing else, so the item's further
-// blocks ride it SEG-separated; applyListItemBlocks re-emits them as their own.
+// blocks ride it SEG-separated, and an opening heading rides as that paragraph;
+// applyListItemBlocks re-emits them as their own.
 function mergeListItemBlocks(node: TiptapNode): TiptapNode {
   if (!node.content?.length) return node;
   const kids = node.content;
-  if (node.type === 'listItem' && kids[0]?.type === 'paragraph') {
+  if (node.type === 'listItem' && (kids[0]?.type === 'paragraph' || kids[0]?.type === 'heading')) {
     const extras = kids.slice(1).filter(b => b.type === 'paragraph' || b.type === 'heading');
-    if (extras.length) {
-      const first = { ...kids[0], content: [...(kids[0].content ?? []),
+    if (extras.length || kids[0].type === 'heading') {
+      const first = { ...kids[0], type: 'paragraph', content: [...(kids[0].content ?? []),
         ...extras.flatMap(e => [{ type: 'text', text: SEG }, ...(e.content ?? [])])] };
       const rest = kids.slice(1).filter(b => b.type !== 'paragraph' && b.type !== 'heading');
       return { ...node, content: [first, ...rest.map(mergeListItemBlocks)] };
@@ -470,7 +472,7 @@ function replaceSectionBreaks(doc: TiptapNode): TiptapNode {
 // bytes is ArrayBuffer-backed to match fflate's zip entry map. rotationDeg is CW;
 // wrap floats the frame at its anchor paragraph (left/right/top-bottom/run-through).
 type WrapMode = 'inline' | 'left' | 'right' | 'topBottom' | 'through';
-type ImageExport = { path: string; bytes: Uint8Array<ArrayBuffer>; mimeType: string; widthCm: number; heightCm: number; alt: string; rotationDeg: number; wrap: WrapMode; wrapOffsetCm: number | null; wrapOffsetYCm: number | null; wrapDistCm: number | null; wrapAlign: string | null; anchorPage: number | null; vAlign: string | null; inFront: boolean; wrapFromPage: boolean; wrapFromBody: boolean; clip: string | null };
+type ImageExport = { path: string; bytes: Uint8Array<ArrayBuffer>; mimeType: string; widthCm: number; heightCm: number; alt: string; rotationDeg: number; wrap: WrapMode; wrapOffsetCm: number | null; wrapOffsetYCm: number | null; wrapDistCm: number | null; wrapAlign: string | null; anchorPage: number | null; vAlign: string | null; inFront: boolean; zIndex: number; wrapFromPage: boolean; wrapFromBody: boolean; clip: string | null };
 
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64);
@@ -482,6 +484,9 @@ function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 // Decode an `image` node's data-URI src into bytes + geometry. width/height are
 // px @96dpi → cm via round3 (sub-pixel, matches table column widths), so an
 // integer-px image round-trips exactly. Returns null for a non-data/empty src.
+// A frame's place in the stack, written as it stands: its rank reads back as itself.
+export const frameRank = (v: unknown): number => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : 0);
+
 function imageDescriptor(node: TiptapNode, index: number, namePrefix = 'image'): ImageExport | null {
   const src = node.attrs?.src;
   if (typeof src !== 'string' || !src.startsWith('data:')) return null;
@@ -520,6 +525,7 @@ function imageDescriptor(node: TiptapNode, index: number, namePrefix = 'image'):
     wrapFromBody: node.attrs?.wrapFromBody === true,
     vAlign: typeof node.attrs?.vAlign === 'string' ? node.attrs.vAlign : null,
     inFront: node.attrs?.inFront === true,
+    zIndex: frameRank(node.attrs?.zIndex),
     clip: foClip(cropOf(node.attrs?.crop), bytes),
   };
 }
@@ -1028,6 +1034,7 @@ function replaceBookmarks(node: TiptapNode, refs: CrossRefExport[]): TiptapNode 
 type TextBoxExport = {
   widthCm: number;
   heightCm: number;
+  fixedHeight: boolean;
   rotationDeg: number;
   wrap: WrapMode;
   wrapOffsetCm: number | null;
@@ -1037,10 +1044,17 @@ type TextBoxExport = {
   wrapFromPage: boolean;
   wrapFromBody: boolean;
   inFront: boolean;
+  zIndex: number;
   paddingCm: number;
+  paddingTopCm: number | null;
+  paddingBottomCm: number | null;
   shapeKind: ShapeKind;
   shapePath: string | null;
+  shapeTextArea: TextArea | null;
+  shapePreset: DrawingMlPreset | null;
+  arrowHeads: PathHeads | null;
   flipV: boolean;
+  flipH: boolean;
   textVertical: boolean;
   textVAlign: TextVAlign;
   fill: string | null;
@@ -1059,6 +1073,7 @@ function textBoxDescriptor(node: TiptapNode): TextBoxExport {
   return {
     widthCm: pxToCm(typeof a.width === 'number' && a.width > 0 ? a.width : 280),
     heightCm: pxToCm(typeof a.height === 'number' && a.height > 0 ? a.height : line ? 0 : 96),
+    fixedHeight: a.fixedHeight === true,
     rotationDeg: typeof a.rotation === 'number' ? a.rotation : 0,
     wrap: wrapAttr === 'left' || wrapAttr === 'right' || wrapAttr === 'topBottom' || wrapAttr === 'through' ? wrapAttr : 'inline',
     wrapOffsetCm: typeof a.wrapOffset === 'number' ? round3(a.wrapOffset) : null,
@@ -1068,10 +1083,17 @@ function textBoxDescriptor(node: TiptapNode): TextBoxExport {
     wrapFromPage: a.wrapFromPage === true,
     wrapFromBody: a.wrapFromBody === true,
     inFront: a.inFront === true,
+    zIndex: frameRank(a.zIndex),
     paddingCm: typeof a.paddingCm === 'number' ? round3(a.paddingCm) : TEXTBOX_PADDING_CM,
+    paddingTopCm: typeof a.paddingTopCm === 'number' ? round3(a.paddingTopCm) : null,
+    paddingBottomCm: typeof a.paddingBottomCm === 'number' ? round3(a.paddingBottomCm) : null,
     shapeKind: isShapeKind(a.shapeKind) ? a.shapeKind : 'textbox',
     shapePath: typeof a.shapePath === 'string' && a.shapePath ? a.shapePath : null,
+    shapeTextArea: asTextArea(a.shapeTextArea),
+    shapePreset: typeof a.shapePath === 'string' && a.shapePath ? asShapePreset(a.shapePreset) : null,
+    arrowHeads: a.arrowHeads === 'start' || a.arrowHeads === 'end' || a.arrowHeads === 'both' ? a.arrowHeads : null,
     flipV: a.flipV === true,
+    flipH: a.flipH === true,
     textVertical: a.textVertical === true,
     textVAlign: a.textVAlign === 'middle' || a.textVAlign === 'bottom' ? a.textVAlign : 'top',
     fill: typeof a.fillColor === 'string' && a.fillColor ? a.fillColor : null,
@@ -1244,7 +1266,7 @@ function replaceColumns(doc: TiptapNode, cols: ColumnsExport[]): TiptapNode {
 // One generated table of contents, collected by replaceTableOfContents and emitted by
 // applyToc. Entries are the cached heading→page rows (the node view keeps them current).
 type TocEntry = { text: string; level: number; page: number; pages?: number[] };
-type TocExport = { kind: IndexKind; entries: TocEntry[]; title: string | null; maxLevel: number; leader: string | null; tabPosCm: number | null; pageNumbers: boolean; levelStyles: (string | null)[] | null; citationStyle: CitationStyle };
+type TocExport = { kind: IndexKind; entries: TocEntry[]; title: string | null; maxLevel: number; leader: string | null; tabPosCm: number | null; pageNumbers: boolean; levelStyles: (string | null)[] | null; citationStyle: CitationStyle; columns: ColumnsExport | null };
 
 // Swap each top-level tableOfContents node for a marker paragraph carrying the TOC
 // sentinel and collect its cached entries. Top-level only (like replacePageBreaks): a
@@ -1262,7 +1284,8 @@ function replaceTableOfContents(doc: TiptapNode, tocs: TocExport[]): TiptapNode 
           level: Math.min(MAX_HEADING_LEVEL, Math.max(1, Number(e.level) || 1)),
           page: Math.max(1, Number(e.page) || 1),
           // An alphabetical row lists every page its term appears on.
-          ...(Array.isArray(e.pages) && e.pages.length ? { pages: e.pages.map((n: unknown) => Math.max(1, Number(n) || 1)) } : {}),
+          // An empty list is a term heading its subentries, with no page of its own.
+          ...(Array.isArray(e.pages) ? { pages: e.pages.map((n: unknown) => Math.max(1, Number(n) || 1)) } : {}),
         }));
       const rawTitle = child.attrs?.title;
       const depth = Number(child.attrs?.maxLevel);
@@ -1278,6 +1301,9 @@ function replaceTableOfContents(doc: TiptapNode, tocs: TocExport[]): TiptapNode 
         pageNumbers: child.attrs?.pageNumbers !== false,
         levelStyles: Array.isArray(child.attrs?.levelStyles) ? (child.attrs!.levelStyles as (string | null)[]) : null,
         citationStyle: isCitationStyle(child.attrs?.citationStyle) ? child.attrs!.citationStyle : 'key',
+        columns: Number(child.attrs?.columns) > 1
+          ? { count: Math.min(3, Number(child.attrs!.columns)), gapCm: Number(child.attrs?.columnGapCm) || INDEX_COLUMN_GAP_CM }
+          : null,
       });
       // The flow attrs ride the marker paragraph so replacePageBreaks and
       // replaceSectionBreaks reach them; applyToc moves what they wrote into the index.
@@ -1345,8 +1371,9 @@ type ParaStyle = {
   noSnap: boolean;
 };
 
-// A list item's blocks past its first: each one's own style, and its heading level.
-type ListItemExtra = { style: ParaStyle; level: number | null };
+// A list item's blocks, its first included: each one's own style, its heading level, and
+// whether a nested list comes before it.
+type ListItemExtra = { style: ParaStyle; level: number | null; afterList?: boolean };
 
 function paraStyleIsEmpty(s: ParaStyle): boolean {
   return s.align === null && s.spaceBefore === null && s.spaceAfter === null && s.lineHeight === null
@@ -1478,13 +1505,27 @@ type TableProps = { ml: number; mr: number; mt: number; mb: number; keepRows: bo
 function collectListItemStyles(node: TiptapNode, result: ParaStyle[], extras: ListItemExtra[][] = []): void {
   if (node.type === 'listItem') {
     const blocks = (node.content ?? []).filter(c => c.type === 'paragraph' || c.type === 'heading');
-    extras.push(blocks.slice(1).map(b => ({ style: paraStyleFromAttrs(b.attrs, false),
-      level: b.type === 'heading' ? (b.attrs?.level as number) ?? 1 : null })));
+    // A lone vertical margin takes its partner from the block's style, as a body
+    // paragraph's does (pairMargins), not 0.
+    const paired = (b: TiptapNode | undefined) => pairMargins(paraStyleFromAttrs(b?.attrs, false),
+      b?.type === 'heading' ? `Heading ${(b.attrs?.level as number) ?? 1}` : (b?.attrs?.styleName as string | undefined) ?? DEFAULT_STYLE);
+    const firstList = (node.content ?? []).findIndex(c => c.type === 'bulletList' || c.type === 'orderedList');
+    extras.push(blocks.map(b => ({ style: paired(b),
+      level: b.type === 'heading' ? (b.attrs?.level as number) ?? 1 : null,
+      afterList: firstList >= 0 && node.content!.indexOf(b) > firstList })));
+    // An opening heading is styled by applyListItemBlocks, which takes it out of the
+    // List_20_* paragraphs this list is matched against.
+    if (blocks[0]?.type === 'heading') {
+      for (const child of node.content ?? []) {
+        if (child.type === 'bulletList' || child.type === 'orderedList') collectListItemStyles(child, result, extras);
+      }
+      return;
+    }
     const firstPara = node.content?.find(c => c.type === 'paragraph');
     // replacePageBreaks skips list paragraphs (its sentinel would corrupt the SEG
     // rebuild), so the item's own break rides its style instead — as LibreOffice
     // writes it (probed: it keeps fo:break-before on a list item's paragraph).
-    result.push({ ...paraStyleFromAttrs(firstPara?.attrs, false),
+    result.push({ ...paired(firstPara),
       breakBefore: firstPara?.attrs?.breakBefore === 'page' });
     // Recurse into nested lists only (their listItems extend the DFS sequence).
     for (const child of node.content ?? []) {
@@ -1503,20 +1544,21 @@ function collectListItemStyles(node: TiptapNode, result: ParaStyle[], extras: Li
   }
 }
 
-// Collect each table row's explicit height (px → cm), in DFS order matching odf-kit's
-// <table:table-row> emission. rowHeight is unscaled px @96dpi (tableRow.ts), converted
-// to cm (px × 2.54 / 96). Rows without an explicit height yield null.
+// Collect each table row's own properties — its explicit height (px → cm) and whether it
+// may break across pages — as table-row-properties attributes, in DFS order matching
+// odf-kit's <table:table-row> emission. rowHeight is unscaled px @96dpi (tableRow.ts).
+// Rows with neither yield null.
 function collectTableRowHeights(node: TiptapNode, result: (string | null)[]): void {
   if (node.type === 'table') {
     for (const row of node.content ?? []) {
       if (row.type !== 'tableRow') continue;
       const h = row.attrs?.rowHeight;
-      if (typeof h === 'number' && h > 0) {
-        const cm = Math.round(((h * 2.54) / 96) * 1000) / 1000;
-        result.push(`${cm}cm`);
-      } else {
-        result.push(null);
-      }
+      const props = [
+        typeof h === 'number' && h > 0
+          ? `style:min-row-height="${Math.round(((h * 2.54) / 96) * 1000) / 1000}cm" style:use-optimal-row-height="false"` : '',
+        row.attrs?.cantSplit === true ? 'fo:keep-together="always"' : '',
+      ].filter(Boolean).join(' ');
+      result.push(props || null);
     }
     return;
   }
@@ -1525,9 +1567,9 @@ function collectTableRowHeights(node: TiptapNode, result: (string | null)[]): vo
   }
 }
 
-// odf-kit's TableBuilder has no row-height option, so post-process content.xml: each
-// <table:table-row> with a height gets an automatic style with style:min-row-height
-// (a minimum) + use-optimal-row-height="false". One heights[] entry per row, in order.
+// odf-kit's TableBuilder has no row options, so post-process content.xml: each
+// <table:table-row> with properties of its own gets an automatic style carrying them
+// (collectTableRowHeights). One heights[] entry per row, in order.
 function applyTableRowHeights(odtBytes: Uint8Array, heights: (string | null)[]): Uint8Array {
   if (heights.every(h => h === null)) return odtBytes;
 
@@ -1558,7 +1600,7 @@ function applyTableRowHeights(odtBytes: Uint8Array, heights: (string | null)[]):
   if (styleDefs.length === 0) return odtBytes;
 
   const newStyles = styleDefs.map(({ name, height }) =>
-    `<style:style style:name="${name}" style:family="table-row"><style:table-row-properties style:min-row-height="${height}" style:use-optimal-row-height="false"/></style:style>`,
+    `<style:style style:name="${name}" style:family="table-row"><style:table-row-properties ${height}/></style:style>`,
   ).join('\n');
 
   content = injectAutomaticStyles(content, `${newStyles}\n`);
@@ -1695,17 +1737,17 @@ function odfLookAttrs(look: TableLook): string {
 // emit as List_20_Bullet/Number. Rewrite content.xml to point those at automatic styles
 // that inherit the list style and add fo:text-align / fo:margin-top / fo:margin-bottom.
 // Split a list item's paragraph back into the blocks mergeListItemBlocks merged into it,
-// each with its own paragraph style. ponytail: they are re-emitted at the item's end, so
-// a block before a nested list lands after it.
+// each with its own paragraph style, in place: ahead of a nested list or at the item's end.
+// The walk still enters the nested items, in the order their extras were collected.
 function applyListItemBlocks(odtBytes: Uint8Array, extras: ListItemExtra[][] = []): Uint8Array {
   const files = unzipSync(odtBytes);
   const contentBytes = files['content.xml'];
   if (!contentBytes) return odtBytes;
   const content = strFromU8(contentBytes);
-  let out = '';
   let i = 0;
   let item = 0;
-  let touched = false;
+  // Replaced ranges [from, to) of content.xml, applied in order at the end.
+  const edits: { from: number; to: number; text: string }[] = [];
   // An extra block keeps its own alignment/spacing/line-height/box: a minted style
   // under the item's own, which is where the item's list formatting stays.
   const minted: string[] = [];
@@ -1722,25 +1764,19 @@ function applyListItemBlocks(odtBytes: Uint8Array, extras: ListItemExtra[][] = [
   };
   for (;;) {
     const at = content.indexOf('<text:list-item', i);
-    if (at < 0) { out += content.slice(i); break; }
+    if (at < 0) break;
     const own = extras[item++] ?? [];
     const pStart = content.indexOf('<text:p', at);
     const gt = pStart < 0 ? -1 : content.indexOf('>', pStart);
-    const pEnd = gt < 0 ? -1 : content.indexOf('</text:p>', gt);
-    if (pEnd < 0) { out += content.slice(i); break; }
-    const inner = content.slice(gt + 1, pEnd);
-    if (!inner.includes(SEG)) { out += content.slice(i, pEnd); i = pEnd; continue; }
-    // The item's own end, past every nested item.
-    let depth = 1;
-    let scan = pEnd;
-    while (depth > 0) {
-      const open = content.indexOf('<text:list-item', scan + 1);
-      const close = content.indexOf('</text:list-item>', scan + 1);
-      if (close < 0) break;
-      if (open >= 0 && open < close) { depth++; scan = open; } else { depth--; scan = close; }
-    }
+    // An empty item's paragraph may close itself.
+    const empty = gt > 0 && content[gt - 1] === '/';
+    const pEnd = gt < 0 ? -1 : empty ? gt + 1 : content.indexOf('</text:p>', gt);
+    if (pEnd < 0) break;
+    const inner = empty ? '' : content.slice(gt + 1, pEnd);
+    i = empty ? pEnd : pEnd + 9;
+    if (!inner.includes(SEG) && !own[0]?.level) continue;
     const [first, ...rest] = inner.split(SEG);
-    const attrs = content.slice(pStart + 7, gt);
+    const attrs = content.slice(pStart + 7, empty ? gt - 1 : gt);
     const itemStyle = /text:style-name="([^"]*)"/.exec(attrs)?.[1] ?? 'Standard';
     // A heading stays one: ODF holds <text:h> in a list item, and it is where a numbered
     // heading lives. Its own style is the level's, not the item's list paragraph style.
@@ -1752,13 +1788,30 @@ function applyListItemBlocks(odtBytes: Uint8Array, extras: ListItemExtra[][] = [
         : level ? ` text:style-name="${parent}"` : attrs;
       return `<${tag}${named}${level ? ` text:outline-level="${level}"` : ''}>${e}</${tag}>`;
     };
-    out += content.slice(i, gt + 1) + first + '</text:p>'
-      + content.slice(pEnd + 9, scan)
-      + rest.map(blockFor).join('');
-    i = scan;
-    touched = true;
+    const placed = rest.map((e, n) => ({ html: blockFor(e, n + 1), after: !!own[n + 1]?.afterList }));
+    edits.push({ from: pStart, to: i,
+      text: (own[0]?.level ? blockFor(first, 0) : `${content.slice(pStart, gt + 1)}${first}</text:p>`)
+        + placed.filter(b => !b.after).map(b => b.html).join('') });
+    const after = placed.filter(b => b.after).map(b => b.html).join('');
+    if (after) {
+      // The item's own end, past every nested item.
+      let depth = 1;
+      let scan = i;
+      while (depth > 0) {
+        const open = content.indexOf('<text:list-item', scan + 1);
+        const close = content.indexOf('</text:list-item>', scan + 1);
+        if (close < 0) break;
+        if (open >= 0 && open < close) { depth++; scan = open; } else { depth--; scan = close; }
+      }
+      edits.push({ from: scan, to: scan, text: after });
+    }
   }
-  if (!touched) return odtBytes;
+  if (!edits.length) return odtBytes;
+  edits.sort((a, b) => a.from - b.from);
+  let out = '';
+  let from = 0;
+  for (const e of edits) { out += content.slice(from, e.from) + e.text; from = e.to; }
+  out += content.slice(from);
   files['content.xml'] = strToU8(minted.length ? injectAutomaticStyles(out, minted.join('')) : out);
   return zipSync(files, { level: 6 });
 }
@@ -2092,6 +2145,7 @@ function ownStyleAttrs(style: { para: Record<string, unknown>; text: Record<stri
   if (before != null) para['fo:margin-top'] = `${before}pt`;
   if (after != null) para['fo:margin-bottom'] = `${after}pt`;
   if (p.indent != null) para['fo:margin-left'] = `${p.indent}cm`;
+  if (p.indentFirst != null) para['fo:text-indent'] = `${p.indentFirst}cm`;
   if (p.backgroundColor) para['fo:background-color'] = String(p.backgroundColor);
   for (const [key, side] of [['borderTop', 'top'], ['borderRight', 'right'], ['borderBottom', 'bottom'], ['borderLeft', 'left']] as const) {
     const v = p[key];
@@ -2216,6 +2270,10 @@ function outlineStyleXml(outline: OutlineNumbering | null | undefined): string {
       'style:num-format': level.format,
       'style:num-suffix': level.suffix,
     };
+    if (level.format === 'aa' || level.format === 'AA') {
+      attrs['style:num-format'] = level.format[0];
+      attrs['style:num-letter-sync'] = 'true';
+    }
     if (level.prefix) attrs['style:num-prefix'] = level.prefix;
     if (level.displayLevels > 1) attrs['text:display-levels'] = String(level.displayLevels);
     if (level.start !== 1) attrs['text:start-value'] = String(level.start);
@@ -2495,7 +2553,7 @@ function applyListLevelKinds(odtBytes: Uint8Array, kinds: (LevelKindFix | null)[
           if (!fix) return m;
           if (fix.kind === 'number') {
             const disp = fix.displayLevels > 1 ? ` text:display-levels="${fix.displayLevels}"` : '';
-            return `<text:list-level-style-number${lvlAttr} style:num-format="${fix.fmt.numFormat}" style:num-suffix="${escapeXml(fix.fmt.numSuffix)}"${disp}>${inner}</text:list-level-style-number>`;
+            return `<text:list-level-style-number${lvlAttr} ${odfNumFormatAttrs(fix.fmt.numFormat)} style:num-suffix="${escapeXml(fix.fmt.numSuffix)}"${disp}>${inner}</text:list-level-style-number>`;
           }
           return `<text:list-level-style-bullet${lvlAttr} text:bullet-char="${escapeXml(fix.char)}">${inner}</text:list-level-style-bullet>`;
         },
@@ -2541,10 +2599,10 @@ function applyOrderedListFormats(odtBytes: Uint8Array, formats: (OlStyleFix | nu
       open +
       body.replace(
         /(<text:list-level-style-number text:level=")(\d)(" style:num-format=")[^"]*(" style:num-suffix=")[^"]*(")/g,
-        (_mm, a: string, lvl: string, b: string, c: string, d: string) => {
+        (_mm, a: string, lvl: string) => {
           const f = fix.fmts[+lvl - 1] ?? DEFAULT_ORDERED_FMTS[+lvl - 1];
           const disp = fix.multilevel && +lvl > 1 ? ` text:display-levels="${lvl}"` : '';
-          return a + lvl + b + f.numFormat + c + f.numSuffix + d + disp;
+          return `${a}${lvl}" ${odfNumFormatAttrs(f.numFormat)} style:num-suffix="${f.numSuffix}"${disp}`;
         },
       ) +
       close,
@@ -2973,7 +3031,7 @@ function buildNamedListStyleXml(style: ListStyle): string {
       const t = orderedTypeDef(style.multilevel ? 'decimal' : def?.numType ?? 'decimal');
       const disp = style.multilevel && level > 1 ? ` text:display-levels="${level}"` : '';
       const start = def?.startAt && def.startAt !== 1 ? ` text:start-value="${def.startAt}"` : '';
-      levels += `<text:list-level-style-number text:level="${level}" style:num-format="${t.numFormat}" style:num-suffix="${t.numSuffix}"${disp}${start}>${labelAlign}</text:list-level-style-number>`;
+      levels += `<text:list-level-style-number text:level="${level}" ${odfNumFormatAttrs(t.numFormat)} style:num-suffix="${t.numSuffix}"${disp}${start}>${labelAlign}</text:list-level-style-number>`;
     }
   }
   return `<text:list-style style:name="${escapeXml(odfStyleName(style.name))}" style:display-name="${escapeXml(style.name)}">${levels}</text:list-style>`;
@@ -2998,7 +3056,7 @@ function buildCellListStyle(
     if (opts.kinds ? opts.kinds[(level - 1) % opts.kinds.length] === 'number' : ordered) {
       const f = fmts[(level - 1) % fmts.length];
       const disp = opts.multilevel && level > 1 ? ` text:display-levels="${level}"` : '';
-      levels += `<text:list-level-style-number text:level="${level}" style:num-format="${f.numFormat}" style:num-suffix="${f.numSuffix}"${disp}>${labelAlign}</text:list-level-style-number>`;
+      levels += `<text:list-level-style-number text:level="${level}" ${odfNumFormatAttrs(f.numFormat)} style:num-suffix="${f.numSuffix}"${disp}>${labelAlign}</text:list-level-style-number>`;
     } else {
       const ch = bulletChars[(level - 1) % bulletChars.length];
       levels += `<text:list-level-style-bullet text:level="${level}" text:bullet-char="${ch}">${labelAlign}</text:list-level-style-bullet>`;
@@ -4313,9 +4371,10 @@ function applyInlineSentinels(odtBytes: Uint8Array): Uint8Array {
   return rezipOdt(files);
 }
 
-// ODF draw:transform for a rotated frame/shape. ODF rotate() is CCW radians (ours is
-// CW degrees) about the origin, so the translate re-centres it on the unrotated box.
-function frameTransform(rotationDeg: number, widthCm: number, heightCm: number): string {
+// ODF draw:transform for a rotated frame/shape: rotate() turns the box CCW radians (ours
+// is CW degrees) about its corner, and translate() puts that corner where the unrotated
+// box at (x, y) keeps its centre. It replaces svg:x/y, which LibreOffice misreads beside it.
+function frameTransform(rotationDeg: number, widthCm: number, heightCm: number, xCm = 0, yCm = 0): string {
   if (!rotationDeg || !widthCm || !heightCm) return '';
   const a = (-rotationDeg * Math.PI) / 180;
   const cw = widthCm / 2;
@@ -4323,13 +4382,9 @@ function frameTransform(rotationDeg: number, widthCm: number, heightCm: number):
   const cos = Math.cos(a);
   const sin = Math.sin(a);
   const r3 = (v: number) => Math.round(v * 1000) / 1000;
-  const tx = r3(cos * cw - sin * ch - cw);
-  const ty = r3(sin * cw + cos * ch - ch);
+  const tx = r3(xCm + cw - cos * cw - sin * ch);
+  const ty = r3(yCm + ch + sin * cw - cos * ch);
   return ` draw:transform="rotate (${a.toFixed(6)}) translate (${tx}cm ${ty}cm)"`;
-}
-
-function imageTransform(img: ImageExport): string {
-  return frameTransform(img.rotationDeg, img.widthCm, img.heightCm);
 }
 
 // ODF style:wrap is the side TEXT flows on (inverse of the image side); horizontal-pos
@@ -4429,12 +4484,14 @@ function imageFrameXml(img: ImageExport, index: number): string {
     : ` text:anchor-type="${floats ? 'char' : 'as-char'}"`;
   const named = floats || !!img.clip || (img.vAlign != null && img.vAlign in INLINE_VALIGN_ODF);
   const styleName = named ? ` draw:style-name="ImgFr${index + 1}"` : '';
-  const x = img.wrapOffsetCm != null && floats && !img.wrapAlign ? ` svg:x="${img.wrapOffsetCm}cm"` : '';
+  const xCm = img.wrapOffsetCm != null && floats && !img.wrapAlign ? img.wrapOffsetCm : null;
   // An as-char frame carries svg:y only for the offset alignment, which is what it means.
-  const y = img.wrapOffsetYCm != null && (floats || img.vAlign === 'offset')
-    ? ` svg:y="${img.wrapOffsetYCm}cm"` : '';
+  const yCm = img.wrapOffsetYCm != null && (floats || img.vAlign === 'offset') ? img.wrapOffsetYCm : null;
+  const transform = frameTransform(img.rotationDeg, img.widthCm, img.heightCm, xCm ?? 0, yCm ?? 0);
+  const at = transform ? transform
+    : (xCm != null ? ` svg:x="${xCm}cm"` : '') + (yCm != null ? ` svg:y="${yCm}cm"` : '');
   return (
-    `<draw:frame draw:name="Image${index + 1}"${styleName}${anchor} draw:z-index="${index}"${dims}${x}${y}${imageTransform(img)}>` +
+    `<draw:frame draw:name="Image${index + 1}"${styleName}${anchor} draw:z-index="${img.zIndex}"${dims}${at}>` +
     `${inner}</draw:frame>`
   );
 }
@@ -4744,16 +4801,16 @@ function textBoxGraphicStyle(box: TextBoxExport, index: number): string {
       ` style:vertical-pos="${box.wrapOffsetYCm != null ? 'from-top' : 'top'}"` +
       ` style:vertical-rel="${verticalRel(box)}"`;
   // auto-grow only for plain text boxes; a custom-shape needs both explicitly
-  // false, or LibreOffice's shape autofit shrinks it to its text.
+  // false, or LibreOffice's shape autofit shrinks it to its text, and wrap on, or its
+  // text runs on one line out of the shape.
   const grow = box.shapeKind === 'textbox' && !box.shapePath
     ? ' draw:auto-grow-height="true"'
-    : ' draw:auto-grow-height="false" draw:auto-grow-width="false"';
+    : ' draw:auto-grow-height="false" draw:auto-grow-width="false" fo:wrap-option="wrap"';
   // An arrow head is a named marker in ODF, defined once in styles.xml.
-  const heads = SHAPES[box.shapeKind].line;
+  const heads = boxHeads(box.shapeKind, box.arrowHeads, box.shapePath);
   const marker = (side: 'start' | 'end') =>
     ` draw:marker-${side}="${ODF_ARROW}" draw:marker-${side}-width="${arrowHeadCm(box.strokeWidthPt)}cm"`;
-  const arrows = heads === 'end' ? marker('end')
-    : heads === 'both' ? marker('end') + marker('start') : '';
+  const arrows = (heads.end ? marker('end') : '') + (heads.start ? marker('start') : '');
   // Vertical text: a frame takes style:writing-mode in its graphic properties (where
   // LibreOffice writes it); a drawing shape drops it there and needs the *paragraph*
   // properties of its style instead (both probed).
@@ -4765,6 +4822,8 @@ function textBoxGraphicStyle(box: TextBoxExport, index: number): string {
   return (
     `<style:style style:name="TbxFr${index + 1}" style:family="graphic"${parent}>` +
     `<style:graphic-properties ${fill} ${stroke}${arrows} fo:padding="${box.paddingCm}cm"` +
+    (box.paddingTopCm != null ? ` fo:padding-top="${box.paddingTopCm}cm"` : '') +
+    (box.paddingBottomCm != null ? ` fo:padding-bottom="${box.paddingBottomCm}cm"` : '') +
     `${grow} draw:textarea-vertical-align="${box.textVAlign}"${vertMode}${wrap}/>${vertical}` +
     `</style:style>`
   );
@@ -4776,37 +4835,48 @@ function textBoxGraphicStyle(box: TextBoxExport, index: number): string {
 function textBoxXml(box: TextBoxExport, inner: string, index: number): string {
   const n = index + 1;
   const anchor = box.wrap === 'inline' ? 'as-char' : 'char';
-  const transform = frameTransform(box.rotationDeg, box.widthCm, box.heightCm);
-  const at = box.wrap === 'inline' ? ''
-    : (box.wrapOffsetCm != null ? ` svg:x="${box.wrapOffsetCm}cm"` : '') +
-      (box.wrapOffsetYCm != null ? ` svg:y="${box.wrapOffsetYCm}cm"` : '');
+  const placed = box.wrap !== 'inline';
+  const xCm = placed ? box.wrapOffsetCm : null;
+  const yCm = placed ? box.wrapOffsetYCm : null;
+  const transform = isLineKind(box.shapeKind) ? ''
+    : frameTransform(box.rotationDeg, box.widthCm, box.heightCm, xCm ?? 0, yCm ?? 0);
+  const at = transform ? ''
+    : (xCm != null ? ` svg:x="${xCm}cm"` : '') + (yCm != null ? ` svg:y="${yCm}cm"` : '');
   const common =
-    ` draw:style-name="TbxFr${n}" text:anchor-type="${anchor}" draw:z-index="${index}"` +
+    ` draw:style-name="TbxFr${n}" text:anchor-type="${anchor}" draw:z-index="${box.zIndex}"` +
     ` svg:width="${box.widthCm}cm"${at}`;
   // A line is its two endpoints, so ODF gives it its own element rather than a frame
   // with a width and a height. The blocks the schema keeps on the node are dropped:
   // <draw:line> holds no text, and the editor draws none.
   if (isLineKind(box.shapeKind)) {
     const [y1, y2] = box.flipV ? [box.heightCm, 0] : [0, box.heightCm];
+    const [x1, x2] = box.flipH ? [box.widthCm, 0] : [0, box.widthCm];
     return (
       `<draw:line draw:name="Line${n}"${common.replace(/ svg:width="[^"]*"/, '')}` +
-      ` svg:x1="0cm" svg:y1="${y1}cm" svg:x2="${box.widthCm}cm" svg:y2="${y2}cm"/>`
+      ` svg:x1="${x1}cm" svg:y1="${y1}cm" svg:x2="${x2}cm" svg:y2="${y2}cm"/>`
     );
   }
   if (box.shapeKind === 'textbox' && !box.shapePath) {
     // svg:height for consumers without auto-grow; fo:min-height is the real semantic
-    // (height = minimum, content grows the box) and wins on our own re-import.
+    // (height = minimum, content grows the box) and wins on our own re-import. A fixed
+    // box has the frame's height alone, as LibreOffice writes one that clips.
+    const grow = box.fixedHeight ? '' : ` fo:min-height="${box.heightCm}cm"`;
     return (
       `<draw:frame draw:name="TextBox${n}"${common} svg:height="${box.heightCm}cm"${transform}>` +
-      `<draw:text-box fo:min-height="${box.heightCm}cm">${inner}</draw:text-box></draw:frame>`
+      `<draw:text-box${grow}>${inner}</draw:text-box></draw:frame>`
     );
   }
   // A freeform is its own outline rather than a preset's: `non-primitive` plus the
-  // path, which is what LibreOffice writes back out unchanged (probed).
-  const geometry = box.shapePath
+  // path, which is what LibreOffice writes back out unchanged (probed). Shading is its
+  // own `drawooo:` path. A DrawingML preset goes out with its formulas, as LibreOffice's.
+  const path = box.shapePath;
+  const area = box.shapeTextArea;
+  const geometry = (box.shapePreset && presetOdfGeometry(box.shapePreset)) || (path
     ? `<draw:enhanced-geometry svg:viewBox="0 0 21600 21600" draw:type="non-primitive"`
-      + ` draw:enhanced-path="${odfEnhancedPath(box.shapePath)}"/>`
-    : odfEnhancedGeometry(box.shapeKind) ?? '';
+      + (area ? ` draw:text-areas="${area.map((v) => Math.round((v * 21600) / 100)).join(' ')}"` : '')
+      + ` draw:enhanced-path="${odfEnhancedPath(path, true)}"`
+      + (/[HIJK]/.test(path) ? ` drawooo:enhanced-path="${odfEnhancedPath(path)}"` : '') + '/>'
+    : odfEnhancedGeometry(box.shapeKind) ?? '');
   return (
     `<draw:custom-shape draw:name="Shape${n}"${common} svg:height="${box.heightCm}cm"${transform}>` +
     `${inner}${geometry}</draw:custom-shape>`
@@ -4844,9 +4914,9 @@ function applyTextBoxes(odtBytes: Uint8Array, boxes: TextBoxExport[]): Uint8Arra
   content = injectAutomaticStyles(content, boxes.map((b, i) => textBoxGraphicStyle(b, i)).join(''));
   files['content.xml'] = strToU8(content);
   // An arrow head is referenced by name, so its one definition goes where LibreOffice
-  // keeps its own — office:styles in styles.xml — and only when a line asks for it.
+  // keeps its own — office:styles in styles.xml — and only when a box asks for it.
   const stylesBytes = files['styles.xml'];
-  if (stylesBytes && boxes.some((b) => SHAPES[b.shapeKind].line && SHAPES[b.shapeKind].line !== 'none')) {
+  if (stylesBytes && boxes.some((b) => { const h = boxHeads(b.shapeKind, b.arrowHeads, b.shapePath); return h.start || h.end; })) {
     const styles = ensureDrawNamespaces(strFromU8(stylesBytes));
     if (!styles.includes(`draw:name="${ODF_ARROW}"`)) {
       files['styles.xml'] = strToU8(styles.replace(/<office:styles(\s[^>]*)?>/, (m) => `${m}${ODF_ARROW_MARKER}`));
@@ -4858,9 +4928,9 @@ function applyTextBoxes(odtBytes: Uint8Array, boxes: TextBoxExport[]): Uint8Arra
 // Section style for a multi-column region: balanced columns with a uniform gap.
 // text:dont-balance-text-columns sits on <style:section-properties> — the only place
 // the schema admits it, and where LibreOffice reads and re-writes it (probed).
-function columnsSectionStyle(cols: ColumnsExport, index: number): string {
+function columnsSectionStyle(cols: ColumnsExport, name: string): string {
   return (
-    `<style:style style:name="ColSec${index + 1}" style:family="section">` +
+    `<style:style style:name="${name}" style:family="section">` +
     `<style:section-properties style:editable="false" text:dont-balance-text-columns="false">` +
     `<style:columns fo:column-count="${cols.count}" fo:column-gap="${cols.gapCm}cm"/>` +
     `</style:section-properties></style:style>`
@@ -4885,7 +4955,7 @@ function applyColumns(odtBytes: Uint8Array, cols: ColumnsExport[]): Uint8Array {
       return `<text:section text:style-name="ColSec${i + 1}" text:name="ColumnsSection${i + 1}">${inner}</text:section>`;
     },
   );
-  content = injectAutomaticStyles(content, cols.map((c, i) => columnsSectionStyle(c, i)).join(''));
+  content = injectAutomaticStyles(content, cols.map((c, i) => columnsSectionStyle(c, `ColSec${i + 1}`)).join(''));
   files['content.xml'] = strToU8(content);
   return rezipOdt(files);
 }
@@ -5044,13 +5114,15 @@ function tocXml(toc: TocExport, index: number, bibTypes: string[]): string {
         `</text:index-title>`
       : '') +
     toc.entries
-      .map(e => `<text:p text:style-name="${tocLevelStyle(toc, e.level)}">${escapeXml(e.text).replace(/\n/g, '<text:line-break/>')}`
+      .map(e => `<text:p text:style-name="${tocLevelStyle(toc, e.level)}">${escapeXml(e.text).replace(/\n/g, '<text:line-break/>').replace(/\t/g, '<text:tab/>')}`
         // A bibliography row is the source, nothing else: no tab, no page number. An
         // index switched to text alone says the same about its rows.
-        + (toc.kind === 'bibliography' || !toc.pageNumbers ? '' : `<text:tab/>${e.pages?.join(', ') ?? e.page}`) + '</text:p>')
+        + (toc.kind === 'bibliography' || !toc.pageNumbers || e.pages?.length === 0 ? '' : `<text:tab/>${e.pages?.join(', ') ?? e.page}`) + '</text:p>')
       .join('') +
     `</text:index-body>`;
-  return `<text:${spec.el} text:name="${escapeXml(name)}" text:protected="true">${source}${body}</text:${spec.el}>`;
+  // Columns are the index section's own style, as LibreOffice writes them.
+  const style = toc.columns ? ` text:style-name="IdxSec${index + 1}"` : '';
+  return `<text:${spec.el}${style} text:name="${escapeXml(name)}" text:protected="true">${source}${body}</text:${spec.el}>`;
 }
 
 // BMS/BME/XRF sentinels → <text:bookmark-start/>, <text:bookmark-end/> and
@@ -5277,7 +5349,8 @@ function applyToc(odtBytes: Uint8Array, tocs: TocExport[], contentWidthCm: numbe
       return contentsHeadingStyle(spec.heading)
         + levels.map(l => contentsEntryStyle(`${spec.entryStyle}${l}`, l, tabPosCm)).join('');
     })
-    .join('');
+    .join('')
+    + tocs.map((t, i) => (t.columns ? columnsSectionStyle(t.columns, `IdxSec${i + 1}`) : '')).join('');
   content = injectAutomaticStyles(content, styles);
 
   files['content.xml'] = strToU8(content);
@@ -5531,11 +5604,11 @@ export async function buildOdt(docJson: TiptapNode, margins: PageMargins = DEFAU
   collectNestedListFixes(raw, nestedFixes, listStyleRepoints);
   numberedOdt = applyNestedListTypes(numberedOdt, nestedFixes);
 
+  // Read before the merge, which folds the extras in and turns an opening heading into
+  // the item's paragraph.
   const listStyles: ParaStyle[] = [];
-  collectListItemStyles(raw, listStyles);
-  // The extras' own styles come from before the merge, which is what folded them in.
   const listExtraStyles: ListItemExtra[][] = [];
-  collectListItemStyles(unmerged, [], listExtraStyles);
+  collectListItemStyles(unmerged, listStyles, listExtraStyles);
   // Blocks first: the extras' own styles then parent to the item's list style, not to
   // the LP# the pass below mints for the item's first paragraph.
   const styledLists = applyListItemStyles(applyListItemBlocks(numberedOdt, listExtraStyles), listStyles);
@@ -5600,14 +5673,23 @@ export async function buildOdt(docJson: TiptapNode, margins: PageMargins = DEFAU
   return zipFinal(declareLoext(applyOdfVersion(applyDocProperties(applyPageNumberStart(applySpacingModel(withFonts, spacingModel, spacingAtPageStart, balanceSpaces), pageNumbering.start), props))));
 }
 
-// A pass that writes a loext: attribute (a character indent) leaves its declaration here.
+// A pass that writes a loext: attribute (a character indent) or a drawooo: one (a shape's
+// arcs and shading) leaves its declaration here.
+const EXTENSION_NS: Record<string, string> = {
+  loext: 'urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0',
+  drawooo: 'http://openoffice.org/2010/draw',
+};
 function declareLoext(odtBytes: Uint8Array): Uint8Array {
   const files = unzipSync(odtBytes);
   for (const name of ['content.xml', 'styles.xml']) {
-    const xml = files[name] && strFromU8(files[name]);
-    if (!xml || !/\sloext:/.test(xml) || xml.includes('xmlns:loext=')) continue;
-    files[name] = strToU8(xml.replace(/<office:document-(?:content|styles)\b/,
-      '$& xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"'));
+    let xml = files[name] && strFromU8(files[name]);
+    if (!xml) continue;
+    const before = xml;
+    for (const [prefix, uri] of Object.entries(EXTENSION_NS)) {
+      if (!new RegExp(`\\s${prefix}:`).test(xml) || xml.includes(`xmlns:${prefix}=`)) continue;
+      xml = xml.replace(/<office:document-(?:content|styles)\b/, `$& xmlns:${prefix}="${uri}"`);
+    }
+    if (xml !== before) files[name] = strToU8(xml);
   }
   return rezipOdt(files);
 }

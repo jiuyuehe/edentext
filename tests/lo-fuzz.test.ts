@@ -44,6 +44,8 @@ function loNoise(node: N, fmt: Fmt): N {
     else if ((k === 'marginLeft' || k === 'marginRight') && typeof v === 'number') { if (Math.abs(v) < 0.05) delete a[k]; else a[k] = Math.round(v * 10) / 10; }
     else if ((k === 'bulletChar' || k === 'textVertical' || k === 'alt') && fmt === 'docx') delete a[k];
     else if (k === 'textPosition' && typeof v === 'number') a[k] = Math.round(v * 2) / 2;
+    // 24.2 stores a shape's line width in 1/100 mm and hands 2pt back as 2.02.
+    else if (k === 'strokeWidthPt' && typeof v === 'number') a[k] = Math.round(v * 4) / 4;
     else if (k.startsWith('border') && typeof v === 'string') a[k] = v.replace(/^([\d.]+)pt/, (_m, w) => `${Math.round(Number(w) * 4) / 4}pt`);
     else if (k === 'latex' && fmt === 'docx') a.latex = String(v).replace(/\\text\{(.)\}/g, '$1');
     else if ((k === 'listStyleName' || k === 'listStyleType') && fmt === 'docx') delete a[k];
@@ -105,6 +107,13 @@ function loNoise(node: N, fmt: Fmt): N {
   }
   // A paragraph in a text box loses its own field and rule lines on the way.
   if (node.type === 'textBox') for (const p of node.content ?? []) for (const k of Object.keys(p.attrs ?? {})) if (k === 'backgroundColor' || k.startsWith('border')) delete p.attrs[k];
+  // A drawing shape's text (any box but a plain frame) is LibreOffice's own, poorer than
+  // a frame's: character styles turn direct, bookmarks and fields go, the language is
+  // spelled out. Only its words compare; fuzz-roundtrip checks the rest through our reader.
+  if (fmt === 'odt' && node.type === 'textBox' && ((node.attrs?.shapeKind ?? 'textbox') !== 'textbox' || node.attrs?.shapePath)) {
+    const words = (n: N): string => n.type === 'text' ? n.text : (n.content ?? []).map(words).join('');
+    node.content = (node.content ?? []).map((b: N) => ({ type: 'paragraph', ...(words(b) ? { content: [{ type: 'text', text: words(b) }] } : {}) }));
+  }
   if (node.content) {
     // Its DOCX reader drops an index mark; beside a ruby it moves one and flattens the
     // ruby to its base text, so both compare as that.

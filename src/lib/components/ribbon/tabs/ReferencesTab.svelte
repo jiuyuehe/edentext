@@ -13,11 +13,12 @@
   import { HEADING_LEVELS } from '../../../styles/headings';
   import { CITATION_STYLES, isCitationStyle, type CitationStyle } from '../../../utils/citationStyle';
 
-  let { editor, tick, hfActive = null, onNoteOptions }: {
+  let { editor, tick, hfActive = null, onNoteOptions, onHeadingNumbering }: {
     editor: Editor | null;
     tick: number;
     hfActive?: HfZone | null;
     onNoteOptions?: () => void;
+    onHeadingNumbering?: () => void;
   } = $props();
 
   // The levels button drives a table of contents only — a caption index has one level.
@@ -92,6 +93,7 @@
     <RibbonButton
       variant="big"
       icon="toc"
+      cmd="toc"
       label={t().ribbon.toc}
       title={hfActive ? t().toolbarExpanded.tocNotInHf : t().toolbarExpanded.insertToc}
       disabled={!editor || !!hfActive}
@@ -102,7 +104,7 @@
     {#if isMenuOpen('indexKind')}
       <div class="ribbon-menu" use:anchored role="menu">
         {#each INDEX_KINDS as k}
-          <button onclick={() => { closeMenu(); editor?.chain().focus().setTableOfContents(k).run(); }}>
+          <button data-cmd={`toc-${k}`} onclick={() => { closeMenu(); editor?.chain().focus().setTableOfContents(k).run(); }}>
             {t().ribbon.indexes[k]}
           </button>
         {/each}
@@ -113,6 +115,7 @@
     <RibbonButton
       variant="big"
       icon="tocLevels"
+      cmd="tocOptions"
       label={t().ribbon.tocOptions}
       title={`${t().ribbon.indexes.toc} – ${t().ribbon.tocOptions}`}
       disabled={!toc}
@@ -142,10 +145,20 @@
   <RibbonButton
     variant="big"
     icon="update"
+    cmd="tocUpdate"
     label={t().ribbon.tocUpdate}
     title={t().ribbon.tocUpdateTitle}
     disabled={!hasIndex}
     onclick={() => (updateOpen = true)}
+  />
+  <RibbonButton
+    variant="big"
+    icon="headingNumbering"
+    cmd="headingNumbering"
+    label={t().ribbon.headingNumbering}
+    title={t().ribbon.headingNumbering}
+    disabled={!onHeadingNumbering}
+    onclick={() => onHeadingNumbering?.()}
   />
 </RibbonGroup>
 
@@ -157,6 +170,7 @@
   <RibbonButton
     variant="big"
     icon="footnote"
+    cmd="footnote"
     label={t().toolbarExpanded.insertFootnote}
     title={hfActive ? t().toolbarExpanded.noteNotInHf : `${t().toolbarExpanded.insertFootnote} (${shortcutHint('footnote')})`}
     disabled={!editor || !!hfActive}
@@ -165,6 +179,7 @@
   <RibbonButton
     variant="big"
     icon="endnote"
+    cmd="endnote"
     label={t().toolbarExpanded.insertEndnote}
     title={hfActive ? t().toolbarExpanded.noteNotInHf : `${t().toolbarExpanded.insertEndnote} (${shortcutHint('endnote')})`}
     disabled={!editor || !!hfActive}
@@ -173,6 +188,7 @@
   <RibbonButton
     variant="big"
     icon="settings"
+    cmd="noteOptions"
     label={t().ribbon.noteOptions}
     title={t().notesDialog.title}
     disabled={!onNoteOptions}
@@ -186,6 +202,7 @@
   <RibbonButton
     variant="big"
     icon="citation"
+    cmd="citation"
     label={t().ribbon.citation}
     title={t().bibliography.title}
     disabled={!editor || !!hfActive}
@@ -195,6 +212,7 @@
     <RibbonButton
       variant="small"
       icon="citation"
+      cmd="citationStyle"
       label={t().bibliography.style}
       title={bibliography ? t().bibliography.style : t().bibliography.styleNeedsIndex}
       caret
@@ -220,6 +238,7 @@
   <RibbonButton
     variant="big"
     icon="caption"
+    cmd="caption"
     label={t().ribbon.insertCaption}
     title={t().caption.title}
     disabled={!editor || !!hfActive}
@@ -233,6 +252,7 @@
   <RibbonButton
     variant="big"
     icon="bookmark"
+    cmd="indexEntry"
     label={t().ribbon.indexEntry}
     title={hasSelection ? t().ribbon.indexEntry : t().ribbon.indexEntryNeedsSelection}
     disabled={!editor || !!hfActive || !hasSelection}

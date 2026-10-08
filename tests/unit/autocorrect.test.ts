@@ -43,6 +43,10 @@ describe('autoCorrectFix', () => {
     expect(typed("l'", 'fr')).toBe('l’');
     expect(typed('"', 'ru')).toBe('«');
     expect(typed('он сказал «слово"', 'ru')).toBe('он сказал «слово»');
+    expect(typed('"', 'uk')).toBe('«');
+    expect(typed("м'", 'uk')).toBe('м’'); // after a letter, an apostrophe as in LibreOffice
+    expect(typed("„слово'", 'uk')).toBe('„слово“'); // unless it closes an open quote
+    expect(typed("geht'", 'de')).toBe('geht’');
     expect(typed("don'")).toBe('don’'); // an apostrophe mid-word closes, as in LibreOffice
     expect(typed("'")).toBe('‘');
   });

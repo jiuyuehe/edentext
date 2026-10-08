@@ -28,9 +28,11 @@ describe('path parsing', () => {
     expect(parseOdfPoints('0,0 100,50 0,100', false).map((c) => c.c)).toEqual(['M', 'L', 'L']);
   });
 
-  it('raises a quadratic to a cubic and joins an arc', () => {
+  it('raises a quadratic to a cubic and draws an arc as cubics', () => {
     expect(parseSvgPath('M0 0Q 0 100 100 100')[1].c).toBe('C');
-    expect(parseSvgPath('M0 0A 50 50 0 0 1 100 100')[1]).toEqual({ c: 'L', p: [100, 100] });
+    const arc = parseSvgPath('M0 0A 100 100 0 0 1 100 100');
+    expect(arc.map((c) => c.c)).toEqual(['M', 'C']);
+    expect((arc[1] as { p: number[] }).p.slice(4).map(Math.round)).toEqual([100, 100]);
   });
 
   it('takes an implicit repeat as the same command', () => {

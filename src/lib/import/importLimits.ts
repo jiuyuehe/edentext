@@ -1,3 +1,5 @@
+import en from '../i18n/locales/en';
+
 // Bounds reflect a large office document while keeping one browser tab responsive.
 export const IMPORT_LIMITS = {
   compressedBytes: 128 * 1024 * 1024,
@@ -31,7 +33,7 @@ export function parseImportXml(xml: string, format: 'odt' | 'docx'): Document {
   // An entity declaration is what makes XML unsafe; an external subset declares nothing
   // a DOM parser resolves, and an embedded formula object from an older office suite
   // names a MathML DTD, so that doctype is dropped instead of refusing the file.
-  if (/<!ENTITY\b/i.test(xml) || /<!DOCTYPE[^[>]*\[/i.test(xml)) throw new Error(`Not a valid .${format} file (unsafe XML).`);
+  if (/<!ENTITY\b/i.test(xml) || /<!DOCTYPE[^[>]*\[/i.test(xml)) throw new Error(en.importError[`${format}Unsafe` as const]);
   xml = xml.replace(/^((?:\s|<\?[\s\S]*?\?>|<!--[\s\S]*?-->)*)<!DOCTYPE[^[>]*>/i, '$1');
   let depth = 0;
   let nodes = 0;
@@ -40,7 +42,7 @@ export function parseImportXml(xml: string, format: 'odt' | 'docx'): Document {
     if (next === '!') {
       const end = xml.startsWith('<!--', at) ? xml.indexOf('-->', at + 4)
         : xml.startsWith('<![CDATA[', at) ? xml.indexOf(']]>', at + 9) : at;
-      if (end < 0) throw new Error(`Not a valid .${format} file (malformed XML).`);
+      if (end < 0) throw new Error(en.importError[`${format}Malformed` as const]);
       at = end + 2;
       continue;
     }
@@ -48,12 +50,12 @@ export function parseImportXml(xml: string, format: 'odt' | 'docx'): Document {
     if (next === '/') { depth--; continue; }
     const close = xml.indexOf('>', at + 1);
     if (close < 0 || ++nodes > IMPORT_LIMITS.xmlNodes || ++depth > IMPORT_LIMITS.xmlDepth) {
-      throw new Error(`Not a valid .${format} file (XML is too complex).`);
+      throw new Error(en.importError[`${format}TooComplex` as const]);
     }
     if (xml[close - 1] === '/') depth--;
   }
-  if (depth !== 0) throw new Error(`Not a valid .${format} file (malformed XML).`);
+  if (depth !== 0) throw new Error(en.importError[`${format}Malformed` as const]);
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length) throw new Error(`Not a valid .${format} file (malformed XML).`);
+  if (doc.getElementsByTagName('parsererror').length) throw new Error(en.importError[`${format}Malformed` as const]);
   return doc;
 }

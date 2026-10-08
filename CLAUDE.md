@@ -7,8 +7,7 @@ Serverless, fully client-side rich-text editor that saves `.odt` and `.docx`; st
 
 ```bash
 npm run dev      # Vite dev server (hot-reload, --host)
-npm run build    # production build -> dist/
-npm run preview  # serve dist/
+npm run build    # production build -> dist/; npm run preview serves it
 npm run check    # svelte-check type-check
 npm test         # Vitest once (tests/**/*.test.ts)
 npm run test:lo      # LibreOffice round trip, fuzz re-read, ODT/DOCX consistency (needs soffice)
@@ -19,7 +18,7 @@ npm run test:monkey  # random editing, undo/redo and save-read invariants
 npm run test:tabs    # two documents across reloads
 npm run test:coverage  # Vitest V8 coverage -> coverage/index.html
 npm run test:parity  # render parity; see tests/render-parity/README.md
-node scripts/make-thesaurus.mjs; node scripts/collect-licenses.mjs  # re-vendor thesaurus and licenses
+node scripts/make-thesaurus.mjs; node scripts/make-shape-presets.mjs; node scripts/collect-licenses.mjs  # re-vendor thesaurus, shape presets, licenses
 node scripts/showcase/run.mjs  # rebuild docs/showcase/; optional [regex] limits it
 ```
 
@@ -32,7 +31,7 @@ Tests are jsdom Vitest files outside `src/`; `npm test` covers round trips, corp
 - Read the existing code and relevant local `CLAUDE.md` before changing files.
 - Follow the established architecture, naming and surrounding code style.
 - Prefer the smallest correct change; do not rewrite unrelated code or add dependencies without need.
-- Fix root causes rather than symptoms.
+- Fix root causes rather than symptoms: when a document renders, imports or exports wrongly, fix the general rule it exposes so any document is handled correctly, never that one document's shape at the risk of others.
 - Preserve persisted or externally consumed behaviour; add compatibility code only for a concrete need.
 - Run the test legs that the final change can affect.
 - Do not push unless requested.
@@ -55,9 +54,7 @@ Tests are jsdom Vitest files outside `src/`; `npm test` covers round trips, corp
 
 **Layout constants** — keep `pageBreaks.ts`, `Editor.svelte` and `editor.css` aligned (`PAGE_HEIGHT` 1123px, `PAGE_GAP` 20px and `--user-page-*`/`--user-margin-*`); see `docs/architecture/pagination.md`.
 
-**Browser testing** — use `playwright-core`, never `puppeteer`; see `docs/headless-testing.md`. Only the live app verifies rendering and NodeViews.
-
-**Test selection** — run each relevant leg once after its input is final: unit/Vitest for logic, LibreOffice for I/O, browser legs for rendering, parity for layout.
+**Browser testing** — use `playwright-core`, never `puppeteer`; see `docs/headless-testing.md`. Only the live app verifies rendering and NodeViews. **Test selection** — run each relevant leg once after its input is final: unit/Vitest for logic, LibreOffice for I/O, browser legs for rendering, parity for layout.
 
 **Naming** — components are `PascalCase.svelte`; `.ts` modules are `camelCase`; extensions are feature names such as `image.ts`.
 
@@ -74,6 +71,7 @@ src/
   lib/{export,import,i18n,spell,storage,styles,crypto}/ - I/O, localization, persistence, styles, protection
   lib/templates/            - built-in localized templates
   styles/                   - global and editor CSS
+desktop/                    - Electron shell around dist/ with its own npm commands; see desktop/CLAUDE.md
 ```
 
 ## Where the detail lives

@@ -104,6 +104,8 @@ export type TableBreakBand = {
   // own close/open lines there, so only the gap stripe is painted (a mask would double
   // them). False for in-cell splits.
   rowBreak: boolean;
+  // Whether the table draws borders: only then does the mask close and reopen it.
+  lines: boolean;
   left: number;       // content-area left (mask left)
   width: number;      // content-area width (mask width)
   marginBottom: number;
@@ -117,6 +119,12 @@ const paginating = new WeakMap<EditorView, () => boolean>();
 // a false, or it pays for the redraw of the pass behind it.
 export function isPaginating(view: EditorView): boolean {
   return paginating.get(view)?.() ?? false;
+}
+
+const layingOut = new WeakMap<EditorView, () => boolean>();
+// True while a pass runs or is due next frame; one merely queued behind typing is not.
+export function isLayingOut(view: EditorView): boolean {
+  return layingOut.get(view)?.() ?? false;
 }
 
 export function getPageBreakDebug(view: EditorView): PageBreakDebugSnapshot | null {
@@ -237,6 +245,16 @@ export function gridFromRuns(raw: string, pageHeight: number, base: Band = DEFAU
 // on its own paper (a landscape page amid portrait ones) shifts every page below it —
 // the uniform document is just the one-run case. Heights are stored as runs, "every
 // page from here on is this tall", so both lookups cost one pass over the sections.
+// Whether the table a leaf sits in draws any cell border — a borderless one has no
+// edges for a page-break band to close and reopen.
+function tableDrawsBorders(el: HTMLElement): boolean {
+  const cell = el.closest('table')?.querySelector('td, th');
+  if (!cell) return false;
+  const cs = getComputedStyle(cell);
+  return (['Top', 'Right', 'Bottom', 'Left'] as const).some((side) =>
+    cs.getPropertyValue(`border-${side.toLowerCase()}-style`) !== 'none' && parseFloat(cs.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0);
+}
+
 export class PageGrid {
   private runs: { from: number; height: number; left: number; band: Band }[];
 
@@ -617,6 +635,10 @@ export const isRepairable = (spec: { block?: unknown; spacer?: unknown }): boole
 export function repairDecos(before: DecorationSet, mapped: DecorationSet, tr: Transaction): DecorationSet {
   const decos = mapped.find(undefined, undefined, (spec) => !isBlockDeco(spec));
   for (const d of before.find(undefined, undefined, isBlockDeco)) {
+    // A bound inside a deleted range means the block was replaced (an open), not restyled:
+    // re-cut, its height would land on whatever blocks now fill the range.
+    const inside = (p: number) => tr.mapping.mapResult(p, -1).deleted && tr.mapping.mapResult(p, 1).deleted;
+    if (inside(d.from) || inside(d.to)) continue;
     const to = tr.mapping.map(d.to, 1);
     for (let pos = tr.mapping.map(d.from, -1); pos < to;) {
       const node = tr.doc.nodeAt(pos);
@@ -700,6 +722,7 @@ export const PageBreaks = Extension.create({
         let lastSnapshot: PageBreakDebugSnapshot | null = null;
 
         paginating.set(editorView, () => isUpdating || rafId !== null || idleTimer !== null);
+        layingOut.set(editorView, () => isUpdating || rafId !== null);
         debugAccessors.set(editorView, (): PageBreakDebugSnapshot | null => {
           const snap: PageBreakDebugSnapshot | null = lastSnapshot;
           if (snap === null) return null;
@@ -1229,6 +1252,18 @@ export const PageBreaks = Extension.create({
                 const cells = (Array.from(tr.children) as HTMLElement[]).filter(
                   c => c.tagName === 'TD' || c.tagName === 'TH',
                 );
+                // A row that may not break starts on a fresh page before it breaks there
+                // anyway (LibreOffice): a zero-height leaf forcing the row's own spacer.
+                if (tr.dataset.cantSplit === 'true') {
+                  leaves.push({
+                    el: tr,
+                    kind: 'atomic',
+                    naturalTop: naturalTopOf(tr),
+                    naturalHeight: 0,
+                    tableRow: { columns, wrapperEl, isFirstRow: !seenRealRow },
+                    forceBreakBefore: true,
+                  });
+                }
                 const baseline = cumulativeSpacerHeight;
                 let maxDelta = 0;
                 let rowStartSet = false;
@@ -1430,7 +1465,13 @@ export const PageBreaks = Extension.create({
           return leaves;
         }
 
+        // A pass that throws must not leave the layout marked running: no later pass
+        // would start, and the status would show the document loading for good.
         function calculate() {
+          try { layoutPass(); } catch (err) { isUpdating = false; throw err; }
+        }
+
+        function layoutPass() {
           rafId = null;
           if (isUpdating || !editorView.dom.isConnected) return;
           isUpdating = true;
@@ -1541,7 +1582,7 @@ export const PageBreaks = Extension.create({
             // Close/open bands for in-cell + between-rows table breaks. Keyed by the
             // rounded openY (the grouping id) → the unrounded openY (so the band lands
             // exactly on the page cycle) plus whether it's a between-rows break.
-            const tableBands = new Map<number, { openY: number; rowBreak: boolean }>();
+            const tableBands = new Map<number, { openY: number; rowBreak: boolean; lines: boolean }>();
             const leavesDebug: PageBreakDebugSnapshot['leaves'] = [];
             const placementsDebug: PageBreakDebugSnapshot['placements'] = [];
 
@@ -1561,13 +1602,19 @@ export const PageBreaks = Extension.create({
               let effectiveTop = leaf.naturalTop + cumulativeShift;
               let effectiveBottom = effectiveTop + leaf.naturalHeight;
               const page = grid.pageAt(effectiveTop);
+              // The space a manual break keeps is a margin in the larger-of spacing model,
+              // outside the box the leaf is measured by, less the space below the block
+              // before it, which LibreOffice still collapses with it (probed: 24 − 6pt → 18).
+              const keeps = !!leaf.forceBreakBefore && spacingAtStart;
+              const kept = keeps && !leaf.inTableCell ? Math.max(0,
+                (parseFloat(getComputedStyle(leaf.el).marginTop) || 0) - (leaves[i - 1]?.spaceAfter ?? 0)) : 0;
               // A section's first page uses its "first" reaches, every other page its
               // "rest" ones — page 1 is section 1's first page.
               if (leaf.sectionStart) {
                 // Where the section really begins: a forced break moves its first block to
                 // the next page, and that page is the one its "first" zones belong to.
                 const prevStart = grid.topOf(page) + reachAt(sectionIndex)[1];
-                const pushed = !!leaf.forceBreakBefore && i > 0 && effectiveTop > prevStart + 0.5;
+                const pushed = !!leaf.forceBreakBefore && i > 0 && effectiveTop - kept > prevStart + 0.5;
                 sectionIndex++;
                 sectionFirstPage = pushed ? page + 1 : page;
                 sectionFirstPages[sectionIndex] = sectionFirstPage;
@@ -1677,7 +1724,7 @@ export const PageBreaks = Extension.create({
               // A section held back for its own side skips the sheets between: its first
               // page is settled above, so the spacer reaches straight for that one.
               const skipTo = leaf.sectionStart && sectionFirstPage > page ? sectionFirstPage : 0;
-              const forced = skipTo > 0 || (!!leaf.forceBreakBefore && i > 0 && effectiveTop > contentStart + 0.5);
+              const forced = skipTo > 0 || (!!leaf.forceBreakBefore && i > 0 && effectiveTop - kept > contentStart + 0.5);
 
               if (forced) {
                 // The target page's own content start: a section beginning there brings
@@ -1687,7 +1734,7 @@ export const PageBreaks = Extension.create({
                 const target = pageContentStart(targetPage, nextTop, grid);
                 const { docPos, row } = leafSpacer(leaf);
                 breaks.push({
-                  height: target - effectiveTop,
+                  height: target + kept - effectiveTop,
                   docPos,
                   row,
                   bandOpenY: target,
@@ -1834,7 +1881,7 @@ export const PageBreaks = Extension.create({
               // even a manual break loses it. A line split doesn't: there the page starts
               // mid-block. `effectiveTop` still excludes this leaf's own push.
               if (
-                i > 0 && !leaf.inTableCell && !(leaf.forceBreakBefore && spacingAtStart) && (leaf.spaceAbove ?? 0) > 0.5
+                i > 0 && !leaf.inTableCell && !keeps && (leaf.spaceAbove ?? 0) > 0.5
                 && (breaks.some((b) => b.reason !== 'line-split')
                   || (breaks.length === 0 && Math.abs(effectiveTop - contentStart) < 0.5))
               ) {
@@ -1889,8 +1936,10 @@ export const PageBreaks = Extension.create({
                 if (inBand && br.bandOpenY !== null) {
                   const key = Math.round(br.bandOpenY);
                   const rowBreak = br.row !== null;
+                  const lines = tableDrawsBorders(leaf.el);
                   const existing = tableBands.get(key);
-                  if (!existing) tableBands.set(key, { openY: br.bandOpenY, rowBreak });
+                  if (!existing) tableBands.set(key, { openY: br.bandOpenY, rowBreak, lines });
+                  else if (lines) existing.lines = true;
                   // An in-cell break sharing the boundary needs the full mask, so a
                   // band stays rowBreak only if every break at this key is one.
                   else if (!rowBreak) existing.rowBreak = false;
@@ -2135,17 +2184,23 @@ export const PageBreaks = Extension.create({
 
           // In-cell table breaks (all values in unscaled document px relative to
           // .tiptap's top). Editor.svelte renders the mask + gap overlay from these.
-          const bandSpan = vm.bottom + PAGE_GAP + vm.top;
-          const tableBreakBands = Array.from(tableBands, ([key, info]) => ({
-            key,
-            closeY: info.openY - bandSpan,
-            height: bandSpan,
-            rowBreak: info.rowBreak,
-            left: marginLeft,
-            width: contentWidth,
-            marginBottom: vm.bottom,
-            gap: PAGE_GAP,
-          }));
+          // The closing page's own content end and sheet bottom, which a footer taller
+          // than the bottom margin lifts above the document's margins.
+          const tableBreakBands = Array.from(tableBands, ([key, info]) => {
+            const closing = Math.max(1, placed.grid.pageAt(info.openY) - 1);
+            const closeY = Math.min(info.openY, placed.grid.contentBottomOf(closing));
+            return {
+              key,
+              closeY,
+              height: info.openY - closeY,
+              rowBreak: info.rowBreak,
+              lines: info.lines,
+              left: marginLeft,
+              width: contentWidth,
+              marginBottom: placed.grid.bottomOf(closing) - closeY,
+              gap: PAGE_GAP,
+            };
+          });
 
           // docHeight (document px) lets Editor.svelte size the scaled scroll footprint.
           // Announced only where the layout differs from the last one: every reader
@@ -2262,6 +2317,7 @@ export const PageBreaks = Extension.create({
             if (rafId !== null) cancelAnimationFrame(rafId);
             debugAccessors.delete(editorView);
             paginating.delete(editorView);
+            layingOut.delete(editorView);
           },
         };
       },

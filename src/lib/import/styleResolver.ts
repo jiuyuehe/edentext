@@ -26,6 +26,7 @@ export const NS = {
   fo: 'urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0',
   svg: 'urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0',
   draw: 'urn:oasis:names:tc:opendocument:xmlns:drawing:1.0',
+  drawooo: 'http://openoffice.org/2010/draw',
   xlink: 'http://www.w3.org/1999/xlink',
   number: 'urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0',
   loext: 'urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0',
@@ -158,6 +159,8 @@ function entryFromStyleElement(el: Element): StyleEntry {
   // the parent chain like one — a cell's number format is a reference to a data style.
   const dataStyle = el.getAttributeNS(NS.style, 'data-style-name');
   if (dataStyle) entry.misc['style:data-style-name'] = dataStyle;
+  const listStyle = el.getAttributeNS(NS.style, 'list-style-name');
+  if (listStyle) entry.misc['style:list-style-name'] = listStyle;
   return entry;
 }
 
@@ -242,6 +245,20 @@ export class StyleResolver {
       seen.add(cur);
       if (named.has(cur)) return cur;
       cur = this.styles.get(`${family}\0${cur}`)?.parent ?? null;
+    }
+    return null;
+  }
+
+  // The list style a paragraph style's named chain carries — numbering the style itself
+  // brings, as a heading style does for chapter numbering.
+  paraListStyle(styleName: string | null): string | null {
+    let cur = this.namedAncestor(styleName);
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const entry = this.styles.get(`paragraph\0${cur}`);
+      if (entry?.misc['style:list-style-name']) return entry.misc['style:list-style-name'];
+      cur = entry?.parent ?? null;
     }
     return null;
   }
@@ -466,6 +483,11 @@ export class StyleResolver {
     if (!raw) return null;
     const v = parseFloat(raw);
     return Number.isFinite(v) && v > 0 ? v : null;
+  }
+
+  // fo:keep-together="always" on a row: it may not break across pages.
+  rowKeepTogether(styleName: string | null): boolean {
+    return !!styleName && this.merged('table-row', styleName).misc['fo:keep-together'] === 'always';
   }
 
   rowMinHeightCm(styleName: string | null): number | null {

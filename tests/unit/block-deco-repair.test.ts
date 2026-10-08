@@ -62,6 +62,13 @@ describe('block decorations across a doc change', () => {
     expect(remap(before, tr)).toEqual([[0, 5]]);
   });
 
+  it('drops the one on a block replaced with the whole document', () => {
+    const tr = state().tr;
+    const before = DecorationSet.create(tr.doc, [blockDeco(5, 10, { style: 'height:934px' })]);
+    tr.replaceWith(0, tr.doc.content.size, [para('a'), para('b'), para('c'), para('d')]);
+    expect(remap(before, tr)).toEqual([]);
+  });
+
   it('leaves typing to the mapping', () => {
     const tr = state().tr;
     const before = insets(tr.doc);

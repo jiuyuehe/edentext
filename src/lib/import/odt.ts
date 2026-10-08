@@ -1,4 +1,6 @@
 import { strFromU8 } from 'fflate';
+import { markerFormatFromText, pruneImportedMarkers, type MarkerFormat } from '../editor/extensions/listMarker';
+import en from '../i18n/locales/en';
 import { StyleResolver, NS, WATERMARK_NAME, lengthToPt, lengthToCm, layerTextProps, langTagsOfProps, type PropMap } from './styleResolver';
 import { cjkDocFont, odfFromTag, tagFromOdf } from '../storage/documentLanguage';
 import { ASIAN_SCRIPT_RE } from '../utils/script';
@@ -9,7 +11,7 @@ import { builtinStyleSheet, DEFAULT_STYLE, type ParaProps, type Style, type Styl
 import { DEFAULT_OUTLINE_LEVEL, MAX_OUTLINE_LEVELS, type OutlineLevel, type OutlineNumbering } from '../styles/outlineNumbering';
 import { LIST_LEVEL_STEP_CM, MAX_LIST_LEVELS, type ListLevelStyle, type ListStyle } from '../styles/listStyles';
 import { HEADER_SHADE } from '../editor/extensions/tableHeaderRow';
-import { cropOf, fitInlineImage, framePx, type Crop } from '../editor/extensions/image';
+import { cropOf, fitInlineImage, framePx, stackRank, type Crop } from '../editor/extensions/image';
 import { odfChartDataUrl } from './chart';
 import { formatTabStops, normalizeLeader } from '../editor/extensions/tabStops';
 import { isEmphasis, type CapsMode, type LineStyle } from '../editor/extensions/textEffects';
@@ -17,12 +19,15 @@ import {
   TABLE_REGIONS, builtinTableStyles, parseTableLook, resolveTableCell, tableLookAttr,
   type TableLook, type TableRegion,
 } from '../styles/tableStyles';
-import { knownNumFormat, orderedTypeFromFormat, orderedTypeAttrAt, childCycle, ROOT_ORDERED_CYCLE, type OrderedCycle } from '../utils/orderedListTypes';
+import { knownNumFormat, odfNumFormatOf, orderedTypeFromFormat, orderedTypeAttrAt, childCycle, ROOT_ORDERED_CYCLE, type OrderedCycle } from '../utils/orderedListTypes';
 import { bulletCharAttr, bulletCharFromOdf } from '../utils/bulletListTypes';
 import { docxPicture, matchFormat, toDateValue, type Token } from '../utils/dateTime';
 import {
-  shapeFromOdfType, lineKindFor, parseSvgPath, parseOdfPoints, fitPath, type ShapeKind,
+  shapeFromOdfType, lineKindFor, pathHeadsFor, parseSvgPath, parseOdfPoints, fitPath, isOpenOutline, type ShapeKind,
 } from '../utils/shapes';
+import { resolveGeometry, type ResolvedGeometry } from '../utils/enhancedGeometry';
+import { isPresetName, presetAdjust } from '../utils/shapePresets';
+import type { DrawingMlPreset } from '../utils/shapes';
 import { imageDataUrl, imageSizeCm, placeholderImage, unzipArchive, type ConvertedImages } from './imageFormats';
 import { boundedInt, IMPORT_LIMITS, parseImportXml } from './importLimits';
 import { astToLatex } from '../math/latex';
@@ -51,6 +56,9 @@ import { cellPaddingAttr, DEFAULT_CELL_PADDING, type CellPadding } from '../edit
 import { fromWriterFormula } from '../utils/tableFormula';
 import { cellFormatFromSpec, type CellFormat, type FormatKind } from '../utils/cellFormat';
 import { TEXTBOX_PADDING_CM } from '../editor/extensions/textBox';
+
+// Warnings are the English catalog text; localizeImportMessage maps them at display time.
+const WARN = en.importWarn;
 
 // .odt → TipTap JSON, inverting export/odt.ts. Editor-expressible content becomes its
 // native node/mark/attr; values matching the editor's defaults are suppressed so round
@@ -164,6 +172,8 @@ type Ctx = {
   // The page's own direction: a block declaring the same one is inheriting, not
   // formatted, so only a block that differs carries a `dir` attr.
   pageRtl: boolean;
+  // LibreOffice's Word 2013 layout (TabOverSpacing without TabOverMargin, settings.xml).
+  breakDropsSpace: boolean;
   // Master pages the body switches to, in order — one section each past the first.
   masterPages: string[];
   leadingMaster: string; // the master the document opens on: naming it first switches nothing
@@ -301,6 +311,8 @@ function applyFrameRotationAndWrap(el: Element, attrs: Record<string, unknown>, 
   }
   // "background" (LibreOffice's default) sits behind the text, "foreground" in front.
   if (attrs.wrap === 'through' && gp['style:run-through'] === 'foreground') attrs.inFront = true;
+  const rank = stackRank(el, NS.draw, 'z-index');
+  if (rank) attrs.zIndex = rank;
   // Only the text side of the gap is drawn — the other one is the frame's own offset.
   if (attrs.wrap === 'left' || attrs.wrap === 'right') {
     const side = attrs.wrap === 'right' ? 'fo:margin-left' : 'fo:margin-right';
@@ -314,7 +326,7 @@ function applyFrameRotationAndWrap(el: Element, attrs: Record<string, unknown>, 
   const hrel = gp['style:horizontal-rel'];
   const pageX = hrel === 'page' || hrel === 'page-start-margin' ? leftMarginCm : 0;
   // Set against the page's left edge is x 0 there: a cover picture filling the sheet.
-  const rawX = hpos === 'from-left' ? lengthToCm(el.getAttributeNS(NS.svg, 'x'))
+  const rawX = hpos === 'from-left' ? placedAt(el, 'x')
     : hpos === 'left' && pageX ? 0 : null;
   const x = rawX == null ? null : rawX - pageX;
   if (x != null && attrs.wrap) attrs.wrapOffset = Math.round(x * 100) / 100;
@@ -337,7 +349,7 @@ function applyFrameRotationAndWrap(el: Element, attrs: Record<string, unknown>, 
   const fromBody = rel === 'page-content';
   const vpos = gp['style:vertical-pos'];
   const y = vpos === 'from-top' && (!rel || rel.startsWith('paragraph') || rel === 'line' || fromPage || fromBody)
-    ? lengthToCm(el.getAttributeNS(NS.svg, 'y')) : vpos === 'top' && (fromPage || fromBody) ? 0 : null;
+    ? placedAt(el, 'y') : vpos === 'top' && (fromPage || fromBody) ? 0 : null;
   if (y != null && attrs.wrap && (fromPage || fromBody || y > 0 || (attrs.wrap === 'through' && y < 0))) {
     attrs.wrapOffsetY = Math.round(y * 100) / 100;
     if (fromPage) attrs.wrapFromPage = true;
@@ -349,8 +361,8 @@ function applyFrameRotationAndWrap(el: Element, attrs: Record<string, unknown>, 
   if (anchor === 'page') {
     const page = Number(el.getAttributeNS(NS.text, 'anchor-page-number'));
     attrs.anchorPage = Number.isInteger(page) && page > 0 ? page : 1;
-    attrs.wrapOffset = Math.max(0, lengthToCm(el.getAttributeNS(NS.svg, 'x')) ?? 0);
-    attrs.wrapOffsetY = Math.max(0, lengthToCm(el.getAttributeNS(NS.svg, 'y')) ?? 0);
+    attrs.wrapOffset = Math.max(0, placedAt(el, 'x') ?? 0);
+    attrs.wrapOffsetY = Math.max(0, placedAt(el, 'y') ?? 0);
     // "background" (LibreOffice's default for a new one) sits behind text; a cover
     // page's own graphic instead declares "foreground" to sit in front of everything.
     if (gp['style:run-through'] === 'foreground') attrs.inFront = true;
@@ -379,13 +391,15 @@ export function applyUniformRunFont(attrs: Record<string, unknown>, content: { t
   if (attrs.fontSize == null && size) attrs.fontSize = size;
 }
 
-// A top-and-bottom frame set below its paragraph's top sinks behind the paragraph's
-// text: a full-width float pushes every following line under itself, so the offset can
-// only be drawn as what stands above the frame — which is why frames go top to bottom.
-export function sinkOffsetFrames(content: { type: string; text?: string; attrs?: Record<string, unknown> }[]): void {
+// A top-and-bottom frame set below its paragraph's first line sinks behind the text: a
+// full-width float pushes every following line under itself, so the offset can only be
+// drawn as what stands above the frame. Higher up it overlaps the first line, which moves
+// below it, so it leads (`fontPt` sizes that line at single spacing).
+export function sinkOffsetFrames(content: { type: string; text?: string; attrs?: Record<string, unknown> }[], fontPt: number): void {
+  const lineCm = fontPt * 1.15 * 2.54 / 72;
   const sinks = (n: { type: string; attrs?: Record<string, unknown> }) =>
     (n.type === 'image' || n.type === 'textBox')
-    && n.attrs?.wrap === 'topBottom' && (n.attrs.wrapOffsetY as number) > 0;
+    && n.attrs?.wrap === 'topBottom' && (n.attrs.wrapOffsetY as number) >= lineCm;
   if (!content.some(sinks)) return;
   const frames = content.filter(sinks).sort((a, b) => (a.attrs!.wrapOffsetY as number) - (b.attrs!.wrapOffsetY as number));
   for (const f of frames) content.splice(content.indexOf(f), 1);
@@ -439,10 +453,10 @@ function convertFrame(frame: Element, ctx: Ctx): Node | null {
     // The frame still occupies its box, so an undrawable picture comes in as a
     // placeholder of that size rather than collapsing the layout around it.
     if (wCm == null || hCm == null) {
-      ctx.warnings.add('Some images could not be read and were skipped');
+      ctx.warnings.add(WARN.imagesSkipped);
       return null;
     }
-    ctx.warnings.add('Images in a format the browser can’t display (e.g. WMF, EMF, SVM) were replaced by a placeholder');
+    ctx.warnings.add(WARN.imagesPlaceholder);
     src = placeholderImage('Image', cmToPx(wCm), cmToPx(hCm));
   }
   const attrs: Record<string, unknown> = { src };
@@ -544,7 +558,7 @@ export function unnestBoxes(blocks: Node[], ctx: { warnings: Set<string> }): Nod
   for (const block of blocks) {
     const boxes = (block.content ?? []).filter(n => n.type === 'textBox');
     if (!boxes.length) { out.push(block); continue; }
-    ctx.warnings.add('Text boxes nested in other text boxes were flattened');
+    ctx.warnings.add(WARN.textBoxFlattened);
     block.content = block.content!.filter(n => n.type !== 'textBox');
     if (block.content.length) out.push(block);
     for (const b of boxes) out.push(...(b.content ?? [{ type: 'paragraph' }]));
@@ -553,8 +567,8 @@ export function unnestBoxes(blocks: Node[], ctx: { warnings: Set<string> }): Nod
 }
 
 // A <draw:frame><draw:text-box> → a textBox node. The height is the text-box's
-// fo:min-height when present (our own export; height = minimum, content grows the
-// box), else the frame's computed svg:height (LibreOffice re-saves).
+// fo:min-height when present (height = minimum, content grows the box), else the
+// frame's svg:height, which LibreOffice keeps fixed and clips at.
 function convertTextBoxFrame(frame: Element, textBoxEl: Element, ctx: Ctx): Node {
   const attrs: Record<string, unknown> = {};
   // A floating frame that grows with its text (fo:min-width, no width) spans what its
@@ -565,14 +579,19 @@ function convertTextBoxFrame(frame: Element, textBoxEl: Element, ctx: Ctx): Node
   const wCm = lengthToCm(frame.getAttributeNS(NS.svg, 'width'))
     ?? (spans ? Math.max(minCm, Math.round((ctx.contentWidthCm - xCm) * 1000) / 1000) : minCm);
   if (wCm != null) attrs.width = framePx(cmToPx(wCm));
-  const hCm = lengthToCm(textBoxEl.getAttributeNS(NS.fo, 'min-height'))
-    ?? lengthToCm(frame.getAttributeNS(NS.svg, 'height'));
+  const minHCm = lengthToCm(textBoxEl.getAttributeNS(NS.fo, 'min-height'));
+  const hCm = minHCm ?? lengthToCm(frame.getAttributeNS(NS.svg, 'height'));
   if (hCm != null) attrs.height = framePx(cmToPx(hCm));
+  if (minHCm == null && hCm != null) attrs.fixedHeight = true;
   const gp = ctx.resolver.graphicProps(frame.getAttributeNS(NS.draw, 'style-name'));
   applyFrameRotationAndWrap(frame, attrs, gp, ctx.contentWidthCm, ctx.leftMarginCm);
   boxWrapAlign(gp, attrs);
-  const padCm = lengthToCm(gp['fo:padding']);
+  const padCm = lengthToCm(gp['fo:padding'] ?? gp['fo:padding-left']);
   if (padCm != null && Math.abs(padCm - TEXTBOX_PADDING_CM) > 0.01) attrs.paddingCm = Math.round(padCm * 1000) / 1000;
+  for (const [prop, key] of [['fo:padding-top', 'paddingTopCm'], ['fo:padding-bottom', 'paddingBottomCm']]) {
+    const cm = lengthToCm(gp[prop]);
+    if (cm != null && Math.abs(cm - (padCm ?? TEXTBOX_PADDING_CM)) > 0.01) attrs[key] = Math.round(cm * 1000) / 1000;
+  }
   shapeStyleAttrs(gp, attrs, false);
   boxTextFlow(frame, ctx, attrs);
   return { type: 'textBox', attrs, content: textBoxContent(Array.from(textBoxEl.children), ctx, wCm) };
@@ -659,25 +678,38 @@ function loadObjectDoc(href: string | null, ctx: Ctx): Document | null {
 function convertShape(el: Element, ctx: Ctx): Node | null {
   let kind: ShapeKind | null = null;
   let path = '';
+  let resolved: ResolvedGeometry | null = null;
+  let preset: DrawingMlPreset | null = null;
   if (el.localName === 'rect') kind = 'textbox';
   else if (el.localName === 'ellipse') kind = 'ellipse';
   else {
     const geo = el.getElementsByTagNameNS(NS.draw, 'enhanced-geometry')[0];
-    kind = shapeFromOdfType(geo?.getAttributeNS(NS.draw, 'type'));
-    // A shape no preset covers still draws, as long as its own outline is one:
-    // LibreOffice writes a freeform as `non-primitive` plus the path itself.
+    const type = geo?.getAttributeNS(NS.draw, 'type') ?? '';
+    kind = shapeFromOdfType(type);
+    // A shape no preset covers still draws from the outline it carries: LibreOffice
+    // writes a freeform as `non-primitive` plus the path, any other shape with formulas.
+    // A DrawingML preset (`ooxml-name`) stays one, so it keeps resizing as a preset.
     if (!kind && geo) {
-      path = enhancedPathOutline(geo);
+      resolved = enhancedPathOutline(geo, el);
+      path = resolved.path;
+      const name = type.startsWith('ooxml-') ? type.slice(6) : '';
+      if (path && isPresetName(name)) {
+        const flag = (a: string) => geo.getAttributeNS(NS.draw, a) === 'true';
+        preset = { name, adj: presetAdjust(name, (geo.getAttributeNS(NS.draw, 'modifiers') ?? '').trim().split(/\s+/).filter(Boolean).map(Number)),
+          ...(flag('mirror-horizontal') ? { flipH: true } : {}), ...(flag('mirror-vertical') ? { flipV: true } : {}) };
+      }
       if (path) kind = 'textbox';
     }
   }
   if (!kind) {
-    ctx.warnings.add('Unsupported shapes were removed');
+    ctx.warnings.add(WARN.shapesRemoved);
     return null;
   }
   const attrs: Record<string, unknown> = {};
   if (kind !== 'textbox') attrs.shapeKind = kind;
   if (path) attrs.shapePath = path;
+  if (resolved?.textArea) attrs.shapeTextArea = resolved.textArea;
+  if (preset) attrs.shapePreset = preset;
   const wCm = lengthToCm(el.getAttributeNS(NS.svg, 'width'));
   const hCm = lengthToCm(el.getAttributeNS(NS.svg, 'height'));
   if (wCm != null) attrs.width = framePx(cmToPx(wCm));
@@ -686,19 +718,33 @@ function convertShape(el: Element, ctx: Ctx): Node | null {
   applyFrameRotationAndWrap(el, attrs, gp, ctx.contentWidthCm, ctx.leftMarginCm);
   boxWrapAlign(gp, attrs);
   shapeStyleAttrs(gp, attrs, true);
+  if (path) outlineHeads(gp, attrs);
   boxTextFlow(el, ctx, attrs);
   return { type: 'textBox', attrs, content: textBoxContent(Array.from(el.children), ctx, wCm) };
 }
 
-// A `<draw:enhanced-geometry>` no preset matches, read as its own outline: only the
-// four commands a freeform is drawn with, so a shape with modifier formulas (`?f0`)
-// or an arc segment stays unsupported rather than drawing wrong.
-function enhancedPathOutline(geo: Element): string {
-  const raw = geo.getAttributeNS(NS.draw, 'enhanced-path') ?? '';
-  if (!raw || !/^[\sMLCZN\d.,+-]+$/.test(raw)) return '';
-  const vb = (geo.getAttributeNS(NS.svg, 'viewBox') ?? '').split(/\s+/).map(Number);
-  if (vb.length !== 4 || !(vb[2] > 0) || !(vb[3] > 0)) return '';
-  return fitPath(parseSvgPath(raw.replace(/N/g, '')), vb[2], vb[3], vb[0], vb[1]);
+// A `<draw:enhanced-geometry>` no preset matches, read as its own outline: its
+// equations and modifiers resolved for the shape's size, arcs as curves. LibreOffice
+// keeps the arcs only in its own `drawooo:enhanced-path`, so that one wins.
+function enhancedPathOutline(geo: Element, el: Element): ResolvedGeometry {
+  const path = geo.getAttributeNS(NS.drawooo, 'enhanced-path') || geo.getAttributeNS(NS.draw, 'enhanced-path');
+  if (!path) return { path: '', textArea: null };
+  const nums = (v: string | null) => (v ?? '').trim().split(/\s+/).filter(Boolean).map(Number);
+  const equations: Record<string, string> = {};
+  for (const eq of Array.from(geo.getElementsByTagNameNS(NS.draw, 'equation'))) {
+    equations[eq.getAttributeNS(NS.draw, 'name') ?? ''] = eq.getAttributeNS(NS.draw, 'formula') ?? '';
+  }
+  const hundredthMm = (name: string) => (lengthToCm(el.getAttributeNS(NS.svg, name)) ?? 0) * 1000;
+  return resolveGeometry({
+    path, equations,
+    modifiers: nums(geo.getAttributeNS(NS.draw, 'modifiers')),
+    viewBox: nums(geo.getAttributeNS(NS.svg, 'viewBox')),
+    logW: hundredthMm('width'), logH: hundredthMm('height'),
+    mirrorH: geo.getAttributeNS(NS.draw, 'mirror-horizontal') === 'true',
+    mirrorV: geo.getAttributeNS(NS.draw, 'mirror-vertical') === 'true',
+    subViews: nums(geo.getAttributeNS(NS.drawooo, 'sub-view-size')),
+    textAreas: geo.getAttributeNS(NS.draw, 'text-areas') ?? undefined,
+  });
 }
 
 // draw:polygon / draw:polyline / draw:path / draw:connector → a box drawing the file's
@@ -722,7 +768,7 @@ function convertFreeform(el: Element, ctx: Ctx): Node | null {
   const path = cmds.length && vb.length === 4 && vb[2] > 0 && vb[3] > 0
     ? fitPath(cmds, vb[2], vb[3], vb[0], vb[1]) : '';
   if (!path || !wCm || !hCm) {
-    ctx.warnings.add('Unsupported shapes were removed');
+    ctx.warnings.add(WARN.shapesRemoved);
     return null;
   }
   const attrs: Record<string, unknown> = {
@@ -732,7 +778,14 @@ function convertFreeform(el: Element, ctx: Ctx): Node | null {
   applyFrameRotationAndWrap(el, attrs, gp, ctx.contentWidthCm, ctx.leftMarginCm);
   boxWrapAlign(gp, attrs);
   shapeStyleAttrs(gp, attrs, true);
+  outlineHeads(gp, attrs);
   return { type: 'textBox', attrs, content: [{ type: 'paragraph' }] };
+}
+
+// The arrow heads an open outline's style declares. A closed one has no ends to carry them.
+function outlineHeads(gp: PropMap, attrs: Record<string, unknown>): void {
+  const heads = pathHeadsFor(!!gp['draw:marker-start'], !!gp['draw:marker-end']);
+  if (heads && isOpenOutline(String(attrs.shapePath))) attrs.arrowHeads = heads;
 }
 
 // draw:line → a textBox of the matching line kind: the two endpoints become the frame
@@ -742,23 +795,120 @@ function convertLine(el: Element, ctx: Ctx): Node | null {
   const at = (name: string) => lengthToCm(el.getAttributeNS(NS.svg, name)) ?? 0;
   const [x1, y1, x2, y2] = [at('x1'), at('y1'), at('x2'), at('y2')];
   const gp = ctx.resolver.graphicProps(el.getAttributeNS(NS.draw, 'style-name'));
-  const kind = lineKindFor(!!gp['draw:marker-start'], !!gp['draw:marker-end']);
+  const [start, end] = [!!gp['draw:marker-start'], !!gp['draw:marker-end']];
+  const kind = lineKindFor(start, end);
   const attrs: Record<string, unknown> = {
     shapeKind: kind,
     width: framePx(cmToPx(Math.abs(x2 - x1))),
     height: framePx(cmToPx(Math.abs(y2 - y1))),
   };
-  // The editor draws a line across its frame, so only the direction is left to keep.
-  if ((y2 - y1) * (x2 - x1) < 0) attrs.flipV = true;
+  // The editor draws a line across its frame from the corner its flips name; its one
+  // head is the end's, so a line with the start's alone runs back.
+  const back = start && !end;
+  if ((y2 < y1) !== back) attrs.flipV = true;
+  if ((x2 < x1) !== back) attrs.flipH = true;
   applyFrameRotationAndWrap(el, attrs, gp, ctx.contentWidthCm, ctx.leftMarginCm);
   boxWrapAlign(gp, attrs);
   shapeStyleAttrs(gp, attrs, true);
   return { type: 'textBox', attrs, content: [{ type: 'paragraph' }] };
 }
 
+// Where a drawing in a group sits, in cm of its anchor's space: its own x/y, a line's
+// endpoints, or a rotated shape's box worked back from the rotate()/translate() pair.
+function drawBox(el: Element): { x: number; y: number; w: number; h: number } {
+  const at = (name: string) => lengthToCm(el.getAttributeNS(NS.svg, name));
+  const w = at('width'), h = at('height');
+  if (w == null || h == null) {
+    const [x1, y1, x2, y2] = ['x1', 'y1', 'x2', 'y2'].map((a) => at(a) ?? 0);
+    return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+  }
+  const transform = el.getAttributeNS(NS.draw, 'transform') ?? '';
+  const t = /translate\s*\(\s*(\S+?)\s*[ ,]\s*(\S+?)\s*\)/.exec(transform);
+  if (!t) return { x: at('x') ?? 0, y: at('y') ?? 0, w, h };
+  // The box turns counter-clockwise about its corner, which then moves to the translate.
+  const a = parseFloat(/rotate\s*\(\s*(-?[\d.eE+]+)/.exec(transform)?.[1] ?? '0') || 0;
+  const cx = (lengthToCm(t[1]) ?? 0) + (w / 2) * Math.cos(a) + (h / 2) * Math.sin(a);
+  const cy = (lengthToCm(t[2]) ?? 0) - (w / 2) * Math.sin(a) + (h / 2) * Math.cos(a);
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+
+// A frame's unrotated corner: svg:x/y, or for a rotated one its translate(). Files that
+// carry both (earlier exports of this editor) keep svg:x/y; their translate is off.
+function placedAt(el: Element, axis: 'x' | 'y'): number | null {
+  const v = lengthToCm(el.getAttributeNS(NS.svg, axis));
+  if (v != null || !/translate/.test(el.getAttributeNS(NS.draw, 'transform') ?? '')) return v;
+  return drawBox(el)[axis];
+}
+
+const PLACEMENT_ATTRS = ['wrap', 'wrapOffset', 'wrapOffsetY', 'wrapFromPage', 'wrapFromBody', 'wrapAlign',
+  'wrapDist', 'inFront', 'anchorPage', 'vAlign', 'zIndex'];
+
+// A draw:g opens as its members, as a DOCX group does: they sit in the anchor's space,
+// the group's style places their bounding box, and the first member carries that
+// placement (an as-char group's place in the line) while the rest run through over it.
+function convertDrawGroup(g: Element, ctx: Ctx): Node[] {
+  const leaves: Element[] = [];
+  const collect = (el: Element) => {
+    for (const c of Array.from(el.children)) {
+      if (c.namespaceURI !== NS.draw) continue;
+      if (c.localName === 'g' || c.localName === 'a') collect(c);
+      else leaves.push(c);
+    }
+  };
+  collect(g);
+  const members: { node: Node; box: ReturnType<typeof drawBox> }[] = [];
+  for (const leaf of leaves) {
+    const conv = convertDrawElement(leaf, ctx);
+    const node = conv?.inline ?? conv?.block;
+    if (node) members.push({ node, box: drawBox(leaf) });
+  }
+  if (!members.length) { ctx.warnings.add(WARN.drawingsRemoved); return []; }
+
+  const minX = Math.min(...members.map((m) => m.box.x));
+  const minY = Math.min(...members.map((m) => m.box.y));
+  const bounds = g.cloneNode(false) as Element;
+  bounds.setAttributeNS(NS.svg, 'svg:x', `${minX}cm`);
+  bounds.setAttributeNS(NS.svg, 'svg:y', `${minY}cm`);
+  bounds.setAttributeNS(NS.svg, 'svg:width', `${Math.max(...members.map((m) => m.box.x + m.box.w)) - minX}cm`);
+  bounds.setAttributeNS(NS.svg, 'svg:height', `${Math.max(...members.map((m) => m.box.y + m.box.h)) - minY}cm`);
+  const gp = ctx.resolver.graphicProps(g.getAttributeNS(NS.draw, 'style-name'));
+  const place: Record<string, unknown> = {};
+  applyFrameRotationAndWrap(bounds, place, gp, ctx.contentWidthCm, ctx.leftMarginCm);
+  delete place.rotation;
+
+  // Member offsets count from the group's own offset where it has one, else from the
+  // first member, which is where the line or the alignment puts it.
+  const [first, ...rest] = members;
+  const originX = place.wrap && place.wrapOffset != null ? (place.wrapOffset as number) - minX : -first.box.x;
+  const originY = place.wrap && place.wrapOffsetY != null ? (place.wrapOffsetY as number) - minY : -first.box.y;
+  const r = (n: number) => Math.round(n * 1000) / 1000;
+  const strip = (n: Node) => {
+    const attrs = { ...n.attrs };
+    for (const k of PLACEMENT_ATTRS) delete attrs[k];
+    return attrs;
+  };
+  const carrier = { ...first.node, attrs: { ...strip(first.node), ...place } };
+  if (place.wrap && place.wrapOffset != null) carrier.attrs.wrapOffset = r(originX + first.box.x);
+  if (place.wrap && place.wrapOffsetY != null) carrier.attrs.wrapOffsetY = r(originY + first.box.y);
+  const over = rest.map(({ node, box }) => ({
+    ...node,
+    attrs: {
+      ...strip(node), wrap: 'through', inFront: gp['style:run-through'] !== 'background',
+      wrapOffset: r(originX + box.x), wrapOffsetY: r(originY + box.y),
+      ...(place.wrapFromPage ? { wrapFromPage: true } : {}),
+      ...(place.wrapFromBody ? { wrapFromBody: true } : {}),
+      ...(place.anchorPage ? { anchorPage: place.anchorPage } : {}),
+      ...(place.zIndex ? { zIndex: place.zIndex } : {}),
+    },
+  }));
+  // An as-char carrier reserves the group's place in the line, and the frames over it
+  // take their static position from the paragraph — so they precede it.
+  return place.wrap || place.anchorPage ? [carrier, ...over] : [...over, carrier];
+}
+
 // Dispatch any draw:* element: an image stays inline; a text box / shape is a block
-// node; everything else is dropped with a warning.
-function convertDrawElement(e: Element, ctx: Ctx): { inline?: Node; block?: Node } | null {
+// node; a group is its members; everything else is dropped with a warning.
+function convertDrawElement(e: Element, ctx: Ctx): { inline?: Node; block?: Node; group?: Node[] } | null {
   // The watermark is not a drawing: it rides the page decoration instead
   // (storage/pageDecor.ts), so it must not also arrive as a shape in the header.
   if (e.getAttributeNS(NS.draw, 'name')?.startsWith(WATERMARK_NAME)) return null;
@@ -781,7 +931,7 @@ function convertDrawElement(e: Element, ctx: Ctx): { inline?: Node; block?: Node
     if (img) return { inline: img };
     // A frame with neither image nor text box (OLE object, …) — report the drop;
     // an unreadable image already warned inside convertFrame.
-    if (!hasImage) ctx.warnings.add('Drawings were removed');
+    if (!hasImage) ctx.warnings.add(WARN.drawingsRemoved);
     return null;
   }
   if (e.localName === 'line') {
@@ -797,6 +947,10 @@ function convertDrawElement(e: Element, ctx: Ctx): { inline?: Node; block?: Node
     const shape = convertFreeform(e, ctx);
     return shape ? { block: shape } : null;
   }
+  if (e.localName === 'g') {
+    const group = convertDrawGroup(e, ctx);
+    return group.length ? { group } : null;
+  }
   if (e.localName === 'a') {
     // draw:a wraps a drawing in a hyperlink; the editor has no image link, so unwrap
     // to the inner drawing (the link is dropped, like other flattened hyperlinks).
@@ -807,7 +961,7 @@ function convertDrawElement(e: Element, ctx: Ctx): { inline?: Node; block?: Node
     }
     return null;
   }
-  ctx.warnings.add('Drawings were removed');
+  ctx.warnings.add(WARN.drawingsRemoved);
   return null;
 }
 
@@ -853,15 +1007,22 @@ function odfSpacingAtPageStart(files: Record<string, Uint8Array>): boolean {
   return !/AddParaTableSpacingAtStart"[^>]*>false</.test(xml);
 }
 
+// The settings LibreOffice stores a Word 2013 document's layout in: the space above a
+// paragraph's own page break goes with TabOverSpacing unless TabOverMargin is on (probed).
+function odfBreakDropsSpace(files: Record<string, Uint8Array>): boolean {
+  const xml = files['settings.xml'] ? strFromU8(files['settings.xml']) : '';
+  return /TabOverSpacing"[^>]*>true</.test(xml) && !/TabOverMargin"[^>]*>true</.test(xml);
+}
+
 export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = new Map()): OdtImportResult {
   let files: Record<string, Uint8Array>;
   try {
     files = unzipArchive(bytes);
   } catch {
-    throw new Error('Not a valid .odt file (could not read the archive).');
+    throw new Error(en.importError.odtArchive);
   }
   const contentBytes = files['content.xml'];
-  if (!contentBytes) throw new Error('Not a valid .odt file (content.xml is missing).');
+  if (!contentBytes) throw new Error(en.importError.odtContentMissing);
 
   const contentDoc = parseXml(strFromU8(contentBytes));
   const stylesDoc = files['styles.xml'] ? parseXml(strFromU8(files['styles.xml'])) : null;
@@ -869,7 +1030,7 @@ export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = 
   const warnings = new Set<string>();
 
   const body = contentDoc.getElementsByTagNameNS(NS.office, 'text')[0];
-  if (!body) throw new Error('Not a text document (no office:text body).');
+  if (!body) throw new Error(en.importError.odtNoBody);
 
   const styleNames = new Map<string, string>();
   for (const [name, def] of resolver.namedParagraphStyles()) styleNames.set(name, displayStyleName(name, def.display));
@@ -883,7 +1044,7 @@ export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = 
   const first = resolver.hasMasterPage(masters.leading) ? masters.leading : null;
   const geo = resolver.pageGeometry(first) ?? resolver.pageGeometry();
   const contentWidthCm = contentWidthOf(geo);
-  const ctx: Ctx = { resolver, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), usedListStyles: new Set(), warnings, seqRefNames: sequenceRefNames(body), files, imageCache: new Map(), convertedImages, contentWidthCm, docContentWidthCm: contentWidthCm, leftMarginCm: geo?.margins.left ?? 0, pageRtl: geo?.rtl ?? false, masterPages: [], leadingMaster: masters.leading ?? 'Standard', masterPageStarts: [], bodyBlocks: 0, openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentReplies: odfCommentReplies(body), revisions: odfRevisions(body), openInsertions: new Map(), notes: [], foldMarks: false };
+  const ctx: Ctx = { resolver, styleNames, usedStyles: new Set(), charStyleNames, usedCharStyles: new Set(), usedListStyles: new Set(), warnings, seqRefNames: sequenceRefNames(body), files, imageCache: new Map(), convertedImages, contentWidthCm, docContentWidthCm: contentWidthCm, leftMarginCm: geo?.margins.left ?? 0, pageRtl: geo?.rtl ?? false, breakDropsSpace: odfBreakDropsSpace(files), masterPages: [], leadingMaster: masters.leading ?? 'Standard', masterPageStarts: [], bodyBlocks: 0, openBookmarks: new Map(), pointBookmarks: new Set(), openComments: new Map(), commentReplies: odfCommentReplies(body), revisions: odfRevisions(body), openInsertions: new Map(), notes: [], foldMarks: false };
   let blocks = convertBlocks(Array.from(body.children), ctx, 'body');
   if (blocks.length === 0) blocks.push({ type: 'paragraph' });
   pairAlignedFrames(blocks, Math.floor(cmToPx(contentWidthCm)));
@@ -928,7 +1089,7 @@ export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = 
       language = code;
     } else {
       language = NO_LANGUAGE;
-      warnings.add(`Spell-check language "${docLangs.main}" has no bundled dictionary — spell check was turned off`);
+      warnings.add(WARN.noDictionary(docLangs.main!));
     }
   }
 
@@ -951,7 +1112,7 @@ export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = 
   const hasHeader = hf.header || headerFirst || headerEven;
   const hasFooter = hf.footer || footerFirst || footerEven;
 
-  return {
+  const result: OdtImportResult = {
     content: { type: 'doc', content: blocks },
     margins: geometry?.margins ?? null,
     orientation: geometry?.orientation ?? null,
@@ -990,6 +1151,8 @@ export function importOdt(bytes: Uint8Array, convertedImages: ConvertedImages = 
     props: odfDocProperties(files),
     warnings: [...warnings],
   };
+  pruneImportedMarkers(result as unknown as Parameters<typeof pruneImportedMarkers>[0]);
+  return result;
 }
 
 // The zones of a named master page — what a section past the first switches to.
@@ -1144,7 +1307,7 @@ const COLUMNS_ALLOWED = new Set(['paragraph', 'heading', 'bulletList', 'orderedL
 function pushColumnRuns(inner: Node[], cols: { count: number; gapCm: number }, out: Node[], ctx: Ctx): void {
   let count = cols.count;
   if (count > 3) {
-    ctx.warnings.add('Sections with more than 3 columns were reduced to 3 columns');
+    ctx.warnings.add(WARN.columnsReduced);
     count = 3;
   }
   let run: Node[] = [];
@@ -1155,9 +1318,15 @@ function pushColumnRuns(inner: Node[], cols: { count: number; gapCm: number }, o
   for (const block of inner) {
     if (COLUMNS_ALLOWED.has(block.type)) {
       run.push(block);
+    } else if (block.type === 'tableOfContents') {
+      // An index flows through the section's columns on its own.
+      flush();
+      const a = block.attrs ?? {};
+      block.attrs = { ...a, columns: a.columns ?? count, columnGapCm: a.columnGapCm ?? cols.gapCm };
+      out.push(block);
     } else {
       if (block.type !== 'columns') {
-        ctx.warnings.add('Tables and text boxes inside a multi-column layout were moved out of the columns');
+        ctx.warnings.add(WARN.movedOutOfColumns);
       }
       flush();
       out.push(block);
@@ -1172,7 +1341,7 @@ function pushColumnRuns(inner: Node[], cols: { count: number; gapCm: number }, o
 function hiddenParagraph(el: Element, ctx: Ctx): boolean {
   if (el.localName !== 'p') return false;
   if (ctx.resolver.paraTextProps(el.getAttributeNS(NS.text, 'style-name'))['text:display'] !== 'none') return false;
-  ctx.warnings.add('Hidden text was removed');
+  ctx.warnings.add(WARN.hiddenText);
   return true;
 }
 
@@ -1201,13 +1370,13 @@ function convertBlocks(elements: Element[], ctx: Ctx, kind: BlockKind, boldByDef
         const block = hoistPageFrames(convertParaLike(el, ctx, kind, boldByDefault));
         if (block) out.push(block);
       } else if (el.localName === 'list') {
-        // A list wrapping only headings is ODF outline (chapter) numbering, not a real
-        // list — unwrap it to plain headings instead of empty nested list levels.
-        const headingEls = kind === 'body' ? outlineHeadingEls(el) : null;
+        // Chapter numbering wrapping only headings is no real list — unwrap it to plain
+        // headings instead of empty nested list levels.
+        const headingEls = kind === 'body' ? outlineHeadingEls(el, ctx.resolver) : null;
         if (headingEls) {
           for (const h of headingEls) out.push(convertParaLike(h, ctx, 'body'));
         } else {
-          const list = convertList(el, ctx, null, 1);
+          const list = convertList(el, ctx, null, 1, false, ROOT_ORDERED_CYCLE, !isChapterList(el, ctx.resolver));
           if (list) out.push(list);
         }
       } else if (el.localName === 'section') {
@@ -1238,15 +1407,15 @@ function convertBlocks(elements: Element[], ctx: Ctx, kind: BlockKind, boldByDef
         }
       } else {
         // The editor (and its export) can't nest tables in cells/list items.
-        ctx.warnings.add('Nested tables were flattened to paragraphs');
+        ctx.warnings.add(WARN.nestedTables);
         out.push(...flattenTable(el, ctx));
       }
     } else if (el.namespaceURI === NS.draw) {
       const conv = convertDrawElement(el, ctx);
       // A frame at block level (rare — ODF allows one straight under office:text)
       // → wrapped in a paragraph, which is where an inline node has to live.
-      const frame = conv?.inline ?? conv?.block;
-      if (frame) out.push({ type: 'paragraph', content: [frame] });
+      const frames = conv?.group ?? [conv?.inline ?? conv?.block].filter((n): n is Node => !!n);
+      if (frames.length) out.push({ type: 'paragraph', content: frames });
     }
   }
   // A block's own "break after" becomes the next block's break before — the same page
@@ -1346,6 +1515,9 @@ function convertToc(el: Element, ctx: Ctx, indexKind: IndexKind): Node {
     attrs.pageNumbers = false;
   }
   if (levelStyles.some(Boolean)) attrs.levelStyles = Array.from(levelStyles, (s) => s ?? null);
+  // The index's own section style may lay its rows out in columns.
+  const cols = ctx.resolver.sectionColumns(el.getAttributeNS(NS.text, 'style-name'));
+  if (cols) Object.assign(attrs, { columns: Math.min(3, cols.count), columnGapCm: cols.gapCm });
   // A bibliography's citation style is its entry template: the fields it names, in order.
   // A numbered index says so on the source instead, whatever its template reads.
   if (indexKind === 'bibliography') {
@@ -1380,8 +1552,13 @@ function convertToc(el: Element, ctx: Ctx, indexKind: IndexKind): Node {
     const level = m ? Math.min(MAX_HEADING_LEVEL, Math.max(1, parseInt(m[1], 10))) : 1;
     const { text, page } = tocEntryTextAndPage(p, pages);
     const nums = page.split(/[,;]/).map((n) => parseInt(n, 10)).filter((n) => n > 0);
-    // An alphabetical index's letter rows carry no number and are not entries.
-    if (!text || (indexKind === 'alphabetical' && pages && !nums.length)) continue;
+    if (!text) continue;
+    // A letter row (its own separator style) is no entry; a term heading its subentries
+    // has a level style and lists no page.
+    if (indexKind === 'alphabetical' && pages && !nums.length) {
+      if (m) entries.push({ text, level, page: 1, pages: [] });
+      continue;
+    }
     entries.push({ text, level, page: nums[0] ?? 1, ...(nums.length > 1 ? { pages: nums } : {}) });
   }
   attrs.entries = entries;
@@ -1401,12 +1578,14 @@ function tocEntryTextAndPage(p: Element, pages: boolean): { text: string; page: 
       if (c === lastTab) { past = true; continue; }
       const e = c.nodeType === 1 ? (c as Element) : null;
       if (e && !(e.namespaceURI === NS.text && (e.localName === 'tab' || e.localName === 's'))) { walk(e); continue; }
-      const txt = e ? ' ' : c.nodeValue ?? '';
+      const txt = e ? (e.localName === 'tab' ? '\t' : ' ') : c.nodeValue ?? '';
       if (past) after += txt; else before += txt;
     }
   };
   walk(p);
-  return { text: before.replace(/\s+/g, ' ').trim(), page: after.trim() };
+  // A tab inside the text stays one: it sets the title at the level's hanging indent.
+  const text = before.replace(/[^\S\t]+/g, ' ').replace(/ ?\t[\t ]*/g, '\t').trim();
+  return { text, page: after.trim() };
 }
 
 // What a block's named style already gives it — the yardstick for "is this direct
@@ -1572,6 +1751,8 @@ function paraPropsFromOdf(props: PropMap): ParaProps {
   if (mt != null) out.spaceBefore = snapPt(mt);
   if (mb != null) out.spaceAfter = snapPt(mb);
   if (ml != null) out.indent = Math.round(ml * 100) / 100;
+  const ti = lengthToCm(props['fo:text-indent']);
+  if (ti != null) out.indentFirst = Math.round(ti * 100) / 100;
   // The ODF percentage itself, or a fixed height, as everywhere else in the model
   // (blockAttrs, both DOCX paths, and the export, which writes either straight back).
   const lh = lineSpacing(props['fo:line-height']);
@@ -1711,7 +1892,7 @@ function outlineFromOdf(el: Element | null, ctx: Ctx): OutlineNumbering | null {
   for (let level = 1; level <= MAX_OUTLINE_LEVELS; level++) {
     const def = Array.from(el.children).find(
       (c) => c.localName === 'outline-level-style' && c.getAttributeNS(NS.text, 'level') === String(level));
-    const format = def ? knownNumFormat(def.getAttributeNS(NS.style, 'num-format')) : null;
+    const format = def ? knownNumFormat(odfNumFormatOf(def)) : null;
     if (!def || !format) {
       out.push({ ...DEFAULT_OUTLINE_LEVEL });
       continue;
@@ -1785,7 +1966,7 @@ function listStyleFromOdf(name: string, el: Element, builtin?: boolean): ListSty
     if (listLevelRightAligned(def)) level.markerAlign = 'right';
     if (ordered) {
       if (parseInt(def.getAttributeNS(NS.text, 'display-levels') ?? '1', 10) > 1) multilevel = true;
-      const key = orderedTypeFromFormat(def.getAttributeNS(NS.style, 'num-format'), def.getAttributeNS(NS.style, 'num-suffix'));
+      const key = orderedTypeFromFormat(odfNumFormatOf(def), def.getAttributeNS(NS.style, 'num-suffix'));
       level.numType = key === 'multilevel' ? 'decimal' : key;
       const sv = parseInt(def.getAttributeNS(NS.text, 'start-value') ?? '', 10);
       if (Number.isFinite(sv) && sv > 1) level.startAt = sv;
@@ -1828,9 +2009,9 @@ function convertParaLike(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault =
   const paraProps = resolver.paraProps(styleName);
   const baseTextProps = resolver.paraTextProps(styleName);
 
-  // A <text:h> that *is* the list item is chapter numbering — the numbered heading both
-  // word processors write — and stays a paragraph here; the editor numbers a chapter from
-  // its outline. One after the item's own paragraph is a heading nested in the item.
+  // A <text:h> that *is* an item of chapter numbering — the numbered heading both word
+  // processors write — stays a paragraph here; the editor numbers a chapter from its
+  // outline. `listHeading`: a heading after the item's paragraph, or in a real list.
   const isHeading = el.localName === 'h' && (kind !== 'list' || listHeading);
   let level = 1;
   if (isHeading) {
@@ -1847,7 +2028,7 @@ function convertParaLike(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault =
   // keeps its level's yardstick, which is what `hN:not([data-style])` re-applies.
   // A header/footer zone renders its paragraphs at the editor's own defaults with only the
   // default style's font on top, so that is what its formatting is measured against.
-  const yardstick = kind === 'body' ? named : isHeading || kind === 'zone' ? null : DEFAULT_STYLE;
+  const yardstick = kind === 'body' || (isHeading && kind !== 'zone') ? named : kind === 'zone' ? null : DEFAULT_STYLE;
   const defaults = blockDefaults(resolver, yardstick, isHeading ? level : null, boldByDefault);
   // A cell paragraph's spacing is the exception: editor.css zeroes it whatever the default
   // style declares (only that rule outranks the style's — not the `li p` one, and not for a
@@ -1868,6 +2049,11 @@ function convertParaLike(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault =
     if (geo) { ctx.contentWidthCm = contentWidthOf(geo); ctx.leftMarginCm = geo.margins.left; }
   }
   const attrs = blockAttrs(paraProps, baseTextProps, defaults, kind);
+  // A paragraph breaking itself onto a page under LibreOffice's Word 2013 layout opens it
+  // without its space above (probed; a master page or the first page keeps it). It always
+  // sits there: a 0.
+  if (attrs.breakBefore === 'page' && !master && kind === 'body' && ctx.bodyBlocks > 0 && ctx.breakDropsSpace
+    && (lengthToPt(paraProps['fo:margin-top']) ?? 0) > 0) attrs.spaceBefore = 0;
   if (paraProps['style:contextual-spacing'] === 'true') applyContextualSpacing(el, styleName, attrs);
   if (master) {
     // Naming a master *is* a page break, even where the page already uses that one
@@ -1934,7 +2120,7 @@ function convertParaLike(el: Element, ctx: Ctx, kind: BlockKind, boldByDefault =
   for (const [k, v] of Object.entries(baked)) if (v != null) delete attrs[k];
   applyUniformRunFont(attrs, content);
   for (const [k, v] of Object.entries(baked)) if (v != null && attrs[k] == null) attrs[k] = v;
-  sinkOffsetFrames(content);
+  sinkOffsetFrames(content, lengthToPt(attrs.fontSize as string | undefined) ?? defaults.fontSizePt);
 
   const node: Node = { type: isHeading ? 'heading' : 'paragraph' };
   if (isHeading) attrs.level = level;
@@ -2583,6 +2769,7 @@ function convertInline(root: Element, ctx: Ctx, baseProps: PropMap, defaults: Bl
         // A box is inline like a picture, so it stays exactly where the frame sits.
         if (conv?.inline) out.push(conv.inline);
         else if (conv?.block) out.push(conv.block);
+        else if (conv?.group) out.push(...conv.group);
         continue;
       }
       if (e.namespaceURI === NS.office && (e.localName === 'annotation' || e.localName === 'annotation-end')) {
@@ -2819,9 +3006,6 @@ function formatPt(v: number): string {
 
 // ---- lists -----------------------------------------------------------------------
 
-// The heading elements of a <text:list> whose leaves are all headings (each list-item
-// holds only a text:h and/or nested such lists) — ODF outline/chapter numbering, not a
-// real list, so they import as plain headings. null when it's a genuine list.
 // The master governing the most body blocks, and the one the first paragraph starts on.
 // Mirrors convertBlocks' body-level dispatch: only a paragraph or heading can name one,
 // and '' is the file's own default.
@@ -2839,7 +3023,7 @@ function masterPagesOf(elements: Element[], resolver: StyleResolver): { dominant
         current = own ?? current;
         counts.set(current, (counts.get(current) ?? 0) + 1);
       } else if (el.namespaceURI === NS.text && el.localName === 'list') {
-        const headings = outlineHeadingEls(el);
+        const headings = outlineHeadingEls(el, resolver);
         if (headings) walk(headings);
       } else if (el.namespaceURI === NS.text && el.localName === 'section') {
         walk(Array.from(el.children));
@@ -2859,7 +3043,27 @@ function masterPagesOf(elements: Element[], resolver: StyleResolver): { dominant
   return { dominant: dominant || null, leading };
 }
 
-function outlineHeadingEls(listEl: Element): Element[] | null {
+// Whether a <text:list> around headings is chapter numbering rather than a list: it is
+// the outline style, the list a heading's named style carries, or no style at all. A list
+// on the heading alone is a real one — LibreOffice's bullet on a heading (probed).
+function isChapterList(listEl: Element, resolver: StyleResolver): boolean {
+  const name = listEl.getAttributeNS(NS.text, 'style-name');
+  if (!name || name === resolver.outlineStyle()?.getAttributeNS(NS.style, 'name')) return true;
+  for (const h of Array.from(listEl.getElementsByTagNameNS(NS.text, 'h'))) {
+    if (resolver.paraListStyle(h.getAttributeNS(NS.text, 'style-name')) === name) return true;
+  }
+  return false;
+}
+
+// The heading elements of a chapter-numbering <text:list> whose leaves are all headings
+// (each list-item holds only a text:h and/or nested such lists), so they import as plain
+// headings. null when it's a genuine list.
+function outlineHeadingEls(listEl: Element, resolver: StyleResolver): Element[] | null {
+  if (!isChapterList(listEl, resolver)) return null;
+  return headingLeaves(listEl);
+}
+
+function headingLeaves(listEl: Element): Element[] | null {
   const out: Element[] = [];
   for (const item of Array.from(listEl.children)) {
     if (item.namespaceURI !== NS.text || (item.localName !== 'list-item' && item.localName !== 'list-header')) continue;
@@ -2868,7 +3072,7 @@ function outlineHeadingEls(listEl: Element): Element[] | null {
       if (child.localName === 'h') {
         out.push(child);
       } else if (child.localName === 'list') {
-        const nested = outlineHeadingEls(child);
+        const nested = headingLeaves(child);
         if (!nested) return null;
         out.push(...nested);
       } else {
@@ -2882,7 +3086,8 @@ function outlineHeadingEls(listEl: Element): Element[] | null {
 // `inheritedStyleName`: a nested text:list usually carries no style-name of its own — the
 // outermost list's style governs, one level def per depth. `govMultilevel`: inside a
 // display-levels chain, so an explicit numbering here is never suppressed (null = rejoin).
-function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, depth: number, govMultilevel = false, baseCycle: OrderedCycle = ROOT_ORDERED_CYCLE): Node | null {
+// `keepHeadings`: the list is no chapter numbering, so a heading opening an item stays one.
+function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, depth: number, govMultilevel = false, baseCycle: OrderedCycle = ROOT_ORDERED_CYCLE, keepHeadings = false): Node | null {
   const styleName = el.getAttributeNS(NS.text, 'style-name') ?? inheritedStyleName;
   // A named list style travels as `listStyleName` on the outermost list; everything the
   // style's levels say stays in the registry, so no per-level attrs are derived.
@@ -2897,7 +3102,7 @@ function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, d
   const inChain = ordered && (isMultilevelTop || displayLevels > 1);
   // This list's rendered numbering re-anchors its children's default cycle (slot + suffix).
   const renderedKey = ordered && !inChain
-    ? orderedTypeFromFormat(levelDef!.getAttributeNS(NS.style, 'num-format'), levelDef!.getAttributeNS(NS.style, 'num-suffix'))
+    ? orderedTypeFromFormat(odfNumFormatOf(levelDef!), levelDef!.getAttributeNS(NS.style, 'num-suffix'))
     : null;
   const childBaseCycle = childCycle(baseCycle, inChain ? 'multilevel' : renderedKey, ordered);
 
@@ -2914,17 +3119,17 @@ function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, d
     const blocks: Node[] = [];
     for (const child of Array.from(item.children)) {
       if (child.namespaceURI === NS.text && (child.localName === 'p' || child.localName === 'h')) {
-        blocks.push(convertParaLike(child, ctx, 'list', false, blocks.length > 0));
+        blocks.push(convertParaLike(child, ctx, 'list', false, keepHeadings || blocks.length > 0));
       } else if (child.namespaceURI === NS.text && child.localName === 'list') {
-        const nested = convertList(child, ctx, styleName, depth + 1, inChain, childBaseCycle);
+        const nested = convertList(child, ctx, styleName, depth + 1, inChain, childBaseCycle, keepHeadings);
         if (nested) blocks.push(nested);
       } else if (child.namespaceURI === NS.table && child.localName === 'table') {
-        ctx.warnings.add('Nested tables were flattened to paragraphs');
+        ctx.warnings.add(WARN.nestedTables);
         blocks.push(...flattenTable(child, ctx));
       }
     }
-    // listItem requires a leading paragraph (e.g. an item holding only a sub-list).
-    if (blocks[0]?.type !== 'paragraph') blocks.unshift({ type: 'paragraph' });
+    // listItem opens with a paragraph or a heading (not e.g. only a sub-list).
+    if (blocks[0]?.type !== 'paragraph' && blocks[0]?.type !== 'heading') blocks.unshift({ type: 'paragraph' });
     items.push({ type: 'listItem', content: blocks });
   }
   if (items.length === 0) return null;
@@ -2951,7 +3156,7 @@ function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, d
       if (bulletChar) attrs.bulletChar = bulletChar;
       if (indent != null) attrs.indent = indent;
       if (listLevelRightAligned(levelDef)) attrs.markerAlign = 'right';
-      Object.assign(attrs, listLevelLabel(levelDef, depth));
+      Object.assign(attrs, listLevelLabel(levelDef, depth), listLevelMarker(levelDef, ctx));
     }
     const node: Node = { type: 'bulletList', content: items };
     if (Object.keys(attrs).length) node.attrs = attrs;
@@ -2977,11 +3182,18 @@ function convertList(el: Element, ctx: Ctx, inheritedStyleName: string | null, d
     if (listStyleType) attrs.listStyleType = listStyleType;
     if (indent != null) attrs.indent = indent;
     if (listLevelRightAligned(levelDef)) attrs.markerAlign = 'right';
-    Object.assign(attrs, listLevelLabel(levelDef, depth));
+    Object.assign(attrs, listLevelLabel(levelDef, depth), listLevelMarker(levelDef, ctx));
   }
   const node: Node = { type: 'orderedList', content: items };
   if (Object.keys(attrs).length) node.attrs = attrs;
   return node;
+}
+
+// The text style a level formats its label with, as the list's own marker format.
+function listLevelMarker(levelDef: Element | null, ctx: Ctx): { markerFormat?: Partial<MarkerFormat> } {
+  const name = levelDef?.getAttributeNS(NS.text, 'style-name');
+  const own = name ? markerFormatFromText(textPropsFromOdf(ctx.resolver.spanTextProps(name), ctx.resolver)) : null;
+  return own ? { markerFormat: own } : {};
 }
 
 // fo:text-align="end" on the level properties: the label is set against the far end of
@@ -3264,6 +3476,7 @@ function convertTable(el: Element, ctx: Ctx): Node | null {
     const row: Node = { type: 'tableRow', content: cells };
     const heightCm = ctx.resolver.rowMinHeightCm(rowEl.getAttributeNS(NS.table, 'style-name'));
     if (heightCm != null && heightCm > 0) row.attrs = { rowHeight: Math.round(heightCm * PX_PER_CM) };
+    if (ctx.resolver.rowKeepTogether(rowEl.getAttributeNS(NS.table, 'style-name'))) row.attrs = { ...row.attrs, cantSplit: true };
     rows.push(row);
   };
 

@@ -91,17 +91,33 @@ try {
   // gives clearing it something to change. Every step is undone again after.
   const breaks = () => page.evaluate(() => Array.from(document.querySelectorAll('[data-page-break-spacer]'),
     (s) => Math.round(s.getBoundingClientRect().top)).join(','));
-  const relabel = async (how) => { await page.evaluate(how); await page.waitForTimeout(1500); return breaks(); };
+  // A slow runner may still be paginating after a fixed pause: read until two reads agree.
+  const relabel = async (how) => {
+    await page.evaluate(how);
+    await page.waitForTimeout(1500);
+    let prev, cur = await breaks();
+    for (let i = 0; i < 20 && cur !== prev; i++) { await page.waitForTimeout(750); [prev, cur] = [cur, await breaks()]; }
+    return cur;
+  };
   const undo = () => document.querySelector('.tiptap').editor.commands.undo();
   const breaksKept = await relabel(() => document.querySelector('.tiptap').editor.chain()
     .selectAll().updateAttributes('paragraph', { keepLines: true }).setTextSelection(1).run());
   const breaksLabelled = await relabel(() => document.querySelector('.tiptap').editor.chain()
     .selectAll().setBlockLanguage('fr-FR').setTextSelection(1).run());
+  // The caret stays at the top, and the view scrolled away from it stays where it is.
+  const scrolled = () => page.evaluate(() => Math.round(document.querySelector('.editor').scrollTop));
+  await page.evaluate(() => { const ed = document.querySelector('.editor'); ed.scrollTop = ed.scrollHeight; });
+  const scrollBefore = await scrolled();
   await page.locator('.statusbar .lang-picker select').selectOption('doc:de');
+  await page.waitForTimeout(300);
+  const scrollAfter = await scrolled();
+  await page.evaluate(() => { document.querySelector('.editor').scrollTop = 0; });
   const breaksCleared = await relabel(() => {});
   const breaksUndone = await relabel(undo);
   check(breaksKept.includes(',') && [breaksLabelled, breaksCleared, breaksUndone].every((b) => b === breaksKept),
     `a language for all text keeps the page breaks (${breaksKept} → ${breaksLabelled} → ${breaksCleared} → ${breaksUndone})`);
+  check(scrollBefore > 0 && scrollAfter === scrollBefore,
+    `a language for all text leaves the view where it was (scrollTop ${scrollBefore} → ${scrollAfter})`);
   await page.evaluate(undo);
   await page.evaluate(undo);
   await settled(opened);
@@ -179,6 +195,7 @@ try {
   // The whole margin band is the zone's double-click target, and an empty zone's
   // placeholder sits where the first typed character lands — not a line below it.
   await page.keyboard.press('Escape');
+  await page.locator('.hf-zone.hf-footer').first().scrollIntoViewIfNeeded();
   const fb = await page.locator('.hf-zone.hf-footer').first().boundingBox();
   await page.mouse.dblclick(fb.x - 40, fb.y + fb.height + 20);
   await page.waitForSelector('.hf-active.hf-footer .tiptap', { timeout: 5000 });
@@ -332,6 +349,79 @@ try {
   check(bands === '-/none true/none -/both anchored/none -/none true/none true/none -/both',
     `loaded from the autosave, the block after a band frame clears it, after an anchored one it does not (${bands})`);
 
+  // A borderless table split inside its cell under a footer taller than the bottom margin:
+  // the page-break mask draws no edge lines, and its gap stripe sits on the sheets' gap.
+  const cellLines = Array.from({ length: 70 }, (_, i) => block(words(`cell line ${i + 1}`)));
+  await page.evaluate(([d, f]) => {
+    localStorage.setItem('edentext-doc', JSON.stringify(d));
+    localStorage.setItem('edentext-footer', JSON.stringify(f));
+  }, [{ type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell',
+    attrs: { borderTop: 'none', borderRight: 'none', borderBottom: 'none', borderLeft: 'none' }, content: cellLines }] }] }] },
+  { type: 'doc', content: Array.from({ length: 6 }, (_, i) => block(words(`footer ${i + 1}`))) }]);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tiptap', { timeout: 15_000 });
+  await settle(page, true);
+  const mask = await page.evaluate(() => {
+    const stripe = document.querySelector('.page-gap-stripe');
+    const sheets = Array.from(document.querySelectorAll('.page-sheet'), (s) => s.getBoundingClientRect());
+    const top = stripe ? stripe.getBoundingClientRect().top + 1 : NaN;
+    return { lines: document.querySelectorAll('.table-break-band.lines').length, off: Math.min(...sheets.map((r) => Math.abs(r.bottom - top))) };
+  });
+  check(mask.lines === 0 && mask.off <= 1,
+    `a borderless table's page-break mask draws no lines and its gap on the sheets' (${mask.lines} lines, ${mask.off.toFixed(1)}px off)`);
+  await page.evaluate(() => localStorage.removeItem('edentext-footer'));
+
+  // A row that may not break and is taller than a page starts on a fresh one.
+  await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [
+    ...Array.from({ length: 5 }, (_, i) => block(words(`before ${i + 1}`))),
+    { type: 'table', content: [{ type: 'tableRow', attrs: { cantSplit: true }, content: [{ type: 'tableCell', content:
+      Array.from({ length: 70 }, (_, i) => block(words(`kept line ${i + 1}`))) }] }] }] });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tiptap', { timeout: 15_000 });
+  await settle(page, true);
+  const keptPage = await page.evaluate(() => {
+    const p = Array.from(document.querySelectorAll('.tiptap-host .tiptap td p')).find((e) => e.textContent === 'kept line 1');
+    const sheets = Array.from(document.querySelectorAll('.page-sheet'), (s) => s.getBoundingClientRect());
+    const top = p ? p.getBoundingClientRect().top : NaN;
+    return sheets.findIndex((r) => top >= r.top && top < r.bottom) + 1;
+  });
+  check(keptPage === 2, `a row that may not break, taller than a page, starts on the next one (page ${keptPage})`);
+
+  // In the larger-of spacing model a block's space above is a margin, outside the box the
+  // page break moves: a manual break must clear it too, less the space below the block before.
+  await page.evaluate((d) => {
+    localStorage.setItem('edentext-doc', JSON.stringify(d));
+    localStorage.setItem('edentext-spacing-model', 'max');
+  }, { type: 'doc', content: [{ type: 'paragraph', attrs: { spaceAfter: 6 }, content: [words('first page')] },
+    { type: 'paragraph', attrs: { breakBefore: 'page', spaceBefore: 24 }, content: [words('spaced page')] }] });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tiptap', { timeout: 15_000 });
+  await settle(page, true);
+  // Measured from the sheet's top: the default 2cm margin is 75.6px, the space 32 − 8px.
+  const keptTop = await page.evaluate(() => {
+    const sheets = Array.from(document.querySelectorAll('.page-sheet'), (s) => s.getBoundingClientRect().top);
+    const r = Array.from(document.querySelectorAll('.tiptap-host .tiptap > p')).find((p) => p.textContent === 'spaced page').getBoundingClientRect().top;
+    return r - sheets.filter((s) => s <= r + 1).pop();
+  });
+  check(Math.abs(keptTop - (75.6 + 24)) <= 1.5, `a manual break keeps the space above in the larger-of model (${keptTop.toFixed(1)}px below the sheet top)`);
+  await page.evaluate(() => localStorage.removeItem('edentext-spacing-model'));
+
+  // Two left floats in one paragraph each sit at their own x: the later one, set left of
+  // where CSS queues it, is pulled back; its gap is cut at the column's edge.
+  await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [
+    block(frame({ wrap: 'left', wrapOffset: 5 }), frame({ wrap: 'left', wrapOffset: 0.5 }), words('text')),
+  ] });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tiptap', { timeout: 15_000 });
+  await settle(page, true);
+  const floatsX = await page.evaluate(() => {
+    const p = document.querySelector('.tiptap-host .tiptap > p');
+    const left = p.getBoundingClientRect().left;
+    return Array.from(p.querySelectorAll(':scope > .image-node'), (f) => Math.round(f.getBoundingClientRect().left - left));
+  });
+  check(Math.abs(floatsX[0] - 189) <= 1 && Math.abs(floatsX[1] - 19) <= 1,
+    `two left floats in one paragraph sit at their own x (${floatsX.join(', ')}px)`);
+
   // An index shows the rows it saved, as both word processors do, until it is updated.
   const heading = (t) => ({ type: 'heading', attrs: { level: 1 }, content: [words(t)] });
   await page.evaluate((d) => localStorage.setItem('edentext-doc', JSON.stringify(d)), { type: 'doc', content: [
@@ -424,7 +514,7 @@ try {
   await page.locator('.image-toolbar .it-btn').nth(4).click();
   await settle(page, true);
   const behindBox = await frameBox();
-  check(behindBox.wrap === 'through' && behindBox.z === '-1' && await paraHeight() < inlineHeight,
+  check(behindBox.wrap === 'through' && Number(behindBox.z) < -1 && await paraHeight() < inlineHeight,
     `the behind-text button takes the frame out of the flow (${behindBox.wrap}, z ${behindBox.z}, ${inlineHeight}px → ${await paraHeight()}px)`);
   // setNodeMarkup replaces a leaf, so without putting the node selection back the frame
   // deselects itself on every attribute change and its toolbars close.
@@ -467,6 +557,28 @@ try {
   const bdy = Math.round(boxAfter.y - boxBefore.y);
   check(Math.abs(bdx - 50) <= 2 && Math.abs(bdy - 25) <= 2,
     `a text box out of the flow is dragged by its ring (moved ${bdx}/${bdy}, wanted 50/25)`);
+
+  // A line is dragged by its ends: the one grabbed follows the pointer past the other,
+  // which stays put. A box turned into a line leaves the text, so both ends are free.
+  await page.evaluate(() => {
+    const ed = document.querySelector('.tiptap').editor;
+    ed.chain().focus().insertTextBox().run();
+    ed.commands.setTextBoxAttrs({ shapeKind: 'lineArrow' });
+  });
+  await page.waitForSelector('.tiptap .textbox-node.textbox-is-line[data-wrap="through"] .textbox-line-end',
+    { state: 'visible', timeout: 15_000 });
+  const lineEnds = () => page.evaluate(() => [...document.querySelectorAll('.tiptap .textbox-is-line .textbox-line-end')]
+    .map((h) => { const r = h.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }));
+  const [startBefore, endBefore] = await lineEnds();
+  await page.mouse.move(startBefore.x, startBefore.y);
+  await page.mouse.down();
+  await page.mouse.move(endBefore.x + 40, endBefore.y + 30, { steps: 4 });
+  await page.mouse.up();
+  await settle(page, true);
+  const [startAfter, endAfter] = await lineEnds();
+  const near = (p, q, x, y) => Math.abs(p.x - q.x - x) <= 2 && Math.abs(p.y - q.y - y) <= 2;
+  check(near(endAfter, endBefore, 0, 0) && near(startAfter, endBefore, 40, 30),
+    `a line's start is dragged past its end (start ${Math.round(startAfter.x - endBefore.x)}/${Math.round(startAfter.y - endBefore.y)} from the end, wanted 40/30; end moved ${Math.round(endAfter.x - endBefore.x)}/${Math.round(endAfter.y - endBefore.y)})`);
 
   // The cross-reference window is modeless so the view can stay parked on the target
   // while a reference is picked. Restoring focus to the editor must therefore not scroll
@@ -575,7 +687,8 @@ try {
   await settle(page, true);
   await page.selectOption('.statusbar .lang-picker select', 'doc:en');
   await page.check('.statusbar .gr-toggle input');
-  const squiggle = await page.waitForSelector('.tiptap .pm-grammar-error', { timeout: 60_000 })
+  // The waves are CSS highlight ranges (grammarCheck.ts), not elements.
+  const squiggle = await page.waitForFunction(() => CSS.highlights.get('grammar-error')?.size > 0, null, { timeout: 60_000 })
     .then(() => true).catch(() => false);
   check(squiggle, 'the grammar check flags a wrong sentence in the browser');
 
@@ -583,7 +696,7 @@ try {
   // what the hyphenation and the browser's own spell check read.
   await page.evaluate(() => document.querySelector('.tiptap').editor.commands.setContent(
     '<p>He go to the store.</p><p>Er geht zum Laden zum Laden.</p>'));
-  await page.waitForFunction(() => document.querySelectorAll('.tiptap .pm-grammar-error').length > 0,
+  await page.waitForFunction(() => CSS.highlights.get('grammar-error')?.size > 0,
     null, { timeout: 30_000 }).catch(() => {});
   await page.evaluate(() => {
     const ed = document.querySelector('.tiptap').editor;
@@ -597,11 +710,14 @@ try {
     return input?.disabled && !input.checked;
   }, null, { timeout: 5_000 }).then(() => true).catch(() => false);
   check(paragraphToggleOff, 'a non-English paragraph disables and clears the grammar toggle');
-  // Harper reads German as broken English; the block language is what keeps it out.
-  await page.waitForFunction(() => document.querySelectorAll('.tiptap .pm-grammar-error').length > 0,
+  // Harper reads German as broken English; the block language is what keeps it out. The
+  // wait is on the outcome itself: the marks from before the language change still stand
+  // until the re-check clears them.
+  const countPerPara = () => [...document.querySelectorAll('.tiptap-host .tiptap > p')].map((p) =>
+    [...CSS.highlights.get('grammar-error') ?? []].filter((r) => p.contains(r.startContainer)).length);
+  await page.waitForFunction(`(${countPerPara})()[0] > 0 && (${countPerPara})()[1] === 0`,
     null, { timeout: 30_000 }).catch(() => {});
-  const perPara = await page.evaluate(() =>
-    [...document.querySelectorAll('.tiptap-host .tiptap > p')].map((p) => p.querySelectorAll('.pm-grammar-error').length));
+  const perPara = await page.evaluate(countPerPara);
   check(perPara[0] > 0 && perPara[1] === 0, `only the English paragraph is grammar-checked (${JSON.stringify(perPara)})`);
 
   // The default can be Portuguese while an English paragraph still gets grammar checks.
@@ -621,7 +737,8 @@ try {
     return !input?.disabled && input?.checked;
   }, null, { timeout: 5_000 }).then(() => true).catch(() => false);
   check(englishToggleOn, 'an English paragraph restores the grammar toggle');
-  await page.waitForFunction(() => document.querySelector('.tiptap-host .tiptap > p .pm-grammar-error'), null, { timeout: 30_000 })
+  await page.waitForFunction(() => [...CSS.highlights.get('grammar-error') ?? []].some((r) =>
+    r.startContainer.isConnected && r.startContainer.parentElement?.closest('.tiptap-host .tiptap > p')), null, { timeout: 30_000 })
     .then(() => check(true, 'an English paragraph in a Portuguese document is grammar-checked'))
     .catch(() => check(false, 'an English paragraph in a Portuguese document is grammar-checked'));
 
@@ -720,6 +837,78 @@ try {
   await gridStep('page up');
   check(gridPages > 6 && gridFaults.length === 0,
     `the page grid shows each page in its own cell and the caret where it is (${gridPages} pages${gridFaults.length ? `: ${gridFaults.join('; ')}` : ''})`);
+
+  // Dark theme: every menu each ribbon tab opens, a text box selected so its contextual
+  // tab shows too. A glyph or label barely apart from what it sits on is a colour some
+  // control fixed instead of taking the theme's (a popover's black, the shape gallery's).
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem('edentext-theme', 'dark'); });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tiptap', { timeout: 15_000 });
+  await page.click('.tiptap');
+  await page.keyboard.type('Contrast');
+  await page.evaluate(() => document.querySelector('.tiptap').editor.commands.insertTextBox());
+  const selectBox = () => page.evaluate(() => {
+    const ed = document.querySelector('.tiptap').editor;
+    ed.state.doc.descendants((n, p) => { if (n.type.name === 'textBox') ed.commands.setNodeSelection(p); });
+  });
+  const lowContrast = (where) => page.evaluate((where) => {
+    const rgb = (c) => {
+      const v = (c.match(/[\d.]+/g) ?? []).map(Number);
+      return c.startsWith('color(') ? [...v.slice(0, 3).map((x) => x * 255), v[3] ?? 1] : [...v.slice(0, 3), v[3] ?? 1];
+    };
+    const lum = (c) => c.slice(0, 3).reduce((sum, v, i) => {
+      v /= 255;
+      return sum + [0.2126, 0.7152, 0.0722][i] * (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    }, 0);
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    const backdrop = (el) => {
+      for (let e = el; e; e = e.parentElement) { const c = rgb(getComputedStyle(e).backgroundColor); if (c.length === 4 && c[3] > 0.5) return c; }
+      return [255, 255, 255, 1];
+    };
+    const shown = (el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || getComputedStyle(el).visibility === 'hidden') return false;
+      for (let e = el; e; e = e.parentElement) if (parseFloat(getComputedStyle(e).opacity) < 0.6) return false;
+      return true;
+    };
+    const out = [];
+    // The column previews' page frame is a hairline on purpose, in every theme.
+    for (const el of document.querySelectorAll('body *:not(.paper *, .col-preview > rect:first-child)')) {
+      if (!shown(el)) continue;
+      let fg;
+      if (el instanceof SVGGeometryElement) {
+        const cs = getComputedStyle(el);
+        if (cs.stroke === 'none' && cs.fill === 'none') continue;
+        fg = rgb(cs.stroke !== 'none' ? cs.stroke : cs.fill);
+      } else if ([...el.childNodes].some((n) => n.nodeType === 3 && n.nodeValue.trim())) {
+        fg = rgb(getComputedStyle(el).color);
+      } else continue;
+      if (fg.length < 4 || fg[3] < 0.5) continue;
+      const r = ratio(fg, backdrop(el instanceof SVGElement ? el.closest('svg').parentElement : el));
+      const named = el.closest('[aria-label],[title]');
+      if (r < 2) out.push(`${where}: ${named?.getAttribute('aria-label') || named?.title || el.textContent.trim().slice(0, 30)} (${r.toFixed(2)})`);
+    }
+    return out;
+  }, where);
+  const contrastFaults = new Set();
+  for (const tab of await page.$$eval('.ribbon-tab', (els) => els.map((e) => e.textContent.trim()))) {
+    await selectBox();
+    const button = page.locator('.ribbon-tab', { hasText: tab }).first();
+    if (!(await button.isVisible())) continue;
+    await button.click();
+    (await lowContrast(tab)).forEach((f) => contrastFaults.add(f));
+    const menus = await page.$$eval('.ribbon-body [aria-haspopup]', (els) =>
+      els.map((e, i) => { e.dataset.contrastMenu = String(i); return e.offsetParent ? i : -1; }).filter((i) => i >= 0));
+    for (const i of menus) {
+      const trigger = page.locator(`[data-contrast-menu="${i}"]`);
+      const label = await trigger.evaluate((e) => e.getAttribute('aria-label') || e.title || e.textContent.trim());
+      try { await trigger.click({ timeout: 1500 }); } catch { continue; }
+      (await lowContrast(`${tab} › ${label}`)).forEach((f) => contrastFaults.add(f));
+      await page.keyboard.press('Escape');
+      await page.mouse.click(5, 300);
+    }
+  }
+  check(contrastFaults.size === 0, `the dark theme draws no menu glyph or label in a colour of its own${contrastFaults.size ? `: ${[...contrastFaults].slice(0, 8).join('; ')}` : ''}`);
 
 } catch (err) {
   check(false, `dom run threw: ${err.message ?? err}`);

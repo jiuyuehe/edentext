@@ -12,7 +12,7 @@ half-added.
 **Adding one** — a file in `locales/`, its code in `LOCALES` and its endonym in
 `LOCALE_LABELS` (`config.ts`), the import and the `catalogs` entry, and a tag in
 `LOCALE_TAG` (`utils/dateTime.ts`) so `Intl` gets a region for date fields and the status
-bar. `tests/unit/templates.test.ts` iterates `LOCALES` and covers the new catalog on its
+bar, and the desktop app's dialog and menu texts (`TEXT` in `desktop/main.mjs`). `tests/unit/templates.test.ts` iterates `LOCALES` and covers the new catalog on its
 own; the `templates:` block is what the built-in templates read at call time.
 
 **Codes are full BCP-47 tags, not always two letters.** Chinese ships as `zh-Hans` and

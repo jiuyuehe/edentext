@@ -7,7 +7,7 @@ import { buildOdt } from '../src/lib/export/odt';
 import { importOdt } from '../src/lib/import/odt';
 import { buildDocx } from '../src/lib/export/docx';
 import { importDocx } from '../src/lib/import/docx';
-import { normalize, firstDiff, stripFontHoist } from './normalize';
+import { normalize, firstDiff, stripFontHoist, stripBoxGrowth, stripBreakSpace } from './normalize';
 import { mulberry32 } from './fuzzDoc';
 import { genCase, exportArgs, expectedOptions, importedOptions, diffLoose, omit, DOCX_LOSSY, docWideOddEven } from './fuzzOptions';
 import { hasXmllint, validateOdt, validateDocx } from './schemaValidate';
@@ -50,8 +50,8 @@ describe('fuzz round-trip: editor → buildOdt → importOdt', () => {
       const { doc, opts } = genCase(mulberry32(seed));
       const viaOdt = importOdt(await buildOdt(doc, ...exportArgs(opts))).content;
       const res = importDocx(await buildDocx(doc, ...exportArgs(opts)));
-      const diff = firstDiff(stripColwidth(stripFontHoist(normalize(viaOdt))),
-        stripColwidth(stripFontHoist(normalize(res.content))));
+      const diff = firstDiff(stripBreakSpace(stripColwidth(stripFontHoist(normalize(viaOdt)))),
+        stripBreakSpace(stripBoxGrowth(stripColwidth(stripFontHoist(normalize(res.content))))));
       expect.soft(diff, `seed ${seed}: ODT vs DOCX import`).toBeNull();
       const optDiff = diffLoose(docWideOddEven(omit(expectedOptions(opts), DOCX_LOSSY)),
         omit(importedOptions(res, opts), DOCX_LOSSY));

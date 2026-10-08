@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 // Fold and punch marks in the left margin (DIN 5008 letter sheets). Off by default —
 // neither word processor prints any — so a fresh document writes nothing. They ride the
@@ -20,13 +20,13 @@ export const FOLD_MARK_NAME = 'EdenFoldMark';
 
 export function loadFoldMarks(): boolean {
   try {
-    return localStorage.getItem(KEY) === 'true';
+    return docStore.getItem(KEY) === 'true';
   } catch {
     return false;
   }
 }
 
 export function saveFoldMarks(on: boolean): void {
-  if (!on) localStorage.removeItem(KEY);
-  else localStorage.setItem(KEY, 'true');
+  if (!on) docStore.removeItem(KEY);
+  else docStore.setItem(KEY, 'true');
 }

@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 // Automatic hyphenation for the whole document: LibreOffice's Format ▸ Paragraph ▸
 // Text Flow on the default paragraph style, Word's Layout ▸ Hyphenation. Off in both,
@@ -10,10 +10,10 @@ const KEY = docKey('edentext-hyphenation');
 export const DEFAULT_HYPHENATION = false;
 
 export function loadHyphenation(): boolean {
-  return localStorage.getItem(KEY) === 'true';
+  return docStore.getItem(KEY) === 'true';
 }
 
 export function saveHyphenation(on: boolean): void {
-  if (on) localStorage.setItem(KEY, 'true');
-  else localStorage.removeItem(KEY);
+  if (on) docStore.setItem(KEY, 'true');
+  else docStore.removeItem(KEY);
 }

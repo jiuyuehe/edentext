@@ -7,6 +7,7 @@
   // button. Without `onCaret` the caret is decorative and the whole control opens.
   let {
     icon,
+    cmd,
     content,
     label,
     title,
@@ -21,6 +22,8 @@
     onCaret,
   }: {
     icon?: IconName;
+    // The command search clicks the control by this id; see commands.ts.
+    cmd?: string;
     content?: Snippet;
     label?: string;
     title?: string;
@@ -58,7 +61,7 @@
 
 {#if caret && onCaret}
   <span class="rb-split" class:caret-primary={caretPrimary} class:rb-split-active={active || caretActive}>
-    <button class="rb rb-{variant}" class:active {disabled} {title} {onclick}>
+    <button class="rb rb-{variant}" class:active {disabled} {title} data-cmd={cmd} {onclick}>
       {@render face()}
     </button>
     <button
@@ -79,6 +82,7 @@
     class:active
     {disabled}
     {title}
+    data-cmd={cmd}
     aria-haspopup={caret ? 'menu' : undefined}
     aria-expanded={caret ? active : undefined}
     {onclick}

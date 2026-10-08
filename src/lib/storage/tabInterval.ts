@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 const KEY = docKey('edentext-tab-interval');
 
@@ -20,12 +20,12 @@ export function clampTabInterval(cm: unknown): number {
 }
 
 export function loadTabInterval(): number {
-  const raw = localStorage.getItem(KEY);
+  const raw = docStore.getItem(KEY);
   return raw == null ? DEFAULT_TAB_INTERVAL_CM : clampTabInterval(parseFloat(raw));
 }
 
 export function saveTabInterval(cm: number): void {
-  localStorage.setItem(KEY, String(cm));
+  docStore.setItem(KEY, String(cm));
 }
 
 // Sets --tab-interval on the document root, where it inherits down to .tiptap and

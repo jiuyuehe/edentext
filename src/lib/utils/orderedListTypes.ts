@@ -8,6 +8,12 @@ export type OrderedListType =
   | 'upper-alpha'  | 'upper-alpha-paren'
   | 'lower-roman'  | 'lower-roman-paren'
   | 'upper-roman'  | 'upper-roman-paren'
+  | 'lower-alpha-sync'    | 'lower-alpha-sync-paren'
+  | 'upper-alpha-sync'    | 'upper-alpha-sync-paren'
+  | 'lower-cyrillic'      | 'lower-cyrillic-paren'
+  | 'upper-cyrillic'      | 'upper-cyrillic-paren'
+  | 'lower-cyrillic-sync' | 'lower-cyrillic-sync-paren'
+  | 'upper-cyrillic-sync' | 'upper-cyrillic-sync-paren'
   | 'cjk-counting' | 'cjk-legal' | 'cjk-stem' | 'circled-decimal'
   | 'katakana'     | 'katakana-iroha'
   | 'multilevel';
@@ -26,17 +32,30 @@ export function defaultOrderedType(depth0: number): OrderedListType {
 export type CjkNumFormat = '一, 二, 三, ...' | '壹, 贰, 叁, ...' | '甲, 乙, 丙, ...' | '①, ②, ③, ...'
   | 'ア, イ, ウ, ...' | 'イ, ロ, ハ, ...';
 
+// LibreOffice's Russian letter formats, verbatim: the "аа, аб" ones count on like a, b, c,
+// the "аа, бб" ones repeat the letter, as `a` with style:num-letter-sync does.
+export type CyrillicNumFormat = 'а, б, .., аа, аб, ... (ru)' | 'А, Б, .., Аа, Аб, ... (ru)'
+  | 'а, б, .., аа, бб, ... (ru)' | 'А, Б, .., Аа, Бб, ... (ru)';
+
+// 'aa'/'AA' stand for ODF's `a`/`A` with style:num-letter-sync="true" (a … z, aa, bb).
+export type LetterSyncFormat = 'aa' | 'AA';
+
 export interface OrderedTypeDef {
   key: OrderedListType;
   label: string;   // human-readable description for the menu
   preview: string; // a single marker shown in the dropdown, e.g. "1." or "a)"
   // ODF style:num-format. LibreOffice spells the CJK formats as the whole sequence,
   // not as one character — probed, it drops a bare '一' back to decimal.
-  numFormat: '1' | 'a' | 'A' | 'i' | 'I' | CjkNumFormat;
+  numFormat: '1' | 'a' | 'A' | 'i' | 'I' | LetterSyncFormat | CyrillicNumFormat | CjkNumFormat;
   numSuffix: '.' | ')' | '、' | ''; // ODF style:num-suffix
   // Legal/outline numbering (1., 1.1., 1.2.1. …): each level shows the parent chain.
   // ODF text:display-levels, DOCX "%1.%2." lvlText, CSS counters() markers.
   multilevel?: boolean;
+  // The menus offer it only where the UI or the document is in that script.
+  script?: 'cjk' | 'cyrillic';
+  // Differs from its plain row only past the last letter: the list style dialog offers it,
+  // the quick menus do not.
+  rare?: true;
 }
 
 // In menu order. Keep aligned with the @counter-style / ol[data-list-style] rules
@@ -49,16 +68,28 @@ export const ORDERED_LIST_TYPES: OrderedTypeDef[] = [
   { key: 'lower-alpha-paren', label: 'a), b), c)',     preview: 'a)',   numFormat: 'a', numSuffix: ')' },
   { key: 'upper-alpha',       label: 'A, B, C',        preview: 'A.',   numFormat: 'A', numSuffix: '.' },
   { key: 'upper-alpha-paren', label: 'A), B), C)',     preview: 'A)',   numFormat: 'A', numSuffix: ')' },
+  { key: 'lower-alpha-sync',       label: 'a, …, aa, bb',     preview: 'aa.', numFormat: 'aa', numSuffix: '.', rare: true },
+  { key: 'lower-alpha-sync-paren', label: 'a), …, aa), bb)',  preview: 'aa)', numFormat: 'aa', numSuffix: ')', rare: true },
+  { key: 'upper-alpha-sync',       label: 'A, …, AA, BB',     preview: 'AA.', numFormat: 'AA', numSuffix: '.', rare: true },
+  { key: 'upper-alpha-sync-paren', label: 'A), …, AA), BB)',  preview: 'AA)', numFormat: 'AA', numSuffix: ')', rare: true },
   { key: 'lower-roman',       label: 'i, ii, iii',     preview: 'i.',   numFormat: 'i', numSuffix: '.' },
   { key: 'lower-roman-paren', label: 'i), ii), iii)',  preview: 'i)',   numFormat: 'i', numSuffix: ')' },
   { key: 'upper-roman',       label: 'I, II, III',     preview: 'I.',   numFormat: 'I', numSuffix: '.' },
   { key: 'upper-roman-paren', label: 'I), II), III)',  preview: 'I)',   numFormat: 'I', numSuffix: ')' },
-  { key: 'cjk-counting',      label: '一, 二, 三',      preview: '一、',  numFormat: '一, 二, 三, ...', numSuffix: '、' },
-  { key: 'cjk-legal',         label: '壹, 贰, 叁',      preview: '壹、',  numFormat: '壹, 贰, 叁, ...', numSuffix: '、' },
-  { key: 'cjk-stem',          label: '甲, 乙, 丙',      preview: '甲、',  numFormat: '甲, 乙, 丙, ...', numSuffix: '、' },
-  { key: 'circled-decimal',   label: '①, ②, ③',      preview: '①',    numFormat: '①, ②, ③, ...', numSuffix: '' },
-  { key: 'katakana',          label: 'ア, イ, ウ',      preview: 'ア.',   numFormat: 'ア, イ, ウ, ...', numSuffix: '.' },
-  { key: 'katakana-iroha',    label: 'イ, ロ, ハ',      preview: 'イ.',   numFormat: 'イ, ロ, ハ, ...', numSuffix: '.' },
+  { key: 'lower-cyrillic',            label: 'а, б, …, аа, аб',     preview: 'а.', numFormat: 'а, б, .., аа, аб, ... (ru)', numSuffix: '.', script: 'cyrillic' },
+  { key: 'lower-cyrillic-paren',      label: 'а), б), …, аа), аб)', preview: 'а)', numFormat: 'а, б, .., аа, аб, ... (ru)', numSuffix: ')', script: 'cyrillic' },
+  { key: 'upper-cyrillic',            label: 'А, Б, …, Аа, Аб',     preview: 'А.', numFormat: 'А, Б, .., Аа, Аб, ... (ru)', numSuffix: '.', script: 'cyrillic' },
+  { key: 'upper-cyrillic-paren',      label: 'А), Б), …, Аа), Аб)', preview: 'А)', numFormat: 'А, Б, .., Аа, Аб, ... (ru)', numSuffix: ')', script: 'cyrillic' },
+  { key: 'lower-cyrillic-sync',       label: 'а, б, …, аа, бб',     preview: 'аа.', numFormat: 'а, б, .., аа, бб, ... (ru)', numSuffix: '.', script: 'cyrillic', rare: true },
+  { key: 'lower-cyrillic-sync-paren', label: 'а), б), …, аа), бб)', preview: 'аа)', numFormat: 'а, б, .., аа, бб, ... (ru)', numSuffix: ')', script: 'cyrillic', rare: true },
+  { key: 'upper-cyrillic-sync',       label: 'А, Б, …, Аа, Бб',     preview: 'Аа.', numFormat: 'А, Б, .., Аа, Бб, ... (ru)', numSuffix: '.', script: 'cyrillic', rare: true },
+  { key: 'upper-cyrillic-sync-paren', label: 'А), Б), …, Аа), Бб)', preview: 'Аа)', numFormat: 'А, Б, .., Аа, Бб, ... (ru)', numSuffix: ')', script: 'cyrillic', rare: true },
+  { key: 'cjk-counting',      label: '一, 二, 三',      preview: '一、',  numFormat: '一, 二, 三, ...', numSuffix: '、', script: 'cjk' },
+  { key: 'cjk-legal',         label: '壹, 贰, 叁',      preview: '壹、',  numFormat: '壹, 贰, 叁, ...', numSuffix: '、', script: 'cjk' },
+  { key: 'cjk-stem',          label: '甲, 乙, 丙',      preview: '甲、',  numFormat: '甲, 乙, 丙, ...', numSuffix: '、', script: 'cjk' },
+  { key: 'circled-decimal',   label: '①, ②, ③',      preview: '①',    numFormat: '①, ②, ③, ...', numSuffix: '', script: 'cjk' },
+  { key: 'katakana',          label: 'ア, イ, ウ',      preview: 'ア.',   numFormat: 'ア, イ, ウ, ...', numSuffix: '.', script: 'cjk' },
+  { key: 'katakana-iroha',    label: 'イ, ロ, ハ',      preview: 'イ.',   numFormat: 'イ, ロ, ハ, ...', numSuffix: '.', script: 'cjk' },
 ];
 
 const BY_KEY = new Map<string, OrderedTypeDef>(ORDERED_LIST_TYPES.map(t => [t.key, t]));
@@ -84,7 +115,10 @@ export function orderedTypeAttr(key: OrderedListType, depth0: number): OrderedLi
 // advances one slot past its parent's *effective* type, so it never repeats it.
 export function cycleSlotOf(key: string | null | undefined): number {
   switch (orderedTypeDef(key).numFormat) {
-    case 'a': case 'A': return 1;
+    case 'a': case 'A': case 'aa': case 'AA':
+    case 'а, б, .., аа, аб, ... (ru)': case 'А, Б, .., Аа, Аб, ... (ru)':
+    case 'а, б, .., аа, бб, ... (ru)': case 'А, Б, .., Аа, Бб, ... (ru)':
+      return 1;
     case 'i': case 'I': return 2;
     default: return 0;
   }
@@ -134,11 +168,21 @@ function toRoman(n: number): string {
   return s;
 }
 
-function toAlpha(n: number): string {
+const LATIN = [...'abcdefghijklmnopqrstuvwxyz'];
+// LibreOffice's Russian alphabet (probed): ы is in, ё, й, ъ and ь are not.
+const RUSSIAN = [...'абвгдежзиклмнопрстуфхцчшщыэюя'];
+
+// Bijective letters (z, aa, ab) or, with `sync`, the letter repeated (z, aa, bb).
+function toLetters(n: number, letters: string[], sync = false): string {
+  if (n < 1) return String(n);
+  if (sync) return letters[(n - 1) % letters.length].repeat(Math.ceil(n / letters.length));
   let s = '';
-  while (n > 0) { n--; s = String.fromCharCode(97 + (n % 26)) + s; n = Math.floor(n / 26); }
+  while (n > 0) { n--; s = letters[n % letters.length] + s; n = Math.floor(n / letters.length); }
   return s;
 }
+
+// LibreOffice capitalises only the first Cyrillic letter: Аа, Аб, Бб.
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // Chinese numerals, informal (一二三) or formal (壹贰叁). Probed against LibreOffice: the
 // informal set drops the leading 一 in 十…十九, the formal one keeps it (壹拾壹).
@@ -180,10 +224,16 @@ const cyclic = (signs: string[], n: number) => (n < 1 ? String(n) : signs[(n - 1
 // The ordinal body an item renders for a num-format (no suffix): 3/'a' → "c".
 export function formatOrdinal(n: number, numFormat: OrderedTypeDef['numFormat']): string {
   switch (numFormat) {
-    case 'a': return toAlpha(n);
-    case 'A': return toAlpha(n).toUpperCase();
+    case 'a': return toLetters(n, LATIN);
+    case 'A': return toLetters(n, LATIN).toUpperCase();
     case 'i': return toRoman(n);
     case 'I': return toRoman(n).toUpperCase();
+    case 'aa': return toLetters(n, LATIN, true);
+    case 'AA': return toLetters(n, LATIN, true).toUpperCase();
+    case 'а, б, .., аа, аб, ... (ru)': return toLetters(n, RUSSIAN);
+    case 'А, Б, .., Аа, Аб, ... (ru)': return capitalise(toLetters(n, RUSSIAN));
+    case 'а, б, .., аа, бб, ... (ru)': return toLetters(n, RUSSIAN, true);
+    case 'А, Б, .., Аа, Бб, ... (ru)': return capitalise(toLetters(n, RUSSIAN, true));
     case '一, 二, 三, ...': return toChinese(n, false);
     case '壹, 贰, 叁, ...': return toChinese(n, true);
     case '甲, 乙, 丙, ...': return HEAVENLY_STEMS[n - 1] ?? String(n);
@@ -216,4 +266,25 @@ export function orderedTypeFromFormat(numFormat: string | null, numSuffix: strin
   // writes around the marker; the western ones come in a dot and a paren variant.
   if (byFormat.length === 1) return byFormat[0].key;
   return byFormat.find(t => t.numSuffix === (numSuffix ?? '.'))?.key ?? DEFAULT_ORDERED_TYPE;
+}
+
+const STYLE_NS = 'urn:oasis:names:tc:opendocument:xmlns:style:1.0';
+const LETTER_SYNC: Record<string, LetterSyncFormat> = { a: 'aa', A: 'AA' };
+
+// An ODF level's style:num-format, with `a`/`A` plus style:num-letter-sync read as 'aa'/'AA'.
+export function odfNumFormatOf(el: Element): string | null {
+  const f = el.getAttributeNS(STYLE_NS, 'num-format');
+  return f && el.getAttributeNS(STYLE_NS, 'num-letter-sync') === 'true' ? LETTER_SYNC[f] ?? f : f;
+}
+
+// The ODF attributes a num-format writes: 'aa'/'AA' become `a`/`A` with letter-sync.
+export function odfNumFormatAttrs(numFormat: string): string {
+  const sync = numFormat === 'aa' || numFormat === 'AA';
+  return sync ? `style:num-format="${numFormat[0]}" style:num-letter-sync="true"` : `style:num-format="${numFormat}"`;
+}
+
+// The menu rows for the scripts the UI or the document is in, the rare ones only with
+// `rare`; the list's own always stays.
+export function orderedTypesFor(show: { cjk: boolean; cyrillic: boolean }, current?: string | null, rare = false): OrderedTypeDef[] {
+  return ORDERED_LIST_TYPES.filter(t => t.key === current || ((!t.script || show[t.script]) && (rare || !t.rare)));
 }

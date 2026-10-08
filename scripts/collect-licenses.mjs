@@ -23,6 +23,18 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
 OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
 TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.`,
+}, {
+  name: 'src/lib/utils/shapePresets.json (LibreOffice, oox/source/drawingml/customshapes/oox-drawingml-cs-presets)',
+  license: 'MPL-2.0',
+  who: 'The LibreOffice contributors',
+  text: `The DrawingML preset shape table is derived from LibreOffice's
+oox-drawingml-cs-presets by scripts/make-shape-presets.mjs.
+
+This Source Code Form is subject to the terms of the Mozilla Public License,
+v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain
+one at https://mozilla.org/MPL/2.0/. The Source Code Form of the table is
+src/lib/utils/shapePresets.json in EdenText's source repository; the original
+is https://git.libreoffice.org/core/+/refs/heads/master/oox/source/drawingml/customshapes/`,
 }];
 
 // Read from disk, never through require: an export map that hides package.json

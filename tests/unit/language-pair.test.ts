@@ -1,7 +1,7 @@
 // The western/asian language pair: a run and a paragraph carry both, the picker's tag
 // goes to the slot of its script, and the document keeps a main language plus the
 // other slot's.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { Editor } from '@tiptap/core';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
@@ -14,10 +14,16 @@ import { documentLangs, pickDocumentLanguage, westernCode } from '../../src/lib/
 
 type N = any;
 
+// Destroyed after each test, or the DOM observer fires after jsdom is gone.
+const editors: Editor[] = [];
+afterEach(() => { while (editors.length) editors.pop()!.destroy(); });
+
 function makeEditor(content: N) {
   const el = document.createElement('div');
   document.body.appendChild(el);
-  return new Editor({ element: el, extensions: [Document, Paragraph, Text, TextStyle, Language], content });
+  const editor = new Editor({ element: el, extensions: [Document, Paragraph, Text, TextStyle, Language], content });
+  editors.push(editor);
+  return editor;
 }
 const select = (ed: Editor, from: number, to = from) =>
   ed.view.dispatch(ed.state.tr.setSelection(TextSelection.create(ed.state.doc, from, to)));

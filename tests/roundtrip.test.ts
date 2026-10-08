@@ -109,6 +109,7 @@ const fixture: N = {
     P(null, T('top/bottom '), IMGN(70, 50, 'Banner', 0, 'topBottom')),
     PBX({ width: 288, height: 96 }, P(null, T('box para one')), P(null, T('box '), T('bold', { type: 'bold' }))),
     PBX({ width: 192, height: 80, wrap: 'right', wrapOffset: 6, wrapOffsetY: 1.5, shapeKind: 'ellipse', fillColor: '#FFEE00', strokeColor: '#FF0000', strokeWidthPt: 2.25, rotation: 30 }, P(null, T('in ellipse'))),
+    PBX({ width: 120, height: 105, wrap: 'through', wrapOffset: 10.83, wrapOffsetY: 3.61, shapeKind: 'ellipse', rotation: 150 }, P(null, T('turned over'))),
     COLS({ count: 2, gapCm: 0.5 }, P(null, T('newspaper column text one')), P(null, T('newspaper column text two'))),
     { type: 'bulletList', content: [
       LI(P(null, T('bullet one'))),

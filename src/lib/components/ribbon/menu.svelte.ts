@@ -25,9 +25,13 @@ export function closeMenu(): void {
 
 // A panel drops below the whole band, not just below its own button: opened
 // inside the band it would cover the controls and group labels underneath.
-function dropTop(anchor: DOMRect, panel: HTMLElement): number {
+// A panel taller than the room below scrolls rather than running off the window.
+function dropBelow(anchor: DOMRect, panel: HTMLElement): void {
   const band = panel.closest('.ribbon-body')?.getBoundingClientRect();
-  return Math.max(anchor.bottom, band?.bottom ?? 0) + 3;
+  const top = Math.max(anchor.bottom, band?.bottom ?? 0) + 3;
+  panel.style.top = `${top}px`;
+  panel.style.maxHeight = `${window.innerHeight - top - 8}px`;
+  panel.style.overflowY = 'auto';
 }
 
 // The ribbon band clips its own overflow, so a panel inside it has to leave the
@@ -39,7 +43,7 @@ export function anchored(node: HTMLElement, align: 'left' | 'right' = 'left') {
     if (!anchor) return;
     const r = anchor.getBoundingClientRect();
     node.style.position = 'fixed';
-    node.style.top = `${dropTop(r, node)}px`;
+    dropBelow(r, node);
     if (align === 'right') {
       node.style.left = 'auto';
       node.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
@@ -71,7 +75,7 @@ export function pinPanels(node: HTMLElement) {
     const r = anchor.getBoundingClientRect();
     panel.style.position = 'fixed';
     panel.style.right = 'auto';
-    panel.style.top = `${dropTop(r, panel)}px`;
+    dropBelow(r, panel);
     panel.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - panel.offsetWidth - 8))}px`;
   }
 

@@ -20,3 +20,9 @@ the browser save dialog.
 Read `docs/architecture/export.md` before changing ODF/DOCX export, post-pack passes,
 sentinels, heading defaults, review printing, or header/footer export. Read the focused
 architecture document for tables, frames, formulas, formatting, notes, or encryption.
+
+The raster PDF and print paths (`pdf.ts`) capture the page copy in strips of pages, since one
+canvas for a long document exceeds every engine's limit and comes out blank; each strip keeps
+only the blocks it reaches and a measured stand-in above them. Anything html2canvas cannot
+evaluate (counter() markers, outline counter-set) becomes literal text first, boxed like the
+live pseudo-element, or the copy's layout drifts from the editor's pagination.

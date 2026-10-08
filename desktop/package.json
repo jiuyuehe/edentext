@@ -1,0 +1,16 @@
+{
+  "name": "edentext-desktop",
+  "productName": "EdenText",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "npm --prefix .. run build && electron .",
+    "dist": "npm --prefix .. run build && electron-builder --config electron-builder.config.cjs",
+    "test": "node smoke.mjs"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  }
+}

@@ -5,12 +5,13 @@
 import { builtinStyleSheet, DEFAULT_STYLE, mergeStoredSheet, STYLE_SHEET_VERSION, type Style, type StyleFamily, type StyleSheet } from './styleSheet';
 import type { TableStyle } from './tableStyles';
 import type { ListStyle } from './listStyles';
-import { docKey } from '../storage/docScope';
+import type { OutlineNumbering } from './outlineNumbering';
+import { docKey, docStore } from '../storage/docScope';
 
 const STORAGE_KEY = docKey('edentext-styles');
 
 function load(): StyleSheet {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = docStore.getItem(STORAGE_KEY);
   if (!raw) return builtinStyleSheet();
   try {
     return mergeStoredSheet(JSON.parse(raw));
@@ -27,7 +28,7 @@ export function styleSheet(): StyleSheet {
 
 export function setStyleSheet(next: StyleSheet): void {
   current = next;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: STYLE_SHEET_VERSION, ...next }));
+  docStore.setItem(STORAGE_KEY, JSON.stringify({ v: STYLE_SHEET_VERSION, ...next }));
 }
 
 // Gallery-only, not persisted: whether it lists the deep heading levels too.
@@ -87,6 +88,11 @@ export function renameListStyle(from: string, to: string): void {
   delete list[from];
   list[to] = { ...style, name: to, builtin: undefined };
   setStyleSheet({ ...current, list });
+}
+
+// The chapter numbering; null switches it off.
+export function setOutline(outline: OutlineNumbering | null): void {
+  setStyleSheet({ ...current, outline });
 }
 
 // Rename a style and re-point everything that referenced it (children, next-styles).

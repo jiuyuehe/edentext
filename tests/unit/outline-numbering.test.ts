@@ -5,7 +5,7 @@ import { importDocx } from '../../src/lib/import/docx';
 import { buildOdt } from '../../src/lib/export/odt';
 import { buildDocx } from '../../src/lib/export/docx';
 import { builtinStyleSheet, styleCss } from '../../src/lib/styles/styleSheet';
-import { outlineCss, outlineLabel, type OutlineNumbering } from '../../src/lib/styles/outlineNumbering';
+import { decimalOutline, outlineCss, outlineLabel, type OutlineNumbering } from '../../src/lib/styles/outlineNumbering';
 import { formatOrdinal } from '../../src/lib/utils/orderedListTypes';
 
 const NS =
@@ -89,6 +89,16 @@ describe('chapter numbering', () => {
     expect(importDocx(bytes).styles?.outline).toEqual(outline);
   });
 
+  it('round-trips the dialog\'s 1 / 1.1 / 1.1.1 preset through both formats', async () => {
+    const sheet = { ...builtinStyleSheet(), outline: decimalOutline() };
+    expect(outlineLabel(sheet.outline, 3, [2, 1, 4], formatOrdinal)).toBe('2.1.4 ');
+    const odt = await buildOdt(headingDoc as never, margins, 'portrait', undefined, null, 'A4', sheet);
+    expect(importOdt(odt).styles?.outline).toEqual(decimalOutline());
+    // DOCX numbering has nine levels.
+    const docx = await buildDocx(headingDoc as never, margins, 'portrait', undefined, null, 'A4', sheet);
+    expect(importDocx(docx).styles?.outline).toEqual(decimalOutline().slice(0, 9));
+  });
+
   it('labels a level from the counts in force', () => {
     expect(outlineLabel(outline, 1, [3], formatOrdinal)).toBe('3. ');
     expect(outlineLabel(outline, 2, [3, 4], formatOrdinal)).toBe('3.4 ');
@@ -120,7 +130,8 @@ describe('chapter numbering', () => {
     expect(css).toMatch(/h1[^{]*\{\n[^}]*margin-left: calc\(var\(--sec-inset-left, 0px\) \+ 0\.762cm\)/);
     expect(css).toMatch(/h1[^{]*\{\n[^}]*text-indent: -0\.762cm/);
     // The stop the label's tab runs to is its minimum width; a wider label overruns it.
-    expect(css).toMatch(/h1[^{]*::before \{\n[^}]*min-width: 0\.762cm/);
+    // A tab to the level's indent runs to the heading's own hanging indent when it has one.
+    expect(css).toMatch(/h1[^{]*::before \{\n[^}]*min-width: calc\(-1 \* var\(--indent-first, -0\.762cm\)\)/);
     expect(css).toMatch(/h1[^{]*::before \{\n[^}]*font-size: 96pt/);
   });
 

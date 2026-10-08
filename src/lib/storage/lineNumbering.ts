@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 // LibreOffice's Tools ▸ Line Numbering / Word's Layout ▸ Line Numbers. Off by default in
 // both, so a fresh document writes nothing and neither importer stamps it on a file that
@@ -41,7 +41,7 @@ export function normalizeLineNumbering(raw: unknown): LineNumbering {
 
 export function loadLineNumbering(): LineNumbering {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = docStore.getItem(KEY);
     return raw ? normalizeLineNumbering(JSON.parse(raw)) : DEFAULT_LINE_NUMBERING;
   } catch {
     return DEFAULT_LINE_NUMBERING;
@@ -49,6 +49,6 @@ export function loadLineNumbering(): LineNumbering {
 }
 
 export function saveLineNumbering(ln: LineNumbering): void {
-  if (!ln.on) localStorage.removeItem(KEY);
-  else localStorage.setItem(KEY, JSON.stringify(ln));
+  if (!ln.on) docStore.removeItem(KEY);
+  else docStore.setItem(KEY, JSON.stringify(ln));
 }

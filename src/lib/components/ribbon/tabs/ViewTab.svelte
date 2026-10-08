@@ -46,17 +46,18 @@
 </script>
 
 <RibbonGroup label={t().ribbon.groups.show}>
-  <RibbonButton variant="big" icon="toc" label={t().navigator.title} title={`${t().navigator.title} (${shortcutHint('navigator')})`} active={navigatorOpen} onclick={() => onToggleNavigator?.()} />
+  <RibbonButton variant="big" icon="toc" cmd="navigator" label={t().navigator.title} title={`${t().navigator.title} (${shortcutHint('navigator')})`} active={navigatorOpen} onclick={() => onToggleNavigator?.()} />
   <div class="rb-col">
-    <RibbonButton variant="small" icon="ruler" label={t().ruler.show} active={showRuler} onclick={() => (showRuler = !showRuler)} />
+    <RibbonButton variant="small" icon="ruler" cmd="ruler" label={t().ruler.show} active={showRuler} onclick={() => (showRuler = !showRuler)} />
     <RibbonButton variant="small" icon="pilcrow" label={t().toolbarExpanded.formattingMarks} title={`${t().toolbarExpanded.formattingMarks} (${shortcutHint('formattingMarks')})`} active={showFormattingMarks} onclick={() => (showFormattingMarks = !showFormattingMarks)} />
-    <RibbonButton variant="small" icon="shading" label={t().view.fieldShadings} title={t().view.fieldShadingsTitle} active={showFieldShading} onclick={() => (showFieldShading = !showFieldShading)} />
+    <RibbonButton variant="small" icon="shading" cmd="fieldShadings" label={t().view.fieldShadings} title={t().view.fieldShadingsTitle} active={showFieldShading} onclick={() => (showFieldShading = !showFieldShading)} />
   </div>
-  <RibbonButton variant="big" icon="splitView" label={t().view.split} title={`${t().view.splitTitle} (${shortcutHint('splitView')})`} active={splitView} onclick={toggleSplit} />
+  <RibbonButton variant="big" icon="splitView" cmd="splitView" label={t().view.split} title={`${t().view.splitTitle} (${shortcutHint('splitView')})`} active={splitView} onclick={toggleSplit} />
   <div class="rb-menu-wrap" use:clickOutside={'pageColumns'}>
     <RibbonButton
       variant="big"
       icon="pagesAcross"
+      cmd="pagesAcross"
       label={t().view.pagesAcross}
       title={t().view.pagesAcrossTitle}
       caret
@@ -78,9 +79,9 @@
 <div class="ribbon-sep"></div>
 
 <RibbonGroup label={t().status.zoom}>
-  <RibbonButton variant="big" icon="zoomOut" label={t().status.zoomOut} title={`${t().status.zoomOut} (${shortcutHint('zoomOut')})`} disabled={zoom <= MIN_ZOOM} onclick={() => onZoom?.(zoom - 10)} />
-  <RibbonButton variant="big" icon="zoomReset" label={`${zoom}%`} title={`${t().status.resetZoom} (${shortcutHint('zoomReset')})`} onclick={() => onZoom?.(100)} />
-  <RibbonButton variant="big" icon="zoomIn" label={t().status.zoomIn} title={`${t().status.zoomIn} (${shortcutHint('zoomIn')})`} disabled={zoom >= MAX_ZOOM} onclick={() => onZoom?.(zoom + 10)} />
+  <RibbonButton variant="big" icon="zoomOut" cmd="zoomOut" label={t().status.zoomOut} title={`${t().status.zoomOut} (${shortcutHint('zoomOut')})`} disabled={zoom <= MIN_ZOOM} onclick={() => onZoom?.(zoom - 10)} />
+  <RibbonButton variant="big" icon="zoomReset" cmd="zoomReset" label={`${zoom}%`} title={`${t().status.resetZoom} (${shortcutHint('zoomReset')})`} onclick={() => onZoom?.(100)} />
+  <RibbonButton variant="big" icon="zoomIn" cmd="zoomIn" label={t().status.zoomIn} title={`${t().status.zoomIn} (${shortcutHint('zoomIn')})`} disabled={zoom >= MAX_ZOOM} onclick={() => onZoom?.(zoom + 10)} />
 </RibbonGroup>
 
 {#if onDebugDump}

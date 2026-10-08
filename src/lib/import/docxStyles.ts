@@ -53,6 +53,7 @@ export type RunProps = {
 export type LevelDef = {
   numFmt?: string; lvlText?: string; leftTwip?: number; hangingTwip?: number; start?: number;
   bulletFont?: string; rightAligned?: boolean; suffix?: string; run?: RunProps;
+  pStyle?: string; // the paragraph style the level belongs to (w:lvl/w:pStyle)
 };
 
 // Paragraph spacing from a w:pPr/w:spacing (only the attributes actually present, so
@@ -189,10 +190,13 @@ export class DocxStyles {
   private next = new Map<string, string | null>(); // w:next
   private memoOwn = new Map<string, RunProps>();
   private styleNum = new Map<string, { numId: number; ilvl: number }>();
+  private ownNumId = new Map<string, number>(); // style's own w:numPr/w:numId
+  private ownIlvl = new Map<string, number>(); // style's own w:numPr/w:ilvl
   private ownOutline = new Map<string, number>(); // style's own w:outlineLvl (heading marker)
   private ownAlign = new Map<string, string>(); // style's own w:pPr/w:jc
   private ownSpacing = new Map<string, ParaSpacing>(); // style's own w:pPr/w:spacing
   private ownIndentTwip = new Map<string, number>(); // style's own w:pPr/w:ind left
+  private ownFirstTwip = new Map<string, number>(); // w:ind firstLine, or minus w:hanging
   private ownHangingTwip = new Map<string, number>(); // style's own w:pPr/w:ind hanging
   private paraStyleNames = new Map<string, string>(); // paragraph styleId → w:name
   private charStyleNames = new Map<string, string>(); // character styleId → w:name
@@ -204,6 +208,7 @@ export class DocxStyles {
   private ownContextual = new Map<string, boolean>(); // style's own w:pPr/w:contextualSpacing
   private ownKeepNext = new Map<string, boolean>(); // style's own w:pPr/w:keepNext
   private ownKeepLines = new Map<string, boolean>(); // style's own w:pPr/w:keepLines
+  private ownBreakBefore = new Map<string, boolean>(); // style's own w:pPr/w:pageBreakBefore
   private ownBidi = new Map<string, boolean>(); // style's own w:pPr/w:bidi
   private ownTabs = new Map<string, TabStop[]>(); // style's own w:pPr/w:tabs
   private ownCellMar = new Map<string, Element>(); // table style's own w:tblPr/w:tblCellMar
@@ -268,6 +273,10 @@ export class DocxStyles {
       if (numPr) {
         const np = readNumPr(numPr);
         if (np) this.styleNum.set(id, np);
+        const n = firstChild(numPr, 'numId'), l = firstChild(numPr, 'ilvl');
+        const numId = n ? parseInt(wVal(n) ?? '', 10) : NaN, ilvl = l ? parseInt(wVal(l) ?? '', 10) : NaN;
+        if (Number.isFinite(numId)) this.ownNumId.set(id, numId);
+        if (Number.isFinite(ilvl)) this.ownIlvl.set(id, ilvl);
       }
       const ol = ppr && firstChild(ppr, 'outlineLvl');
       if (ol) { const n = parseInt(wVal(ol) ?? '', 10); if (Number.isFinite(n)) this.ownOutline.set(id, n); }
@@ -283,6 +292,8 @@ export class DocxStyles {
       if (kn) this.ownKeepNext.set(id, toggle(kn));
       const kl = ppr && firstChild(ppr, 'keepLines');
       if (kl) this.ownKeepLines.set(id, toggle(kl));
+      const pb = ppr && firstChild(ppr, 'pageBreakBefore');
+      if (pb) this.ownBreakBefore.set(id, toggle(pb));
       const bd = ppr && firstChild(ppr, 'bidi');
       if (bd) this.ownBidi.set(id, toggle(bd));
       const tabs = ppr && firstChild(ppr, 'tabs');
@@ -293,6 +304,9 @@ export class DocxStyles {
         if (Number.isFinite(left)) this.ownIndentTwip.set(id, left);
         const hanging = parseInt(ind.getAttributeNS(W, 'hanging') ?? '', 10);
         if (Number.isFinite(hanging)) this.ownHangingTwip.set(id, hanging);
+        const firstLine = parseInt(ind.getAttributeNS(W, 'firstLine') ?? '', 10);
+        if (Number.isFinite(hanging)) this.ownFirstTwip.set(id, -hanging);
+        else if (Number.isFinite(firstLine)) this.ownFirstTwip.set(id, firstLine);
       }
       const pBdr = ppr && firstChild(ppr, 'pBdr');
       if (pBdr) this.ownPBdr.set(id, pBdr);
@@ -364,6 +378,29 @@ export class DocxStyles {
     return this.styleIndentTwip(this.basedOn.get(styleId) ?? null, seen);
   }
 
+  // The style's first-line offset (twips, negative = hanging) along the basedOn chain.
+  styleFirstLineTwip(styleId: string | null | undefined, seen = new Set<string>()): number | null {
+    if (!styleId || seen.has(styleId)) return null;
+    seen.add(styleId);
+    const own = this.ownFirstTwip.get(styleId);
+    if (own != null) return own;
+    return this.styleFirstLineTwip(this.basedOn.get(styleId) ?? null, seen);
+  }
+
+  // The indent the style chain gives a paragraph it numbers: only the styles from this
+  // one down to the one that brings the numbering outrank the level (probed in LibreOffice).
+  numberedStyleIndent(styleId: string | null | undefined): { left: number | null; first: number | null } {
+    let left: number | undefined, first: number | undefined;
+    const seen = new Set<string>();
+    for (let s = styleId ?? null; s && !seen.has(s); s = this.basedOn.get(s) ?? null) {
+      seen.add(s);
+      left ??= this.ownIndentTwip.get(s);
+      first ??= this.ownFirstTwip.get(s);
+      if (this.ownNumId.has(s)) break;
+    }
+    return { left: left ?? null, first: first ?? null };
+  }
+
   styleHangingTwip(styleId: string | null | undefined, seen = new Set<string>()): number | null {
     if (!styleId || seen.has(styleId)) return null;
     seen.add(styleId);
@@ -401,6 +438,7 @@ export class DocxStyles {
           else if (Number.isFinite(f)) def.hangingTwip = -f;
         }
         const suff = firstChild(lvl, 'suff'); if (suff) def.suffix = wVal(suff) ?? undefined;
+        const ps = firstChild(lvl, 'pStyle'); if (ps) def.pStyle = wVal(ps) ?? undefined;
         const rPr = firstChild(lvl, 'rPr'); if (rPr) def.run = parseRunProps(rPr);
         const jc = firstChild(lvl, 'lvlJc');
         if (jc && (wVal(jc) === 'right' || wVal(jc) === 'end')) def.rightAligned = true;
@@ -441,8 +479,22 @@ export class DocxStyles {
     return mergeRunProps(this.defaultsRun, this.styleOwn(pStyleId ?? this.defaultParaStyle));
   }
 
+  // w:numId and w:ilvl each inherit along the w:basedOn chain on their own; a level the
+  // chain leaves open is the one whose w:pStyle names the style, else level 0.
   styleNumPr(styleId: string | null | undefined): { numId: number; ilvl: number } | null {
-    return styleId ? this.styleNum.get(styleId) ?? null : null;
+    let numId: number | undefined, ilvl: number | undefined;
+    const seen = new Set<string>();
+    for (let s = styleId ?? null; s && !seen.has(s); s = this.basedOn.get(s) ?? null) {
+      seen.add(s);
+      numId ??= this.ownNumId.get(s);
+      ilvl ??= this.ownIlvl.get(s);
+    }
+    if (numId == null) return null;
+    if (ilvl == null) {
+      const abs = this.resolvedAbstract(numId);
+      for (const [l, def] of (abs ? this.abstractLevels.get(abs) : null) ?? []) if (styleId && def.pStyle === styleId) ilvl = l;
+    }
+    return { numId, ilvl: ilvl ?? 0 };
   }
 
   // The style's effective outline level (w:outlineLvl) along the w:basedOn chain. 0–8
@@ -508,6 +560,15 @@ export class DocxStyles {
     const own = this.ownKeepNext.get(styleId);
     if (own != null) return own;
     return this.paragraphKeepNext(this.basedOn.get(styleId) ?? null, seen);
+  }
+
+  // w:pageBreakBefore along the w:basedOn chain: a chapter style often inherits it.
+  paragraphPageBreakBefore(styleId: string | null | undefined, seen = new Set<string>()): boolean {
+    if (!styleId || seen.has(styleId)) return false;
+    seen.add(styleId);
+    const own = this.ownBreakBefore.get(styleId);
+    if (own != null) return own;
+    return this.paragraphPageBreakBefore(this.basedOn.get(styleId) ?? null, seen);
   }
 
   // w:keepLines along the same chain (Word's heading styles carry this one too).

@@ -78,7 +78,7 @@ import { AutoCorrect } from './extensions/autoCorrect';
 import { WordCompletion } from './extensions/wordCompletion';
 import { AutoText } from './extensions/autoText';
 import { HEADING_LEVELS, MAX_HEADING_LEVEL } from '../styles/headings';
-import { styleSheet } from '../styles/sheet.svelte';
+import { setOutline, styleSheet } from '../styles/sheet.svelte';
 import { noteSettings } from '../storage/notes.svelte';
 import { recordChanges } from '../storage/trackChanges.svelte';
 import { markupView } from '../storage/markup.svelte';
@@ -86,7 +86,7 @@ import { loadDocProperties } from '../storage/docProperties';
 import { Insertion, Deletion, TrackChanges } from './extensions/trackChanges';
 
 const CELL_CONTENT = '(paragraph | heading | bulletList | orderedList)+';
-const LIST_ITEM_CONTENT = 'paragraph (paragraph | heading | bulletList | orderedList)*';
+const LIST_ITEM_CONTENT = '(paragraph | heading) (paragraph | heading | bulletList | orderedList)*';
 
 export const extensions = [
   // columns has its own group so only the document (not cells/lists) admits it; the
@@ -198,7 +198,7 @@ export const extensions = [
   // and set the level without the heading's named style.
   Heading.extend({ addKeyboardShortcuts: () => ({}) }).configure({ levels: HEADING_LEVELS as Level[] }),
   BulletList,
-  OrderedList,
+  OrderedList.configure({ headingNumbering: { get: () => styleSheet().outline, set: setOutline } }),
   // The tail is narrower than `block*`: neither file keeps a table (or a table of
   // contents) in a list item, and a list toggle over one would wrap it in silently.
   ListItem.extend({ content: LIST_ITEM_CONTENT }),

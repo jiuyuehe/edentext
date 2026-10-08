@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 const KEY = docKey('edentext-notes');
 
@@ -125,7 +125,7 @@ export function clampNoteSettings(raw: unknown): NoteSettings {
 
 export function loadNoteSettings(): NoteSettings {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = docStore.getItem(KEY);
     return raw ? clampNoteSettings(JSON.parse(raw)) : DEFAULT_NOTE_SETTINGS;
   } catch {
     return DEFAULT_NOTE_SETTINGS;
@@ -133,7 +133,7 @@ export function loadNoteSettings(): NoteSettings {
 }
 
 export function saveNoteSettings(s: NoteSettings): void {
-  localStorage.setItem(KEY, JSON.stringify(s));
+  docStore.setItem(KEY, JSON.stringify(s));
 }
 
 // The separator's geometry on :root, where editor.css draws the line from it and

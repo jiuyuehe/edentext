@@ -1,4 +1,4 @@
-import { docKey } from './docScope';
+import { docKey, docStore } from './docScope';
 
 // The page's line grid (Word's Layout ▸ Document Grid, LibreOffice's Text Grid "lines
 // only"): every line a paragraph sets is rounded up to whole grid lines. Off by default
@@ -29,7 +29,7 @@ export function normalizeLineGrid(raw: unknown): LineGrid {
 
 export function loadLineGrid(): LineGrid {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = docStore.getItem(KEY);
     return raw ? normalizeLineGrid(JSON.parse(raw)) : DEFAULT_LINE_GRID;
   } catch {
     return DEFAULT_LINE_GRID;
@@ -37,6 +37,6 @@ export function loadLineGrid(): LineGrid {
 }
 
 export function saveLineGrid(grid: LineGrid): void {
-  if (!grid.on) localStorage.removeItem(KEY);
-  else localStorage.setItem(KEY, JSON.stringify(grid));
+  if (!grid.on) docStore.removeItem(KEY);
+  else docStore.setItem(KEY, JSON.stringify(grid));
 }

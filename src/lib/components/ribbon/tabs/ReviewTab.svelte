@@ -84,6 +84,7 @@
   <RibbonButton
     variant="big"
     icon="thesaurus"
+    cmd="thesaurus"
     label={t().thesaurus.title}
     title={`${t().thesaurus.hint} — ${shortcutHint('thesaurus')}`}
     onclick={() => window.dispatchEvent(new CustomEvent(OPEN_THESAURUS_EVENT))}
@@ -92,6 +93,7 @@
     <RibbonButton
       variant="big"
       icon="wordCount"
+      cmd="wordCount"
       label={t().status.statistics}
       title={t().status.statistics}
       active={isMenuOpen('wordCount')}
@@ -115,6 +117,7 @@
   <RibbonButton
     variant="big"
     icon="autoCorrect"
+    cmd="autoCorrect"
     label={t().ribbon.autoCorrect}
     title={t().autoCorrect.title}
     disabled={!onAutoCorrect}
@@ -132,6 +135,7 @@
     <RibbonButton
       variant="big"
       icon="comment"
+      cmd={id}
       {label}
       title={`${label} — ${PLACE_LABEL[at]()}`}
       caret
@@ -157,6 +161,7 @@
   <RibbonButton
     variant="big"
     icon="comment"
+    cmd="newComment"
     label={t().comments.newComment}
     title={hasSelection ? t().comments.newComment : t().comments.needsSelection}
     disabled={!editor || !hasSelection}
@@ -168,6 +173,7 @@
     <RibbonButton
       variant="small"
       icon="chevronLeft"
+      cmd="prevComment"
       label={t().revisions.prev}
       disabled={!hasComments}
       onclick={() => go('comment', -1)}
@@ -175,6 +181,7 @@
     <RibbonButton
       variant="small"
       icon="chevronRight"
+      cmd="nextComment"
       label={t().revisions.next}
       disabled={!hasComments}
       onclick={() => go('comment', 1)}
@@ -188,6 +195,7 @@
   <RibbonButton
     variant="big"
     icon="trackChanges"
+    cmd="trackChanges"
     label={t().revisions.record}
     title={t().revisions.recordHint}
     active={recordChanges()}
@@ -197,6 +205,7 @@
     <RibbonButton
       variant="big"
       icon="trackChanges"
+      cmd="markupDisplay"
       label={t().revisions.display}
       title={MODE_LABEL[markupMode()]().label}
       caret
@@ -220,6 +229,7 @@
     <RibbonButton
       variant="small"
       icon="check"
+      cmd="accept"
       label={t().revisions.accept}
       title={t().revisions.acceptHint}
       disabled={!hasRevisions}
@@ -228,6 +238,7 @@
     <RibbonButton
       variant="small"
       icon="check"
+      cmd="acceptAll"
       label={t().revisions.acceptAll}
       disabled={!hasRevisions}
       onclick={() => editor?.chain().focus().acceptRevisions(true).run()}
@@ -237,6 +248,7 @@
     <RibbonButton
       variant="small"
       icon="close"
+      cmd="reject"
       label={t().revisions.reject}
       title={t().revisions.rejectHint}
       disabled={!hasRevisions}
@@ -245,6 +257,7 @@
     <RibbonButton
       variant="small"
       icon="close"
+      cmd="rejectAll"
       label={t().revisions.rejectAll}
       disabled={!hasRevisions}
       onclick={() => editor?.chain().focus().rejectRevisions(true).run()}
@@ -254,6 +267,7 @@
     <RibbonButton
       variant="small"
       icon="chevronLeft"
+      cmd="prevChange"
       label={t().revisions.prev}
       disabled={!hasRevisions}
       onclick={() => go('revision', -1)}
@@ -261,6 +275,7 @@
     <RibbonButton
       variant="small"
       icon="chevronRight"
+      cmd="nextChange"
       label={t().revisions.next}
       disabled={!hasRevisions}
       onclick={() => go('revision', 1)}
@@ -275,7 +290,7 @@
 <RibbonGroup label={t().ribbon.groups.markup}>
   <!-- A checkbox, not a button: it settles what the next printout carries, it does not
        print. A pressed-looking button read as the command itself. -->
-  <label class="rb-check" title={t().revisions.printMarkupHint}>
+  <label class="rb-check" data-cmd="printMarkup" title={t().revisions.printMarkupHint}>
     <input
       type="checkbox"
       checked={printMarkup()}
@@ -288,7 +303,7 @@
 <div class="ribbon-sep"></div>
 
 <RibbonGroup label={t().ribbon.groups.language}>
-  <div class="rb-captioned" use:captionClicks>
+  <div class="rb-captioned" data-cmd="spellLanguage" use:captionClicks>
     <LanguagePicker value={documentLanguage} other={documentLanguageOther} onChange={onLanguage} {editor} {tick} />
     <span class="rb-caption">{t().spellPicker.label}</span>
   </div>

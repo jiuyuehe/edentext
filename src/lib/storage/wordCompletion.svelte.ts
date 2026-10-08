@@ -4,6 +4,7 @@
 
 import { collectWord } from '../utils/wordCompletion';
 import { loadWordCompletion, saveWordCompletion, type WordCompletionOptions } from './wordCompletion';
+import { volatile } from './docScope';
 
 let current = $state<WordCompletionOptions>(loadWordCompletion());
 
@@ -18,6 +19,8 @@ export function setWordCompletion(next: WordCompletionOptions): void {
 
 /** One typed word remembered; a no-op where it is too short or already the newest. */
 export function rememberWord(word: string): void {
+  // The collected words are the document's own text, so nothing is collected when nothing is to be stored.
+  if (volatile) return;
   const words = collectWord(current.words, word, current.minLength, current.maxEntries);
   if (words !== current.words) setWordCompletion({ ...current, words });
 }

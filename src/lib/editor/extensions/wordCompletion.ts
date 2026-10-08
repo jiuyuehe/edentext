@@ -3,6 +3,7 @@ import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { isWordChar, suggestCompletion, wordBefore } from '../../utils/wordCompletion';
 import { rememberWord, wordCompletion } from '../../storage/wordCompletion.svelte';
+import { volatile } from '../../storage/docScope';
 
 // LibreOffice's Word Completion: the words this document has used are offered back
 // while typing, Enter takes the offer. It is drawn as grey text after the caret
@@ -19,7 +20,7 @@ export const currentCompletion = (state: EditorState): string | null => key.getS
 
 function suggestionAt(state: EditorState): Suggestion {
   const opts = wordCompletion();
-  if (!opts.enabled || !opts.words.length) return null;
+  if (volatile || !opts.enabled || !opts.words.length) return null;
   const { empty, $from } = state.selection;
   if (!empty || !$from.parent.isTextblock) return null;
   // Only at the end of a word: completing in the middle of one would guess at text

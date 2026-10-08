@@ -55,6 +55,8 @@ export const INDEX_TITLES: Record<IndexKind, string> = {
 };
 // Enough leader dots to cross the widest gap a page can offer; fillLeaders cuts each
 // row's back to what its own gap holds, measuring one dot with this sample.
+// The gap between an index's columns where the file names none: Word's, for its `INDEX \c`.
+export const INDEX_COLUMN_GAP_CM = 1.27;
 const LEADER_DOTS = 200;
 const LEADER_PROBE = 10;
 
@@ -101,6 +103,18 @@ export const TableOfContents = Node.create({
         default: null,
         parseHTML: el => Number((el as HTMLElement).getAttribute('data-toc-tab')) || null,
         renderHTML: attrs => (attrs.tabPosCm ? { 'data-toc-tab': String(attrs.tabPosCm) } : {}),
+      },
+      // Columns the rows flow through (Word's `INDEX \c`, the ODF index section's
+      // style:columns), filled down each page in turn; null = one.
+      columns: {
+        default: null as number | null,
+        parseHTML: el => Number((el as HTMLElement).getAttribute('data-toc-columns')) || null,
+        renderHTML: attrs => (attrs.columns > 1 ? { 'data-toc-columns': String(attrs.columns) } : {}),
+      },
+      columnGapCm: {
+        default: null as number | null,
+        parseHTML: el => Number((el as HTMLElement).getAttribute('data-toc-column-gap')) || null,
+        renderHTML: attrs => (attrs.columnGapCm ? { 'data-toc-column-gap': String(attrs.columnGapCm) } : {}),
       },
       // Whether the rows carry a page number at all: Word's `TOC \n`, an ODF entry
       // template naming no <text:index-entry-page-number/>. false = the text alone.
@@ -214,7 +228,7 @@ class TocView {
   private getPos: () => number;
   private lastKey = '';
   private lastLook = '';
-  private wasPaginated = false;
+  private wasPaginated: boolean | string = false;
   private updating: IndexUpdate | false;
   private paper: HTMLElement | null = null;
   private onPageCount = () => this.schedule();
@@ -366,6 +380,7 @@ class TocView {
   private paginate(tr: Transaction, vm: VMargins): void {
     const rows = Array.from(this.dom.querySelectorAll<HTMLElement>('.toc-entry'));
     if (!rows.length) return;
+    if (this.columnCount() > 1) return this.paginateColumns(tr, vm, rows);
     const view = this.editor.view;
     for (const row of rows) row.style.marginTop = '';
     // Read every natural top and height first: applying a gap moves each row below it,
@@ -388,6 +403,67 @@ class TocView {
     // The index just changed height, and pagination measured the old one.
     if (moved !== this.wasPaginated) {
       this.wasPaginated = moved;
+      tr.setMeta(FORCE_PAGE_RECALC, true);
+    }
+  }
+
+  private columnCount(): number {
+    return Math.min(3, Math.max(1, Number(this.node()?.attrs?.columns) || 1));
+  }
+
+  // One block of columns per page: each column runs down to the page's content bottom
+  // before the next one starts, and the last block balances its columns, as a section
+  // ending in a continuous break does in both word processors.
+  private paginateColumns(tr: Transaction, vm: VMargins, rows: HTMLElement[]): void {
+    const count = this.columnCount();
+    const blocks = Array.from(this.dom.querySelectorAll<HTMLElement>('.toc-cols'));
+    blocks.slice(1).forEach(b => b.remove());
+    const first = blocks[0];
+    first.append(...rows);
+    first.style.height = '';
+    first.style.marginTop = '';
+    first.style.columnFill = '';
+    // Margins of stacked rows collapse to the larger of the two.
+    const heights = rows.map(r => {
+      const cs = getComputedStyle(r);
+      return r.offsetHeight + Math.max(parseFloat(cs.marginTop) || 0, parseFloat(cs.marginBottom) || 0);
+    });
+    const grid = vm.grid;
+    let top = topInEditor(this.editor.view, first);
+    let page = grid.pageAt(top);
+    let avail = grid.contentBottomOf(page) - top;
+    const splits: { at: number; height: number; gap: number }[] = [];
+    let col = 0;
+    let h = 0;
+    heights.forEach((rh, i) => {
+      if (h > 0 && h + rh > avail) {
+        h = 0;
+        if (++col === count) {
+          const next = grid.contentTopOf(page + 1);
+          splits.push({ at: i, height: avail, gap: next - (top + avail) });
+          page += 1;
+          top = next;
+          avail = grid.contentBottomOf(page) - next;
+          col = 0;
+        }
+      }
+      h += rh;
+    });
+    let block = first;
+    splits.forEach(sp => {
+      block.style.height = `${sp.height}px`;
+      block.style.columnFill = 'auto';
+      const next = block.cloneNode(false) as HTMLElement;
+      next.style.height = '';
+      next.style.columnFill = '';
+      next.style.marginTop = `${Math.max(0, sp.gap)}px`;
+      next.append(...rows.slice(sp.at));
+      block.after(next);
+      block = next;
+    });
+    const key = splits.map(sp => sp.at).join(',');
+    if (key !== (this.wasPaginated || '')) {
+      this.wasPaginated = key;
       tr.setMeta(FORCE_PAGE_RECALC, true);
     }
   }
@@ -415,6 +491,15 @@ class TocView {
       || this.node()?.attrs?.pageNumbers === false;
     const fill = !noPage && typeof this.node()?.attrs?.leader === 'string' ? String(this.node()!.attrs.leader) : '';
     const levelStyles = this.node()?.attrs?.levelStyles as (string | null)[] | null | undefined;
+    let host = this.dom;
+    const count = this.columnCount();
+    if (count > 1) {
+      host = document.createElement('div');
+      host.className = 'toc-cols';
+      host.style.columnCount = String(count);
+      host.style.columnGap = `${Number(this.node()?.attrs?.columnGapCm) || INDEX_COLUMN_GAP_CM}cm`;
+      this.dom.appendChild(host);
+    }
     entries.forEach((e, i) => {
       const row = document.createElement('div');
       row.className = `toc-entry toc-level-${e.level}`;
@@ -426,7 +511,8 @@ class TocView {
         if (li) text.appendChild(document.createElement('br'));
         text.appendChild(document.createTextNode(part));
       });
-      if (noPage) {
+      // A term heading its subentries lists no page (`pages: []`), and leads to none.
+      if (noPage || e.pages?.length === 0) {
         row.append(text);
       } else {
         const leader = document.createElement('span');
@@ -446,7 +532,7 @@ class TocView {
         const pos = heads ? heads[i]?.pos : sources![matchRows(entries, sources!)[i]]?.pos;
         if (pos != null) this.goTo(pos);
       });
-      this.dom.appendChild(row);
+      host.appendChild(row);
     });
     this.stopAtTab();
     this.fillLeaders();
@@ -454,12 +540,20 @@ class TocView {
 
   // Pull the rows' right edge in to the index's own tab stop, so the page numbers end
   // where the file puts them rather than at the column's edge.
+  // In columns the stop counts from each column's own edge.
   private stopAtTab(): void {
     const cm = Number(this.node()?.attrs?.tabPosCm);
-    this.dom.style.paddingRight = '';
+    const cols = this.dom.querySelector<HTMLElement>('.toc-cols');
+    const el = cols ?? this.dom;
+    el.style.paddingRight = '';
     if (!(cm > 0)) return;
-    const inset = this.dom.clientWidth - (cm * 96) / 2.54;
-    if (inset > 1) this.dom.style.paddingRight = `${Math.round(inset)}px`;
+    const count = this.columnCount();
+    const gap = cols ? parseFloat(getComputedStyle(cols).columnGap) || 0 : 0;
+    const width = cols ? (cols.clientWidth - gap * (count - 1)) / count : this.dom.clientWidth;
+    const inset = width - (cm * 96) / 2.54;
+    if (inset <= 1) return;
+    if (cols) cols.querySelectorAll<HTMLElement>('.toc-entry').forEach(r => { r.style.paddingRight = `${Math.round(inset)}px`; });
+    else this.dom.style.paddingRight = `${Math.round(inset)}px`;
   }
 
   // As many leader dots as the gap holds. The row clips the rest on screen, but nothing
