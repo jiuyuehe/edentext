@@ -134,10 +134,13 @@ export function paintHighlight(view: EditorView, name: string, setOf: (state: Ed
     for (const b of blocks.values()) for (const r of b.ranges) highlight.delete(r);
   };
   // The document span of the top-level blocks near the viewport, found by bisecting their rects.
+  // A page-grid cell is the view's viewport: the view scrolls along with it, so the span
+  // stays put while the grid scrolls instead of changing the highlight on every frame.
   const nearView = (doc: PmNode): [number, number] => {
     const starts: number[] = [];
     doc.forEach((_, offset) => starts.push(offset));
-    const h = window.innerHeight;
+    const cell = (view.dom as HTMLElement).closest('.page-cell')?.getBoundingClientRect();
+    const top = cell?.top ?? 0, h = cell?.height ?? window.innerHeight;
     const rect = (i: number) => (view.nodeDOM(starts[i]) as Element | null)?.getBoundingClientRect?.();
     const bisect = (lo: number, before: (r: DOMRect) => boolean) => {
       for (let hi = starts.length; lo < hi;) {
@@ -147,8 +150,8 @@ export function paintHighlight(view: EditorView, name: string, setOf: (state: Ed
       }
       return lo;
     };
-    const first = bisect(0, (r) => r.bottom < -h);
-    const last = first < 0 ? -1 : bisect(first, (r) => r.top <= 2 * h);
+    const first = bisect(0, (r) => r.bottom < top - h);
+    const last = first < 0 ? -1 : bisect(first, (r) => r.top <= top + 2 * h);
     if (last < 0) return [0, doc.content.size];
     return [starts[first] ?? doc.content.size, starts[last] ?? doc.content.size];
   };

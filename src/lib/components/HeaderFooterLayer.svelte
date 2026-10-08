@@ -349,14 +349,24 @@
 
   // Clone the zone's source, replace the placeholder text in every page-field span with
   // the real value (current page number, or the total page count), then lay out its tabs.
+  // A zone that only moves to another page keeps its clone and has its fields' text
+  // rewritten: inserting elements makes the browser recount every list in the document,
+  // in each view of a page grid, on every row a scroll brings in.
   function fillZone(node: HTMLElement, params: ZoneParams) {
-    const apply = ([page, total, src, , zone]: ZoneParams) => {
-      node.replaceChildren(...(src ? [src.cloneNode(true)] : []));
+    let made: [HTMLElement | undefined, unknown] | null = null;
+    const apply = ([page, total, src, , zone, , version]: ZoneParams) => {
+      if (!made || made[0] !== src || made[1] !== version) {
+        node.replaceChildren(...(src ? [src.cloneNode(true)] : []));
+        made = [src, version];
+      }
       for (const el of Array.from(node.querySelectorAll('[data-page-field]'))) {
         const kind = el.getAttribute('data-page-field');
-        if (kind === 'chapter') el.textContent = chapterOn(chapterStarts, page, Number(el.getAttribute('data-level')) || 1, zone);
-        // The count stays decimal, as the field LibreOffice and Word write does.
-        else el.textContent = kind === 'count' ? String(total) : pageLabel(page);
+        const text = kind === 'chapter' ? chapterOn(chapterStarts, page, Number(el.getAttribute('data-level')) || 1, zone)
+          // The count stays decimal, as the field LibreOffice and Word write does.
+          : kind === 'count' ? String(total) : pageLabel(page);
+        const only = el.firstChild;
+        if (only instanceof Text && !only.nextSibling) only.data = text;
+        else el.textContent = text;
       }
       layOutTabs(node);
     };

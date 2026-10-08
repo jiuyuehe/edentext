@@ -76,6 +76,12 @@ mutually exclusive.
 - A cell's header/footer layer draws only its own page (`onlyPage`). Every cell still lays out
   the whole document, seconds on a long one, so App.svelte hands the editor a new page count
   only once the status bar's spinner is painted (`gridColumns`).
+- A scroll or zoom step must not make the browser redo a whole view, since each cost is
+  paid once per cell. Cells and their papers move by transform (an offset change
+  re-walks the document's paint), the host's `dir` is set outside Svelte's attribute effect
+  (which rewrites it each run, rebuilding the layout tree), a zone moving to another page
+  keeps its clone (an insertion recounts every list), and the spelling highlight paints
+  around the cell, which scrolls with its view.
 
 ## Header and footer
 

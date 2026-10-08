@@ -1551,6 +1551,14 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     return true;
   }
 
+  // A `dir` in markup makes Svelte rewrite it whenever the element's other attributes
+  // change, and Chrome rebuilds the whole view's layout tree for that; set on change only.
+  function pageDir(node: HTMLElement, rtl: boolean) {
+    const set = (on: boolean) => (on ? node.setAttribute('dir', 'rtl') : node.removeAttribute('dir'));
+    set(rtl);
+    return { update: set };
+  }
+
   // A pane's own listeners. `scroll` does not bubble and `mouseover` needs no a11y
   // handler pair on a scroll container, so both are attached here rather than in markup.
   function paneEvents(node: HTMLElement, pane: number) {
@@ -1707,7 +1715,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
           <div
             class="page-cell"
             class:empty={!cell.live}
-            style="left: {cell.left}px; top: {cell.top}px; width: {cell.width}px; height: {cell.height}px;"
+            style="transform: translate({cell.left}px, {cell.top}px); width: {cell.width}px; height: {cell.height}px;"
             oncontextmenu={(e) => openContextMenu(e, cell.pane)}
             onpointerdown={() => (activePane = cell.pane)}
             onfocusin={() => onPaneFocus(cell.pane)}
@@ -1766,10 +1774,10 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
 {/snippet}
 
 {#snippet paper(i: number, offsetTop: number, offsetLeft: number)}
-    <div bind:this={papers[i]} class="paper" data-hide-deletions={markup.hideDeletions ? '' : null} data-hide-insertions={markup.hideInsertions ? '' : null} data-plain-markup={markup.plainRevisions ? '' : null} data-hide-comments={markup.comments ? null : ''} style:position={offsetTop || offsetLeft ? 'absolute' : null} style:top={offsetTop ? `${offsetTop}px` : null} style:left={offsetLeft ? `${offsetLeft}px` : null} data-spacing-model={spacingModel} data-line-grid={lineGrid.on ? '' : null} data-balance-spaces={balanceSpaces ? '' : null} style:--grid-pitch={lineGrid.on ? `${lineGrid.pitchPt}pt` : null} class:show-formatting-marks={showFormattingMarks} class:field-shading={showFieldShading} class:hf-editing={hfActive} class:settling style:--font-asian={asianDefaultFont} style:--bold-weight={asianFauxBold ? 400 : null} style:--bold-stroke={asianFauxBold ? '0.025em' : null} style="transform: scale({appliedZoom / 100});{pageDecor.background ? ` --color-page-bg: ${pageDecor.background};` : ''}">
+    <div bind:this={papers[i]} class="paper" data-hide-deletions={markup.hideDeletions ? '' : null} data-hide-insertions={markup.hideInsertions ? '' : null} data-plain-markup={markup.plainRevisions ? '' : null} data-hide-comments={markup.comments ? null : ''} style:position={offsetTop || offsetLeft ? 'absolute' : null} data-spacing-model={spacingModel} data-line-grid={lineGrid.on ? '' : null} data-balance-spaces={balanceSpaces ? '' : null} style:--grid-pitch={lineGrid.on ? `${lineGrid.pitchPt}pt` : null} class:show-formatting-marks={showFormattingMarks} class:field-shading={showFieldShading} class:hf-editing={hfActive} class:settling style:--font-asian={asianDefaultFont} style:--bold-weight={asianFauxBold ? 400 : null} style:--bold-stroke={asianFauxBold ? '0.025em' : null} style="transform: {offsetTop || offsetLeft ? `translate(${offsetLeft}px, ${offsetTop}px) ` : ''}scale({appliedZoom / 100});{pageDecor.background ? ` --color-page-bg: ${pageDecor.background};` : ''}">
       <!-- Dedicated mount point that TipTap fully owns — keeping it free of Svelte
            content avoids Svelte and ProseMirror fighting over the same parent's DOM. -->
-      <div bind:this={hosts[i]} class="tiptap-host" data-split-pane={i > 0 ? '' : null} dir={pageRtl ? 'rtl' : null} lang={documentLanguage === NO_LANGUAGE ? null : documentLanguage} style:hyphens={hyphenate ? 'auto' : null}></div>
+      <div bind:this={hosts[i]} class="tiptap-host" data-split-pane={i > 0 ? '' : null} use:pageDir={pageRtl} lang={documentLanguage === NO_LANGUAGE ? null : documentLanguage} style:hyphens={hyphenate ? 'auto' : null}></div>
       {#if gapStripeStyles.length}
         <div class="band-layer">
           {#each bandStyles as b}
@@ -1938,8 +1946,12 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
 
   /* Clip, not hidden: a hidden box still scrolls, and a caret moving to another page
      scrolled the cell it left to show it there. */
+  /* Moved by transform, not left/top: an offset change repaints the whole document in
+     every cell, which made each zoom step and row re-aim cost a frame or more. */
   .page-cell {
     position: absolute;
+    left: 0;
+    top: 0;
     overflow: clip;
   }
 
