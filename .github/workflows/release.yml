@@ -84,9 +84,21 @@ jobs:
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      # Repacked with appimagetool so AppImageUpdate finds the next release and
+      # fetches only changed blocks; its static runtime also drops libfuse2.
+      - if: runner.os == 'Linux'
+        working-directory: desktop/release
+        run: |
+          sudo apt-get install -y zsync
+          curl -fsSLo appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          f=$(echo *.AppImage)
+          "./$f" --appimage-extract >/dev/null
+          rm "$f"
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run -u "gh-releases-zsync|${GITHUB_REPOSITORY%/*}|${GITHUB_REPOSITORY#*/}|latest|EdenText-*.AppImage.zsync" squashfs-root "$f"
       - shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          gh release upload "$GITHUB_REF_NAME" desktop/release/*.{dmg,exe,AppImage,deb}
+          gh release upload "$GITHUB_REF_NAME" desktop/release/*.{dmg,exe,AppImage,zsync,deb}
