@@ -276,6 +276,7 @@ export async function renderPages(opts: PdfOptions, scale = 2): Promise<{
   document.body.appendChild(holder);
   const strip = holder.cloneNode(false) as HTMLElement;
   const cleanup = () => { holder.remove(); strip.remove(); style.remove(); };
+  let encoder: ReturnType<typeof pageEncoder> | undefined;
 
   try {
     await document.fonts.ready;
@@ -292,6 +293,7 @@ export async function renderPages(opts: PdfOptions, scale = 2): Promise<{
     const html2canvas = (await import('html2canvas')).default;
     opts.onProgress?.(0);
     // Encoded off the main thread where the engine can, while the next strip renders.
+    encoder = pageEncoder();
     const images: Promise<Blob>[] = [];
     let encoded = 0;
     document.body.appendChild(strip);
@@ -311,7 +313,7 @@ export async function renderPages(opts: PdfOptions, scale = 2): Promise<{
         ignoreElements: (el) => !(strip.contains(el) || el.contains(strip) || document.head.contains(el)),
       });
       for (let i = 0; i < n; i++) {
-        images.push(cropPage(canvas, i, pageW, pageH, cycle, scale).then((b) => {
+        images.push(encoder.crop(canvas, i, pageW, pageH, cycle, scale).then((b) => {
           opts.onProgress?.(++encoded / pages);
           return b;
         }));
@@ -322,6 +324,8 @@ export async function renderPages(opts: PdfOptions, scale = 2): Promise<{
   } catch (err) {
     cleanup();
     throw err;
+  } finally {
+    encoder?.close();
   }
 }
 
@@ -347,24 +351,41 @@ function partsOf(paper: HTMLElement): HTMLElement[] {
 // A copy of the paper holding only what reaches into [top, bottom]: html2canvas copies the
 // style of every element it clones, so a strip must not carry the whole document. The flow
 // above it folds into one stand-in, sized so the strip's pages land on the full layout's.
+// Only the kept parts are cloned: a deep copy of the whole paper per strip costs seconds.
 function stripOf(paper: HTMLElement, parts: Part[], top: number, bottom: number): HTMLElement {
-  const copy = paper.cloneNode(true) as HTMLElement;
-  const flow = copy.querySelector('.tiptap') as HTMLElement;
-  const els = partsOf(copy);
+  const flow = paper.querySelector('.tiptap') as HTMLElement;
+  const els = partsOf(paper);
+  const keep = new Set<Node>();
   let first = -1;
   parts.forEach((p, i) => {
     const el = els[i];
     if (p.bottom >= top && p.top <= bottom) {
+      keep.add(el);
       if (first < 0 && el.parentElement === flow) first = i;
-    } else if (el.parentElement === flow || p.absolute) {
-      el.remove();
+    } else if (!(el.parentElement === flow || p.absolute)) {
+      keep.add(el);
     }
   });
+  const holders = new Set<Node | null>(els.map((el) => el.parentElement));
+  const copies = new Map<Node, Node>();
+  const copyOf = (node: Node): Node => {
+    if (!(node instanceof Element) || !(node.contains(flow) || holders.has(node))) {
+      const c = node.cloneNode(true);
+      copies.set(node, c);
+      return c;
+    }
+    const c = node.cloneNode(false);
+    for (const child of Array.from(node.childNodes)) {
+      if (!holders.has(node) || !(child instanceof Element) || keep.has(child)) c.appendChild(copyOf(child));
+    }
+    return c;
+  };
+  const copy = copyOf(paper) as HTMLElement;
   if (first < 0) return copy;
   const standIn = document.createElement('div');
   standIn.style.cssText = 'display:block !important; margin:0 !important; padding:0 !important; border:0 !important; height:0 !important;';
   standIn.dataset.pdfTop = String(parts[first].top);
-  els[first].before(standIn);
+  (copies.get(els[first]) as HTMLElement).before(standIn);
   return copy;
 }
 
@@ -374,6 +395,37 @@ function alignStrip(copy: HTMLElement): void {
   if (!standIn || !block) return;
   const now = block.getBoundingClientRect().top - copy.getBoundingClientRect().top;
   standIn.style.setProperty('height', `${Math.max(0, Number(standIn.dataset.pdfTop) - now)}px`, 'important');
+}
+
+// Page JPEGs in a few workers, so encoding runs beside the next strip's render; an engine
+// without OffscreenCanvas crops and encodes on the main thread.
+function pageEncoder() {
+  const n = typeof OffscreenCanvas === 'undefined' ? 0 : Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+  const workers = Array.from({ length: n }, () => new Worker(new URL('./pageWorker.ts', import.meta.url), { type: 'module' }));
+  const pending = new Map<number, { resolve: (b: Blob) => void; reject: (e: unknown) => void }>();
+  for (const w of workers) {
+    w.onmessage = (e: MessageEvent<{ id: number; blob: Blob }>) => {
+      pending.get(e.data.id)?.resolve(e.data.blob);
+      pending.delete(e.data.id);
+    };
+    w.onerror = (e) => {
+      pending.forEach((p) => p.reject(new Error(`page encoder failed: ${e.message}`)));
+      pending.clear();
+    };
+  }
+  let next = 0;
+  return {
+    crop(canvas: HTMLCanvasElement, i: number, pageW: number, pageH: number, cycle: number, scale: number): Promise<Blob> {
+      if (!n) return cropPage(canvas, i, pageW, pageH, cycle, scale);
+      const id = next++;
+      return createImageBitmap(canvas, 0, Math.round(i * cycle * scale), Math.round(pageW * scale), Math.round(pageH * scale))
+        .then((bitmap) => new Promise<Blob>((resolve, reject) => {
+          pending.set(id, { resolve, reject });
+          workers[id % n].postMessage({ id, bitmap }, [bitmap]);
+        }));
+    },
+    close: () => workers.forEach((w) => w.terminate()),
+  };
 }
 
 // Crop page i's surface [i*cycle, i*cycle+pageH] out of a strip starting at page 0 of it.

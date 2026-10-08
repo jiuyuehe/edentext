@@ -26,3 +26,5 @@ canvas for a long document exceeds every engine's limit and comes out blank; eac
 only the blocks it reaches and a measured stand-in above them. Anything html2canvas cannot
 evaluate (counter() markers, outline counter-set) becomes literal text first, boxed like the
 live pseudo-element, or the copy's layout drifts from the editor's pagination.
+A strip clones only the parts it keeps, and page JPEGs are cropped and encoded in
+`pageWorker.ts` workers while the next strip renders.
