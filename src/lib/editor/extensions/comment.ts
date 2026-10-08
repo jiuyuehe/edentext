@@ -66,7 +66,11 @@ export function commentIdAt(state: EditorState, ranges?: CommentRange[]): string
 // Every comment range in document order. Adjacent text nodes sharing an id merge into
 // one; an id split by a paragraph boundary yields several, which is why the commands
 // walk all of them and the pane (`comments`) keeps only the first per id.
+// Kept per doc, read-only: every view, bar and pane asks on each transaction.
+const rangesOf = new WeakMap<PMNode, CommentRange[]>();
 export function commentRanges(doc: PMNode): CommentRange[] {
+  const known = rangesOf.get(doc);
+  if (known) return known;
   const out: CommentRange[] = [];
   let last: CommentRange | null = null;
   doc.descendants((node, pos) => {
@@ -93,6 +97,7 @@ export function commentRanges(doc: PMNode): CommentRange[] {
     out.push(last);
     return false;
   });
+  rangesOf.set(doc, out);
   return out;
 }
 

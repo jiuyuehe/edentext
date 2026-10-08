@@ -555,13 +555,11 @@ export const TextBox = Node.create({
         props: {
           clipboardSerializer,
           decorations(state) {
+            const known = decoSets.get(state);
+            if (known) return known;
             const { from, to } = state.selection;
             const selected = state.selection instanceof NodeSelection ? from : -1;
-            const decos: Decoration[] = [];
-            // A box rides a paragraph's inline content, so the walk has to enter blocks.
-            state.doc.descendants((node, pos) => {
-              if (node.type.name !== 'textBox') return node.isBlock;
-              const end = pos + node.nodeSize;
+            const decos = boxRanges(state.doc).map(([pos, end]) => {
               const attrs: Record<string, string> = {};
               // Selected, or the caret inside: a caret just before the box is beside it,
               // which is where every zone's editor starts out.
@@ -571,16 +569,35 @@ export const TextBox = Node.create({
               // no text position beside a box that starts its paragraph — and what is
               // typed there lands inside the frame.
               if (!(from > pos && to < end)) attrs.contenteditable = 'false';
-              decos.push(Decoration.node(pos, end, attrs));
-              return false;
+              return Decoration.node(pos, end, attrs);
             });
-            return DecorationSet.create(state.doc, decos);
+            const set = DecorationSet.create(state.doc, decos);
+            decoSets.set(state, set);
+            return set;
           },
         },
       }),
     ];
   },
 });
+
+// Every view of a state asks for the same set, and a selection change keeps the doc:
+// the walk runs once per doc and the set once per state, not once per pane.
+const decoSets = new WeakMap<EditorState, DecorationSet>();
+const boxesOf = new WeakMap<PMNode, [number, number][]>();
+function boxRanges(doc: PMNode): [number, number][] {
+  let out = boxesOf.get(doc);
+  if (out) return out;
+  out = [];
+  // A box rides a paragraph's inline content, so the walk has to enter blocks.
+  doc.descendants((node, pos) => {
+    if (node.type.name !== 'textBox') return node.isBlock;
+    out!.push([pos, pos + node.nodeSize]);
+    return false;
+  });
+  boxesOf.set(doc, out);
+  return out;
+}
 
 type Size = { w: number; h: number };
 

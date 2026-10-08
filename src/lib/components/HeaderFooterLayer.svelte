@@ -322,15 +322,19 @@
   // change without the page doing so.
   type ZoneParams = [number, number, HTMLElement | undefined, unknown, HfZone, string, number];
 
-  // The zone's tabs: static HTML no ProseMirror plugin reaches. The advances are layout
-  // px, so only a content change invalidates them — not the zoom transform. The zones of
-  // one flush lay out together, after their fields are patched: one layout, not one each.
+  // The zone's tabs: static HTML no ProseMirror plugin reaches, in layout px, so only a new
+  // text or width invalidates them — the action re-runs on every transaction, in each view
+  // of a page grid. The zones of one flush lay out together: one layout, not one each.
   const tabQueue = new Set<HTMLElement>();
-  function layOutTabs(node: HTMLElement) {
+  const tabsDirty = new WeakSet<HTMLElement>();
+  const tabsWidth = new WeakMap<HTMLElement, string>();
+  function layOutTabs(node: HTMLElement, changed: boolean) {
+    if (changed) tabsDirty.add(node);
     if (!tabQueue.size) {
       queueMicrotask(() => {
-        const zones = [...tabQueue].filter((z) => z.isConnected);
+        const zones = [...tabQueue].filter((z) => z.isConnected && (tabsDirty.has(z) || tabsWidth.get(z) !== z.style.width));
         tabQueue.clear();
+        for (const z of zones) { tabsDirty.delete(z); tabsWidth.set(z, z.style.width); }
         layOutZoneTabs(zones);
       });
     }
@@ -355,7 +359,8 @@
   function fillZone(node: HTMLElement, params: ZoneParams) {
     let made: [HTMLElement | undefined, unknown] | null = null;
     const apply = ([page, total, src, , zone, , version]: ZoneParams) => {
-      if (!made || made[0] !== src || made[1] !== version) {
+      let changed = !made || made[0] !== src || made[1] !== version;
+      if (changed) {
         node.replaceChildren(...(src ? [src.cloneNode(true)] : []));
         made = [src, version];
       }
@@ -365,10 +370,11 @@
           // The count stays decimal, as the field LibreOffice and Word write does.
           : kind === 'count' ? String(total) : pageLabel(page);
         const only = el.firstChild;
-        if (only instanceof Text && !only.nextSibling) only.data = text;
-        else el.textContent = text;
+        if (only instanceof Text && !only.nextSibling) {
+          if (only.data !== text) { only.data = text; changed = true; }
+        } else if (el.textContent !== text) { el.textContent = text; changed = true; }
       }
-      layOutTabs(node);
+      layOutTabs(node, changed);
     };
     apply(params);
     return { update: apply };

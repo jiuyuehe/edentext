@@ -482,6 +482,21 @@ export function placePageFrames(view: EditorView, grid: PageGrid): void {
 
 const PLACED = '[data-page-y], [data-column-x]';
 
+// A pane lays out exactly as the view it mirrors, so its frames take that view's
+// margins instead of each measuring them again; one whose frames differ is measured.
+function copyPageFrames(from: EditorView, to: EditorView, grid: PageGrid): void {
+  const sel = `[data-sink-gap], ${PLACED}`;
+  const src = (from.dom as HTMLElement).querySelectorAll<HTMLElement>(sel);
+  const dst = (to.dom as HTMLElement).querySelectorAll<HTMLElement>(sel);
+  if (src.length !== dst.length) return placePageFrames(to, grid);
+  src.forEach((el, i) => {
+    const twin = dst[i].style;
+    if (twin.marginTop !== el.style.marginTop) twin.marginTop = el.style.marginTop;
+    if (twin.marginLeft !== el.style.marginLeft) twin.marginLeft = el.style.marginLeft;
+    if (twin.shapeOutside !== el.style.shapeOutside) twin.shapeOutside = el.style.shapeOutside;
+  });
+}
+
 // Every frame is read before any is written: a write between two reads lays the
 // document out again, in every pane at once. One inside another frame moves with it,
 // so it is read once the outer ones have landed.
@@ -2302,7 +2317,7 @@ export const PageBreaks = Extension.create({
           // The spacers this pass placed moved every page-placed frame's anchor; the
           // frames sit out of the flow, so re-placing them changes no measurement.
           placePageFrames(editorView, vm.grid);
-          for (const pane of panes) if (pane.state.doc === editorView.state.doc) placePageFrames(pane, vm.grid);
+          for (const pane of panes) if (pane.state.doc === editorView.state.doc) copyPageFrames(editorView, pane, vm.grid);
 
           // A per-page restart counts within the page each anchor landed on, which only
           // this pass knows (notes.ts). Renumbering can rewrap, so it takes a pass of its

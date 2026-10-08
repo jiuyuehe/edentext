@@ -48,7 +48,7 @@ kept in sync by the primary view; it is not an independent document editor.
 - Widget decorations must create DOM in a factory. Two views cannot share one element.
 - A node view measures against the view it renders in (`addNodeView`'s `view`), never
   `editor.view`. What a pass places by measurement must match in every pane: pageBreaks
-  re-places each pane's frames in the same pass (`panes`), and an index in a pane takes
+  hands each pane's frames the margins its pass measured (`panes`), and an index in a pane takes
   its main view's rows and breaks (`TocView.twins`) rather than measuring a passing layout.
 - `activePane` owns coordinate reads, focus restoration, and scroll-to-selection. A command
   otherwise focuses the primary TipTap view and scrolls the wrong pane.
