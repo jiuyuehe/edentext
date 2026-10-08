@@ -10,7 +10,8 @@ import { dragDialogs } from './lib/utils/dragWindow';
 // This tab holds its document while it lives; the ones no tab has held for a while
 // and that fell out of the newest few are dropped here.
 startTabPresence();
-void pruneOldDocuments();
+pruneOldDocuments();
+
 
 
 dragDialogs();
