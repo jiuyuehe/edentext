@@ -10,7 +10,8 @@ import { bibliographyEntries, bibliographyRows } from './bibliographyEntry';
 import { isCitationStyle, type CitationStyle } from '../../utils/citationStyle';
 import { t } from '../../i18n/i18n.svelte';
 import type { Transaction } from '@tiptap/pm/state';
-import { pageOfElement, topInEditor, scheduleFieldRound, FORCE_PAGE_RECALC, type FieldWrite, type PageGrid, type VMargins } from './pageBreaks';
+import type { EditorView } from '@tiptap/pm/view';
+import { pageOfElement, topInEditor, scheduleFieldRound, isSplitPane, FORCE_PAGE_RECALC, type FieldWrite, type PageGrid, type VMargins } from './pageBreaks';
 
 // A generated index: a block atom listing every source with its page number — the
 // headings for a table of contents, the captions of one category for a list of figures
@@ -188,7 +189,7 @@ export const TableOfContents = Node.create({
   },
 
   addNodeView() {
-    return ({ editor, node, getPos }) => new TocView(editor, node, getPos as () => number);
+    return ({ editor, node, getPos, view }) => new TocView(editor, node, getPos as () => number, view);
   },
 });
 
@@ -218,6 +219,12 @@ const tocTitle = (title: unknown, index: unknown): string =>
 
 type HeadingRef = { text: string; level: number; pos: number };
 
+// Where a page boundary breaks the rows: in one column the row taking the gap as its top
+// margin; in columns the row each further block starts at, and the block before's height.
+type Break = { at: number; gap: number; height: number };
+
+const tocViews = new Set<TocView>();
+
 // Node view: renders the title + one clickable row per entry. While `updating` it
 // regenerates on each pagination settle (pm-pagecount, caught on the .paper ancestor) in
 // the field round, writing its entries back on the round's transaction, until a pass
@@ -225,10 +232,14 @@ type HeadingRef = { text: string; level: number; pos: number };
 class TocView {
   dom: HTMLElement;
   private editor: Editor;
+  // The view this index renders in, which its rows are measured against.
+  private view: EditorView;
   private getPos: () => number;
   private lastKey = '';
   private lastLook = '';
   private wasPaginated: boolean | string = false;
+  private breaks: Break[] = [];
+  private painted: [TocEntry[], (HeadingRef | undefined)[] | null] | null = null;
   private updating: IndexUpdate | false;
   private paper: HTMLElement | null = null;
   private onPageCount = () => this.schedule();
@@ -237,8 +248,9 @@ class TocView {
     this.schedule();
   };
 
-  constructor(editor: Editor, node: PMNode, getPos: () => number) {
+  constructor(editor: Editor, node: PMNode, getPos: () => number, view: EditorView) {
     this.editor = editor;
+    this.view = view;
     this.getPos = getPos;
 
     this.dom = document.createElement('div');
@@ -249,8 +261,10 @@ class TocView {
     this.updating = Array.isArray(node.attrs.entries) ? false : 'all';
     this.lastLook = lookOf(node);
 
+    tocViews.add(this);
     // Mount deferred so .paper exists and the first pagination pass has run.
     requestAnimationFrame(() => {
+      if (isSplitPane(this.view)) return this.adoptMain();
       this.paper = this.dom.closest('.paper') as HTMLElement | null;
       this.paper?.addEventListener('pm-pagecount', this.onPageCount);
       this.paper?.addEventListener(INDEX_UPDATE, this.onUpdate);
@@ -259,7 +273,7 @@ class TocView {
   }
 
   private schedule(): void {
-    if (this.editor.isDestroyed) return;
+    if (this.editor.isDestroyed || isSplitPane(this.view)) return;
     scheduleFieldRound(this.editor.view, this, (vm) => this.measure(vm));
   }
 
@@ -366,6 +380,7 @@ class TocView {
     return (tr) => {
       if (stale) {
         this.paint(entries, heads);
+        for (const twin of this.twins()) twin.paint(entries, heads);
         if (heads) this.syncAttr(entries, tr);
       }
       // The rows carry their page numbers now, so where they fall is read once every
@@ -380,15 +395,25 @@ class TocView {
   private paginate(tr: Transaction, vm: VMargins): void {
     const rows = Array.from(this.dom.querySelectorAll<HTMLElement>('.toc-entry'));
     if (!rows.length) return;
-    if (this.columnCount() > 1) return this.paginateColumns(tr, vm, rows);
-    const view = this.editor.view;
+    const breaks = this.columnCount() > 1 ? this.columnBreaks(vm, rows) : this.rowBreaks(vm, rows);
+    this.applyBreaks(breaks);
+    for (const twin of this.twins()) twin.applyBreaks(breaks);
+    // The index just changed height, and pagination measured the old one.
+    const key = this.columnCount() > 1 ? breaks.map(b => b.at).join(',') : breaks.length > 0;
+    if ((key || false) !== (this.wasPaginated || false)) {
+      this.wasPaginated = key;
+      tr.setMeta(FORCE_PAGE_RECALC, true);
+    }
+  }
+
+  private rowBreaks(vm: VMargins, rows: HTMLElement[]): Break[] {
     for (const row of rows) row.style.marginTop = '';
     // Read every natural top and height first: applying a gap moves each row below it,
     // and one reflow for the whole index beats one per row.
-    const boxes = rows.map(row => [topInEditor(view, row), row.offsetHeight]);
+    const boxes = rows.map(row => [topInEditor(this.view, row), row.offsetHeight]);
+    const breaks: Break[] = [];
     let shift = 0;
-    let moved = false;
-    rows.forEach((row, i) => {
+    rows.forEach((_, i) => {
       const top = boxes[i][0] + shift;
       // The page's own content band: its section's header and footer reach as far as
       // they do, and a section on its own paper makes the page a different height.
@@ -396,15 +421,10 @@ class TocView {
       if (top + boxes[i][1] <= vm.grid.contentBottomOf(page)) return;
       const gap = vm.grid.contentTopOf(page + 1) - top;
       if (gap <= 0) return;
-      row.style.marginTop = `${gap}px`;
+      breaks.push({ at: i, gap, height: 0 });
       shift += gap;
-      moved = true;
     });
-    // The index just changed height, and pagination measured the old one.
-    if (moved !== this.wasPaginated) {
-      this.wasPaginated = moved;
-      tr.setMeta(FORCE_PAGE_RECALC, true);
-    }
+    return breaks;
   }
 
   private columnCount(): number {
@@ -414,25 +434,19 @@ class TocView {
   // One block of columns per page: each column runs down to the page's content bottom
   // before the next one starts, and the last block balances its columns, as a section
   // ending in a continuous break does in both word processors.
-  private paginateColumns(tr: Transaction, vm: VMargins, rows: HTMLElement[]): void {
+  private columnBreaks(vm: VMargins, rows: HTMLElement[]): Break[] {
     const count = this.columnCount();
-    const blocks = Array.from(this.dom.querySelectorAll<HTMLElement>('.toc-cols'));
-    blocks.slice(1).forEach(b => b.remove());
-    const first = blocks[0];
-    first.append(...rows);
-    first.style.height = '';
-    first.style.marginTop = '';
-    first.style.columnFill = '';
+    const first = this.joinColumns(rows);
     // Margins of stacked rows collapse to the larger of the two.
     const heights = rows.map(r => {
       const cs = getComputedStyle(r);
       return r.offsetHeight + Math.max(parseFloat(cs.marginTop) || 0, parseFloat(cs.marginBottom) || 0);
     });
     const grid = vm.grid;
-    let top = topInEditor(this.editor.view, first);
+    let top = topInEditor(this.view, first);
     let page = grid.pageAt(top);
     let avail = grid.contentBottomOf(page) - top;
-    const splits: { at: number; height: number; gap: number }[] = [];
+    const splits: Break[] = [];
     let col = 0;
     let h = 0;
     heights.forEach((rh, i) => {
@@ -449,8 +463,33 @@ class TocView {
       }
       h += rh;
     });
-    let block = first;
-    splits.forEach(sp => {
+    return splits;
+  }
+
+  // All rows back in the first block of columns, unsized.
+  private joinColumns(rows: HTMLElement[]): HTMLElement {
+    const blocks = Array.from(this.dom.querySelectorAll<HTMLElement>('.toc-cols'));
+    blocks.slice(1).forEach(b => b.remove());
+    const first = blocks[0];
+    first.append(...rows);
+    first.style.height = '';
+    first.style.marginTop = '';
+    first.style.columnFill = '';
+    return first;
+  }
+
+  // Writes the breaks one measurement found; a split or grid pane takes its main view's,
+  // since it shows the same layout and a reading of its own may catch a passing one.
+  private applyBreaks(breaks: Break[]): void {
+    this.breaks = breaks;
+    const rows = Array.from(this.dom.querySelectorAll<HTMLElement>('.toc-entry'));
+    if (this.columnCount() === 1) {
+      for (const row of rows) row.style.marginTop = '';
+      for (const b of breaks) if (rows[b.at]) rows[b.at].style.marginTop = `${b.gap}px`;
+      return;
+    }
+    let block = this.joinColumns(rows);
+    breaks.forEach(sp => {
       block.style.height = `${sp.height}px`;
       block.style.columnFill = 'auto';
       const next = block.cloneNode(false) as HTMLElement;
@@ -461,15 +500,27 @@ class TocView {
       block.after(next);
       block = next;
     });
-    const key = splits.map(sp => sp.at).join(',');
-    if (key !== (this.wasPaginated || '')) {
-      this.wasPaginated = key;
-      tr.setMeta(FORCE_PAGE_RECALC, true);
-    }
+  }
+
+  // This index in the split and grid panes of the main view it renders in.
+  private twins(): TocView[] {
+    if (isSplitPane(this.view)) return [];
+    const pos = this.getPos();
+    return [...tocViews].filter(v => v !== this && v.editor === this.editor && isSplitPane(v.view) && v.getPos() === pos);
+  }
+
+  // A pane built after its main view laid the index out starts from that layout.
+  private adoptMain(): void {
+    const pos = this.getPos();
+    const main = [...tocViews].find(v => v.editor === this.editor && !isSplitPane(v.view) && v.getPos() === pos);
+    if (!main?.painted) return;
+    this.paint(...main.painted);
+    this.applyBreaks(main.breaks);
   }
 
   // A cached row jumps to the source that reads the same; heads is null for those.
   private paint(entries: TocEntry[], heads: (HeadingRef | undefined)[] | null): void {
+    this.painted = [entries, heads];
     this.dom.textContent = '';
     const titleText = tocTitle(this.node()?.attrs?.title, this.node()?.attrs?.index);
     if (titleText) {
@@ -639,6 +690,7 @@ class TocView {
   }
 
   destroy(): void {
+    tocViews.delete(this);
     this.paper?.removeEventListener('pm-pagecount', this.onPageCount);
     this.paper?.removeEventListener(INDEX_UPDATE, this.onUpdate);
   }

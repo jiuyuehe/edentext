@@ -9,7 +9,7 @@ import { NodeSelection, Selection, TextSelection, Plugin } from '@tiptap/pm/stat
 import type { EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
-import { placeFromPage, placeInColumn, freeDragX } from './pageBreaks';
+import { placeFrameSoon, placeInColumn, placeTogether, freeDragX } from './pageBreaks';
 import { HANDLES, MIN_SIZE_PX, clamp, parsePx, frameMargins, unstackFloat, pageContentHeightPx, sinkToOffset, applyRunThrough, clearPagePlace, startFreeMove, droppedFrameAttrs, type WrapMode } from './image';
 import { SHAPES, shapePath, linePaths, pathHeadPaths, arrowHeadPx, isShapeKind, isLineKind, outlineLayers, shadeColor, asShapePreset, asTextArea, type PathHeads, type ShapeKind, type DrawingMlPreset, type TextArea } from '../../utils/shapes';
 import type { ResolvedGeometry } from '../../utils/enhancedGeometry';
@@ -512,7 +512,7 @@ export const TextBox = Node.create({
   },
 
   addNodeView() {
-    return ({ node, editor, getPos }) => new TextBoxView(node as PMNode, editor, getPos as () => number);
+    return ({ node, editor, getPos, view }) => new TextBoxView(node as PMNode, editor, getPos as () => number, view);
   },
 
   // Show the resize frame + handles (via .textbox-active) whenever the caret sits
@@ -602,7 +602,7 @@ function observeFit(rotor: HTMLElement, view: TextBoxView): void {
   // pixel grid the frame sits on and so is the rotor's own, not the observation's.
   fitObserver ??= new ResizeObserver((entries) => {
     const jobs = entries.map((e) => [fitted.get(e.target), rotorSize(e.target as HTMLElement)] as const);
-    for (const [view, size] of jobs) view?.refit(size);
+    placeTogether(() => { for (const [view, size] of jobs) view?.refit(size); });
   });
   fitObserver.observe(rotor);
 }
@@ -622,6 +622,8 @@ class TextBoxView {
   private badge: HTMLElement;
   private node: PMNode;
   private editor: Editor;
+  // The view this box renders in: a split or grid pane is its own, measured on its own.
+  private view: EditorView;
   private getPos: () => number;
   private resizing = false;
   // Live offsets while a free drag runs (cm), added to the node's own by offX/offY.
@@ -639,10 +641,11 @@ class TextBoxView {
   // Last text-area inset applied; guards the ResizeObserver feedback loop.
   private lastInset = '';
 
-  constructor(node: PMNode, editor: Editor, getPos: () => number) {
+  constructor(node: PMNode, editor: Editor, getPos: () => number, view: EditorView) {
     this.node = node;
     this.editor = editor;
     this.getPos = getPos;
+    this.view = view;
 
     this.dom = document.createElement('div');
     this.dom.className = 'textbox-node';
@@ -976,8 +979,8 @@ class TextBoxView {
       applyRunThrough(d, this.offX(), this.offY(), a.inFront === true, a.wrapFromPage === true, a.wrapFromBody === true, a.zIndex);
       // Deferred: the frame has to be laid out before its own page can be read. Its
       // column only needs it in the document, so one already there lands at once.
-      if (!a.wrapFromPage && !a.wrapFromBody && d.isConnected) placeInColumn(this.editor.view, d);
-      else requestAnimationFrame(() => (a.wrapFromPage || a.wrapFromBody ? placeFromPage : placeInColumn)(this.editor.view, d));
+      if (!a.wrapFromPage && !a.wrapFromBody && d.isConnected) placeInColumn(this.view, d);
+      else placeFrameSoon(this.view, d);
     } else if (a.wrap === 'topBottom') {
       // A full-width float, as on an image: text may only flow above and below it, and
       // a block box on an inline node view splits the paragraph's inline content into
@@ -1054,7 +1057,7 @@ class TextBoxView {
     if (this.isOwnUi(e.target)) return;
     const pos = this.getPos();
     if (typeof pos !== 'number') return;
-    const view = this.editor.view;
+    const view = this.view;
     const already = view.state.selection instanceof NodeSelection && view.state.selection.from === pos;
     if (this.isFrameHit(e)) {
       // First ring click: block the native caret so the NodeSelection sticks (then
@@ -1216,7 +1219,7 @@ class TextBoxView {
     const ends = [turn(p0), turn([w - p0[0], h - p0[1]])];
     const [moving, fixed] = end === 'start' ? [ends[0], ends[1]] : [ends[1], ends[0]];
     const free = a.wrap === 'through' || this.pastZone();
-    const view = this.editor.view;
+    const view = this.view;
     if (free) this.dragX = freeDragX(view, this.dom, a.wrapOffset);
     const zoom = this.dom.getBoundingClientRect().width / this.dom.offsetWidth || 1;
     const cm = (px: number) => Math.round((px * 2.54 * 1000) / 96) / 1000;

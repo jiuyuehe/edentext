@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick as domUpdated } from 'svelte';
+  import { onMount, tick as domUpdated, untrack } from 'svelte';
   import { cubicOut } from 'svelte/easing';
   import type { Content, Editor } from '@tiptap/core';
   import { EditorState, Selection } from '@tiptap/pm/state';
@@ -637,6 +637,24 @@
   let busyProgress = $state<number | null>(null);
   // The spinner is painted before a long synchronous step starts, or not until after it.
   const painted = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+  // The page grid builds a view of the whole document per cell, seconds on a long one,
+  // so the editor takes a new page count only once the spinner is on screen.
+  let gridColumns = $state(loadPageColumns());
+  $effect(() => {
+    const n = pageColumns;
+    if (n === untrack(() => gridColumns)) return;
+    if (n <= 1) {
+      gridColumns = n;
+      return;
+    }
+    untrack(() => (busyTask ??= 'updating'));
+    painted().then(() => {
+      gridColumns = pageColumns;
+      return painted();
+    }).then(() => {
+      if (busyTask === 'updating') busyTask = null;
+    });
+  });
   let exportMenuOpen = $state(false);
   let saveFormatOpen = $state(false);
 
@@ -1805,7 +1823,7 @@
     {showFieldShading}
     {showRuler}
     {splitView}
-    {pageColumns}
+    pageColumns={gridColumns}
     {pageMargins}
     orientation={pageOrientation}
     {pageFormat}

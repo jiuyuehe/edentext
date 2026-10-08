@@ -41,6 +41,7 @@
     zoneHeights = $bindable([]),
     zoneIntrusions = $bindable([]),
     interactive = true,
+    onlyPage = 0,
   }: {
     headerDoc: HfDoc;
     footerDoc: HfDoc;
@@ -74,6 +75,8 @@
     zoneIntrusions?: number[][];
     /** False in a split view's second pane: it draws the zones, it does not edit them. */
     interactive?: boolean;
+    /** A page-grid cell's page: the cell clips every other, so only its zones are drawn. */
+    onlyPage?: number;
   } = $props();
 
   const PAGE_GAP = 20;
@@ -124,6 +127,7 @@
   const WINDOW_PAGES = 75;
   let pages = $derived.by(() => {
     const total = Math.max(1, numPages);
+    if (onlyPage && !allPagesDrawn.on) return onlyPage <= total ? [onlyPage] : [];
     if (allPagesDrawn.on || total <= WINDOW_PAGES) return Array.from({ length: total }, (_, i) => i + 1);
     const step = Math.floor((currentPage - 1) / WINDOW_STEP) * WINDOW_STEP - WINDOW_STEP + 1;
     const start = Math.max(1, Math.min(total - WINDOW_PAGES + 1, step));

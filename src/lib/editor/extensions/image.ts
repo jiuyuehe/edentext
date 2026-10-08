@@ -7,7 +7,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import { dropCursor } from '@tiptap/pm/dropcursor';
 import { cmToPx } from '../../storage/pageMargins';
-import { readVerticalMargins, placeFromPage, placeInColumn, freeDragX, sinkSideFloat } from './pageBreaks';
+import { readVerticalMargins, placeFrameSoon, placeInColumn, freeDragX, sinkSideFloat } from './pageBreaks';
 
 // Inline, as-character image, or a floating text-wrapped frame (wrap = flow mode);
 // width/height are doc px @96dpi, rotation CW degrees. Export → cm + ODF
@@ -842,7 +842,7 @@ class ImageView {
       // can be read off the grid. Its column only needs it in the document, so a frame
       // already there (a drag, an edit) lands at once instead of a frame late.
       if (!a.wrapFromPage && !a.wrapFromBody && d.isConnected) placeInColumn(this.view, d);
-      else requestAnimationFrame(() => (a.wrapFromPage || a.wrapFromBody ? placeFromPage : placeInColumn)(this.view, d));
+      else placeFrameSoon(this.view, d);
       return;
     }
     if (wrap === 'left' || wrap === 'right') {

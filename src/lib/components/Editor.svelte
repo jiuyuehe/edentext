@@ -1822,6 +1822,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
         bind:zoneHeights={hfZoneHeights}
         bind:zoneIntrusions={hfZoneIntrusions}
         interactive={i === 0}
+        onlyPage={multiPage ? pageOfPane(i) : 0}
       />
     </div>
 {/snippet}

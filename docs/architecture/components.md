@@ -46,6 +46,10 @@ kept in sync by the primary view; it is not an independent document editor.
 - One view measures and paginates. `pageBreaks`, columns, and tab-stop plugins must be inert
   in the other pane because they share decorations and derived state.
 - Widget decorations must create DOM in a factory. Two views cannot share one element.
+- A node view measures against the view it renders in (`addNodeView`'s `view`), never
+  `editor.view`. What a pass places by measurement must match in every pane: pageBreaks
+  re-places each pane's frames in the same pass (`panes`), and an index in a pane takes
+  its main view's rows and breaks (`TocView.twins`) rather than measuring a passing layout.
 - `activePane` owns coordinate reads, focus restoration, and scroll-to-selection. A command
   otherwise focuses the primary TipTap view and scrolls the wrong pane.
 - Persist only whether split is enabled, not its temporary divider position.
@@ -69,6 +73,9 @@ mutually exclusive.
   Viewport-derived plugin state otherwise makes shared panes transact against each other.
 - Move the primary editor view to the first host when the layout changes rather than rebuilding
   it. Do not render the ruler in every grid cell.
+- A cell's header/footer layer draws only its own page (`onlyPage`). Every cell still lays out
+  the whole document, seconds on a long one, so App.svelte hands the editor a new page count
+  only once the status bar's spinner is painted (`gridColumns`).
 
 ## Header and footer
 

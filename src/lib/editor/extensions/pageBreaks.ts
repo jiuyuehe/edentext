@@ -378,28 +378,57 @@ export function leftInEditor(view: EditorView, el: HTMLElement): number {
 // page the anchor lands on. Both are written as margins off the frame's static position,
 // which is where the anchor character sits — so each is measured, not assumed.
 export function placeFromPage(view: EditorView, el: HTMLElement, grid?: PageGrid): void {
+  pagePlace(view, el, grid)?.();
+}
+
+// Measures first and returns the write. A run-through frame is out of the flow, so its
+// static position is where it shows less its own margins, and no write moves another's.
+function pagePlace(view: EditorView, el: HTMLElement, grid?: PageGrid): (() => void) | void {
   // A header/footer zone has no page grid of its own: its layer places the frame by CSS.
   if ((view.dom as HTMLElement).closest('.hf-zone')) return;
   const g = grid ?? readVerticalMargins(view.dom as HTMLElement).grid;
-  el.style.marginTop = '0px';
-  el.style.marginLeft = '0px';
-  const top = topInEditor(view, el);
-  const left = leftInEditor(view, el);
+  const top = topInEditor(view, el) - (parseFloat(el.style.marginTop) || 0);
+  const left = leftInEditor(view, el) - (parseFloat(el.style.marginLeft) || 0);
   const column = columnLeft(view, el);
   // One set against the body text counts from where that page's body begins.
   const page = g.pageAt(top);
   const from = el.dataset.fromBody != null ? g.contentTopOf(page) : g.topOf(page);
-  el.style.marginTop = `${Math.round(from + (Number(el.dataset.pageY) || 0) - top)}px`;
-  el.style.marginLeft = `${Math.round(column + (Number(el.dataset.pageX) || 0) - left)}px`;
+  const marginTop = `${Math.round(from + (Number(el.dataset.pageY) || 0) - top)}px`;
+  const marginLeft = `${Math.round(column + (Number(el.dataset.pageX) || 0) - left)}px`;
+  return () => {
+    el.style.marginTop = marginTop;
+    el.style.marginLeft = marginLeft;
+  };
 }
 
 // Any other run-through frame keeps its y below the anchor, but its x counts from the
 // column too (a table cell's, a text box's): the static position it starts from carries
 // the anchor paragraph's indent and whatever text precedes the anchor in its line.
 export function placeInColumn(view: EditorView, el: HTMLElement): void {
+  if (together) together.push([view, el]);
+  else columnPlace(view, el)?.();
+}
+
+// Inside `run` a frame placed in its column only queues, and all of them are placed as
+// `run` ends — a resize observer refitting a page of boxes at once lays it out once.
+let together: [EditorView, HTMLElement][] | null = null;
+export function placeTogether(run: () => void): void {
+  if (together) return run();
+  together = [];
+  try {
+    run();
+  } finally {
+    const frames = together;
+    together = null;
+    placeFrames(frames);
+  }
+}
+
+function columnPlace(view: EditorView, el: HTMLElement): (() => void) | void {
   if (!el.isConnected || el.dataset.columnX == null) return;
-  el.style.marginLeft = '0px';
-  el.style.marginLeft = `${Math.round(frameColumn(view, el) + (Number(el.dataset.columnX) || 0) - leftInEditor(view, el))}px`;
+  const left = leftInEditor(view, el) - (parseFloat(el.style.marginLeft) || 0);
+  const marginLeft = `${Math.round(frameColumn(view, el) + (Number(el.dataset.columnX) || 0) - left)}px`;
+  return () => { el.style.marginLeft = marginLeft; };
 }
 
 // The x in cm a drag moves a run-through frame on from: its own, or for one placed in its
@@ -448,12 +477,38 @@ export function placePageFrames(view: EditorView, grid: PageGrid): void {
   for (const el of Array.from((view.dom as HTMLElement).querySelectorAll<HTMLElement>('[data-sink-gap]'))) {
     sinkSideFloat(view, el);
   }
-  for (const el of Array.from((view.dom as HTMLElement).querySelectorAll<HTMLElement>('[data-page-y]'))) {
-    placeFromPage(view, el, grid);
+  placeFrames(Array.from((view.dom as HTMLElement).querySelectorAll<HTMLElement>(PLACED), (el) => [view, el]), grid);
+}
+
+const PLACED = '[data-page-y], [data-column-x]';
+
+// Every frame is read before any is written: a write between two reads lays the
+// document out again, in every pane at once. One inside another frame moves with it,
+// so it is read once the outer ones have landed.
+function placeFrames(frames: [EditorView, HTMLElement][], grid?: PageGrid): void {
+  const grids = new Map<EditorView, PageGrid>();
+  const gridOf = (view: EditorView) =>
+    grid ?? grids.get(view) ?? grids.set(view, readVerticalMargins(view.dom as HTMLElement).grid).get(view)!;
+  const inner = ([, el]: [EditorView, HTMLElement]) => !!el.parentElement?.closest(PLACED);
+  for (const group of [frames.filter((f) => !inner(f)), frames.filter(inner)]) {
+    const writes = group.map(([view, el]) => (!el.isConnected ? undefined
+      : el.dataset.pageY != null ? pagePlace(view, el, gridOf(view)) : columnPlace(view, el)));
+    for (const write of writes) write?.();
   }
-  for (const el of Array.from((view.dom as HTMLElement).querySelectorAll<HTMLElement>('[data-column-x]'))) {
-    placeInColumn(view, el);
+}
+
+// A frame a node view just laid out, placed on the next frame together with every other
+// one built meanwhile: a document's worth of them costs one layout, not one each.
+const placeQueue = new Map<HTMLElement, EditorView>();
+export function placeFrameSoon(view: EditorView, el: HTMLElement): void {
+  if (!placeQueue.size) {
+    requestAnimationFrame(() => {
+      const frames = Array.from(placeQueue, ([el, view]): [EditorView, HTMLElement] => [view, el]);
+      placeQueue.clear();
+      placeFrames(frames);
+    });
   }
+  placeQueue.set(el, view);
 }
 
 function pageContentStart(page: number, marginTop: number, grid: PageGrid): number {
@@ -545,6 +600,10 @@ function runFieldRound(view: EditorView): void {
 export function isSplitPane(view: EditorView): boolean {
   return !!view.dom.closest('[data-split-pane]');
 }
+
+// The live split and grid panes. A frame placed by measurement sits on each view's own
+// DOM, so the pass that moves the page grid re-places it in every pane of its document.
+const panes = new Set<EditorView>();
 
 // A table-row spacer: the colspan bridging the row, plus the lines that close the table
 // at the break — LibreOffice draws the row separator the break falls on, or, where the
@@ -718,7 +777,10 @@ export const PageBreaks = Extension.create({
         },
       },
       view(editorView) {
-        if (isSplitPane(editorView)) return {};
+        if (isSplitPane(editorView)) {
+          panes.add(editorView);
+          return { destroy: () => panes.delete(editorView) };
+        }
         let lastSnapshot: PageBreakDebugSnapshot | null = null;
 
         paginating.set(editorView, () => isUpdating || rafId !== null || idleTimer !== null);
@@ -2240,6 +2302,7 @@ export const PageBreaks = Extension.create({
           // The spacers this pass placed moved every page-placed frame's anchor; the
           // frames sit out of the flow, so re-placing them changes no measurement.
           placePageFrames(editorView, vm.grid);
+          for (const pane of panes) if (pane.state.doc === editorView.state.doc) placePageFrames(pane, vm.grid);
 
           // A per-page restart counts within the page each anchor landed on, which only
           // this pass knows (notes.ts). Renumbering can rewrap, so it takes a pass of its

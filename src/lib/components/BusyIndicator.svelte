@@ -1,5 +1,5 @@
 <script module lang="ts">
-  export type BusyTask = 'loading' | 'pdf' | 'print';
+  export type BusyTask = 'loading' | 'updating' | 'pdf' | 'print';
 </script>
 
 <script lang="ts">
@@ -24,15 +24,16 @@
   window.addEventListener('keydown', typed, true);
 
   // The first layout after start-up is the document loading; so is the one an opened file
-  // leaves running once its own task is done. Either shows at once, as the task did.
-  let after: 'loading' | null = $state('loading');
+  // (or a new page grid) leaves running once its own task is done. Either shows at once,
+  // as the task did.
+  let after: 'loading' | 'updating' | null = $state('loading');
   let seen = false;
   let since = 0;
   let layout = $state(false);
   let longLayout = $state(false);
 
   $effect(() => {
-    if (task === 'loading') { after = task; seen = false; }
+    if (task === 'loading' || task === 'updating') { after = task; seen = false; }
   });
 
   const timer = setInterval(() => {
