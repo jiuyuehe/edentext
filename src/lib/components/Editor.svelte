@@ -19,6 +19,7 @@
   import TextBoxToolbar from './TextBoxToolbar.svelte';
   import type { WrapMode } from '../editor/extensions/image';
   import { findTextBox, type ShapeKind } from '../editor/extensions/textBox';
+  import { catchUpIndexes } from '../editor/extensions/tableOfContents';
   import { fitPastedSlice } from '../editor/paste';
   import { NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
   import { EditorView } from '@tiptap/pm/view';
@@ -528,6 +529,26 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
   const viewOf = (pane: number): EditorView | null =>
     (pane === 0 ? editor?.view : paneViews[pane]) ?? null;
   const paneView = (): EditorView | null => viewOf(activePane) ?? editor?.view ?? null;
+
+  // In a page grid only the measuring view and the caret's or focused cell follow each
+  // transaction: every view updated lays out and paints all eight. The others catch up
+  // after a pause (capped: passes keep transacting), or before input, focus or a scroll.
+  const PANE_CATCH_UP_MS = 300;
+  const PANE_CATCH_UP_MAX_MS = 1500;
+  const stalePanes = new Set<number>();
+  let staleTimer: ReturnType<typeof setTimeout> | undefined;
+  let staleSince: number | undefined;
+  function flushPane(i: number) {
+    const view = paneViews[i];
+    if (!stalePanes.delete(i) || !view || !editor) return;
+    view.updateState(editor.state);
+    catchUpIndexes(view);
+  }
+  function flushPanes() {
+    clearTimeout(staleTimer);
+    staleSince = undefined;
+    for (const i of [...stalePanes]) flushPane(i);
+  }
 
   // Zoom is a CSS `transform: scale()` on .paper (so layout and pagination stay at
   // 100%). A transform reserves no layout space, so .paper-scaler reserves the scaled
@@ -1316,7 +1337,17 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
         // down the focused DOM — inside Svelte's flush, where a $state write throws.
         queueMicrotask(() => tick++);
         // The other pane shows the same state, decorations included.
-        for (const view of paneViews) view?.updateState(e.state);
+        paneViews.forEach((view, i) => {
+          if (!view) return;
+          if (multiPage && i !== activePane && !view.hasFocus()) stalePanes.add(i);
+          else view.updateState(e.state);
+        });
+        if (stalePanes.size) {
+          staleSince ??= performance.now();
+          clearTimeout(staleTimer);
+          const left = staleSince + PANE_CATCH_UP_MAX_MS - performance.now();
+          staleTimer = setTimeout(flushPanes, Math.max(0, Math.min(PANE_CATCH_UP_MS, left)));
+        }
         // Mirror this transaction into the labelled undo/redo log for the toolbar's
         // history dropdowns. e.state is the POST-transaction state, so the history
         // depths recordTransaction reads already reflect this transaction.
@@ -1478,6 +1509,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     const pane = cells.find((c) => c.page === page)?.pane;
     if (!focused || pane === undefined || pane === activePane) return;
     activePane = pane;
+    flushPane(pane);
     viewOf(pane)?.focus();
   }
 
@@ -1604,6 +1636,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
         // from its own viewport (the placeholder's does) would otherwise fight every
         // other pane over that state, one transaction each, forever.
         dispatchTransaction: (tr) => {
+          // One from a state the pane has not caught up to maps old positions onto the doc.
+          if (tr.before !== ed.state.doc) return;
           if (tr.docChanged || tr.selectionSet || tr.storedMarksSet) ed.view.dispatch(tr);
         },
         // Each pane keeps the place it was scrolled to: a caret move belongs to the pane
@@ -1618,6 +1652,9 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       return view;
     });
     return () => {
+      clearTimeout(staleTimer);
+      staleSince = undefined;
+      stalePanes.clear();
       for (const i of mounted) paneViews[i] = null;
       for (const view of made) view.destroy();
     };
@@ -1704,6 +1741,7 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       bind:this={scrollers[0]}
       use:paneEvents={0}
       onwheel={(e) => onWheel(e, 0)}
+      onscroll={() => stalePanes.size && flushPanes()}
       role="none"
     >
       <div
@@ -1718,6 +1756,12 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
             style="transform: translate({cell.left}px, {cell.top}px); width: {cell.width}px; height: {cell.height}px;"
             oncontextmenu={(e) => openContextMenu(e, cell.pane)}
             onpointerdown={() => (activePane = cell.pane)}
+            onpointerdowncapture={() => flushPane(cell.pane)}
+            onmousedowncapture={() => flushPane(cell.pane)}
+            onfocuscapture={() => flushPane(cell.pane)}
+            onkeydowncapture={() => flushPane(cell.pane)}
+            ondragstartcapture={() => flushPane(cell.pane)}
+            ondropcapture={() => flushPane(cell.pane)}
             onfocusin={() => onPaneFocus(cell.pane)}
             role="none"
           >

@@ -71,6 +71,12 @@ mutually exclusive.
   spot on the neighbouring page (`gridPageStep`).
 - A pane may dispatch only document, selection, or stored-mark changes caused by its user.
   Viewport-derived plugin state otherwise makes shared panes transact against each other.
+- Only the measuring view and the caret's (or focused) cell follow every transaction: each
+  view updated makes the browser lay out and paint all of them. The other cells catch up
+  after a pause (capped, since passes keep transacting) and at once before they take a
+  pointer, key, focus or drop, or the grid scrolls. A pane's transaction from a state it
+  has not caught up to is dropped, and a cell that catches up takes the last pass's frame
+  margins and its index's layout (`catchUpIndexes`).
 - Move the primary editor view to the first host when the layout changes rather than rebuilding
   it. Do not render the ruler in every grid cell.
 - A cell's header/footer layer draws only its own page (`onlyPage`). Every cell still lays out

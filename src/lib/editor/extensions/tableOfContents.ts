@@ -225,6 +225,12 @@ type Break = { at: number; gap: number; height: number };
 
 const tocViews = new Set<TocView>();
 
+// A grid cell that catches up after a pause (Editor.svelte) missed its main view's
+// repaints meanwhile: its indexes take that view's last layout.
+export function catchUpIndexes(view: EditorView): void {
+  for (const v of tocViews) if (v.view === view) v.adoptMain();
+}
+
 // Node view: renders the title + one clickable row per entry. While `updating` it
 // regenerates on each pagination settle (pm-pagecount, caught on the .paper ancestor) in
 // the field round, writing its entries back on the round's transaction, until a pass
@@ -233,7 +239,7 @@ class TocView {
   dom: HTMLElement;
   private editor: Editor;
   // The view this index renders in, which its rows are measured against.
-  private view: EditorView;
+  readonly view: EditorView;
   private getPos: () => number;
   private lastKey = '';
   private lastLook = '';
@@ -510,12 +516,13 @@ class TocView {
   }
 
   // A pane built after its main view laid the index out starts from that layout.
-  private adoptMain(): void {
+  adoptMain(): void {
     const pos = this.getPos();
     const main = [...tocViews].find(v => v.editor === this.editor && !isSplitPane(v.view) && v.getPos() === pos);
     if (!main?.painted) return;
-    this.paint(...main.painted);
-    this.applyBreaks(main.breaks);
+    // A twin is painted with the main view's own arrays, so identity says it is current.
+    if (this.painted?.[0] !== main.painted[0] || this.painted[1] !== main.painted[1]) this.paint(...main.painted);
+    if (this.breaks !== main.breaks) this.applyBreaks(main.breaks);
   }
 
   // A cached row jumps to the source that reads the same; heads is null for those.

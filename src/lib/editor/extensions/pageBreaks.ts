@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state';
 import { ReplaceStep } from '@tiptap/pm/transform';
+import type { Node as PMNode } from '@tiptap/pm/model';
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view';
 import { COLUMNS_FIT_MARGIN_PX } from './columns';
 import { isLeftPage, printedPageNumber } from '../../storage/pageNumbering';
@@ -739,6 +740,10 @@ export const PageBreaks = Extension.create({
   addProseMirrorPlugins() {
     let decorations = DecorationSet.empty;
     let isUpdating = false;
+    // The last pass's frame margins, which a grid cell that catches up later still takes
+    // (Editor.svelte updates a cell off the caret's page only after a pause).
+    let framesOf: { view: EditorView; doc: PMNode; grid: PageGrid } | null = null;
+    const framesCopied = new WeakMap<EditorView, object>();
     let rafId: number | null = null;
     // A long document paginates slower than keys come, so an edit's pass waits for this
     // much quiet: while the typing goes on, only the keystroke itself costs.
@@ -794,7 +799,15 @@ export const PageBreaks = Extension.create({
       view(editorView) {
         if (isSplitPane(editorView)) {
           panes.add(editorView);
-          return { destroy: () => panes.delete(editorView) };
+          return {
+            update: (view) => {
+              const f = framesOf;
+              if (!f || view.state.doc !== f.doc || framesCopied.get(view) === f) return;
+              framesCopied.set(view, f);
+              copyPageFrames(f.view, view, f.grid);
+            },
+            destroy: () => panes.delete(editorView),
+          };
         }
         let lastSnapshot: PageBreakDebugSnapshot | null = null;
 
@@ -2317,7 +2330,12 @@ export const PageBreaks = Extension.create({
           // The spacers this pass placed moved every page-placed frame's anchor; the
           // frames sit out of the flow, so re-placing them changes no measurement.
           placePageFrames(editorView, vm.grid);
-          for (const pane of panes) if (pane.state.doc === editorView.state.doc) copyPageFrames(editorView, pane, vm.grid);
+          framesOf = { view: editorView, doc: editorView.state.doc, grid: vm.grid };
+          for (const pane of panes) {
+            if (pane.state.doc !== editorView.state.doc) continue;
+            framesCopied.set(pane, framesOf);
+            copyPageFrames(editorView, pane, vm.grid);
+          }
 
           // A per-page restart counts within the page each anchor landed on, which only
           // this pass knows (notes.ts). Renumbering can rewrap, so it takes a pass of its

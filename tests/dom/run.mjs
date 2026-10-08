@@ -838,6 +838,22 @@ try {
   check(gridPages > 6 && gridFaults.length === 0,
     `the page grid shows each page in its own cell and the caret where it is (${gridPages} pages${gridFaults.length ? `: ${gridFaults.join('; ')}` : ''})`);
 
+  // Cells off the caret's page catch up after a pause; one clicked at once catches up
+  // first, so the click lands in the current document and every view ends up the same.
+  await page.keyboard.type('caught up ');
+  const otherCell = await page.evaluate(() => {
+    const cell = [...document.querySelectorAll('.page-cell:not(.empty)')].find((c) => !c.contains(document.activeElement));
+    const r = cell.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.click(otherCell.x, otherCell.y);
+  await page.keyboard.type('Q');
+  await page.waitForTimeout(2000);
+  const gridViews = await page.evaluate(() => [...document.querySelectorAll('.page-cell .tiptap')].map((v) => v.textContent));
+  // Case-blind: a typed sentence start is capitalized.
+  check(gridViews.length > 1 && gridViews.every((t) => t === gridViews[0]) && /caught up/i.test(gridViews[0]) && gridViews[0].includes('Q'),
+    'every page-grid cell shows the edits after a pause, and a click right after typing lands in the current text');
+
   // Dark theme: every menu each ribbon tab opens, a text box selected so its contextual
   // tab shows too. A glyph or label barely apart from what it sits on is a colour some
   // control fixed instead of taking the theme's (a popover's black, the shape gallery's).
