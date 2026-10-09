@@ -1,6 +1,6 @@
 # Cloud Driver EdenText Vue migration
 
-**Status:** The EdenText Vue branch and package bridge are implemented. The Cloud Driver dialog and local tarball integration are implemented in the working tree. Cloud Driver type/build verification and authenticated end-to-end checks remain pending.
+**Status:** The EdenText Vue branch and package bridge are implemented. The Cloud Driver dialog and local tarball integration are implemented in the working tree. Its production build passes; the full project type check reports errors in unrelated files. Authenticated end-to-end checks remain pending.
 **Updated:** 2026-10-09
 
 ## Branch layout
@@ -10,7 +10,7 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 | Branch | Purpose | Current state |
 |---|---|---|
 | `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `c98c48a096ad603eed42f0fb0b4ee7db141d9a66`, pushed to the fork |
-| `vue-component` | Vue host and package changes based on the current upstream main | Two commits ahead of upstream; local implementation tip `e7077f16`; push pending |
+| `vue-component` | Vue host and package changes maintained separately from upstream | Based on the current upstream main with the Vue integration and follow-up maintenance changes |
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
@@ -89,9 +89,13 @@ Completed in EdenText:
 - `npm run build:app`
 - `npm pack ./packages/edentext-vue --dry-run` and a local tarball pack
 
+Verification results in Cloud Driver:
+
+- `pnpm build:local` passes and emits 73 package asset files (64.3 MiB) under `dist/edentext-assets`; checked dictionary, thesaurus and font files.
+- `pnpm ts:check` remains failing with broad project diagnostics in unrelated files. No diagnostic referenced the edited dialog; the Vite config was exercised by the passing production build.
+
 Still required:
 
-- Cloud Driver `pnpm ts:check` and a production build.
 - Browser checks using real cloud credentials: edit and upload a new version, create and upload a template, retry after failure, switch documents quickly, verify no browser download on host save, and open/close the standalone Tauri window.
 - Check runtime requests and fonts under the deployed web base path and the Tauri `/` base path.
 - Inspect representative DOCX files containing tables, images, headers/footers and page layout. Record any import/export differences before rollout.
