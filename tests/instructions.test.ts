@@ -31,8 +31,12 @@ function architectureDocs() {
 describe('repository instructions', () => {
   it('keeps AGENTS.md as the root CLAUDE.md alias', () => {
     const agents = join(root, 'AGENTS.md');
-    expect(lstatSync(agents).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(agents)).toBe('CLAUDE.md');
+    if (lstatSync(agents).isSymbolicLink()) {
+      expect(readlinkSync(agents)).toBe('CLAUDE.md');
+    } else {
+      // Git checks a symlink out as its target text when core.symlinks is disabled.
+      expect(readFileSync(agents, 'utf8')).toBe('CLAUDE.md');
+    }
   });
 
   it('keeps automatically loaded context concise', () => {
