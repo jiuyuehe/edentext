@@ -1,5 +1,7 @@
 # Cloud Driver EdenText Vue migration
 
+中文版：[cloud-driver-edentext-vue-migration.zh-CN.md](cloud-driver-edentext-vue-migration.zh-CN.md)
+
 **Status:** The EdenText Vue branch and package bridge are implemented. The Cloud Driver dialog and local tarball integration are implemented in the working tree. Its production build passes; the full project type check reports errors in unrelated files. Authenticated end-to-end checks remain pending.
 **Updated:** 2026-10-09
 
