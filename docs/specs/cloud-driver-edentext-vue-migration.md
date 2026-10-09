@@ -14,6 +14,14 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
+At the upstream snapshot above, the legacy branch divergence was:
+
+| Branch | Ahead of `upstream/main` | Behind `upstream/main` |
+|---|---:|---:|
+| `main` | 2 | 188 |
+| `main-new` | 5 | 6 |
+| `foryly` | 3 | 188 |
+
 ### Synchronize the mirror
 
 ```bash
