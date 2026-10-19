@@ -18,7 +18,7 @@
     "demo:vue": "npm run build:lib && npm --prefix examples/edentext-vue-demo run dev",
     "build:demo:vue": "npm run build:lib && npm --prefix examples/edentext-vue-demo run build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-check --workspace src --tsconfig ../tsconfig.json --config ../svelte.config.js",
     "check:lib": "vue-tsc -p tsconfig.lib.json --noEmit",
     "pack:lib": "npm run build:lib && npm pack ./packages/edentext-vue",
     "test": "vitest run",

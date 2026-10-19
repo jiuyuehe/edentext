@@ -3,7 +3,7 @@
 中文版：[cloud-driver-edentext-vue-migration.zh-CN.md](cloud-driver-edentext-vue-migration.zh-CN.md)
 
 **Status:** The EdenText Vue branch and package bridge are implemented. The Cloud Driver dialog and local tarball integration are implemented in the working tree. Its production build passes; the full project type check reports errors in unrelated files. Authenticated end-to-end checks remain pending.
-**Updated:** 2026-10-09
+**Updated:** 2026-10-19
 
 ## Branch layout
 
@@ -11,12 +11,12 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 
 | Branch | Purpose | Current state |
 |---|---|---|
-| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `c98c48a096ad603eed42f0fb0b4ee7db141d9a66`, pushed to the fork |
-| `vue-component` | Vue host and package changes maintained separately from upstream | Based on the current upstream main with the Vue integration and follow-up maintenance changes |
+| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `906aee14eb16b9d789ae85cd398465c75c6e68d5`, pushed to the fork |
+| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `906aee14`; 7 commits ahead, 0 behind (6 Vue feature commits plus this sync maintenance update) |
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
-At the upstream snapshot above, the legacy branch divergence was:
+At the previous upstream snapshot `c98c48a096ad603eed42f0fb0b4ee7db141d9a66` on 2026-10-09, the legacy branch divergence was:
 
 | Branch | Ahead of `upstream/main` | Behind `upstream/main` |
 |---|---:|---:|
@@ -109,6 +109,13 @@ Still required:
 - Browser checks using real cloud credentials: edit and upload a new version, create and upload a template, retry after failure, switch documents quickly, verify no browser download on host save, and open/close the standalone Tauri window.
 - Check runtime requests and fonts under the deployed web base path and the Tauri `/` base path.
 - Inspect representative DOCX files containing tables, images, headers/footers and page layout. Record any import/export differences before rollout.
+
+### Upstream sync on 2026-10-19
+
+- `upstream-main` and `upstream/main` both point to `906aee14eb16b9d789ae85cd398465c75c6e68d5`; the mirror was pushed to the fork.
+- Rebased the six existing Vue branch commits onto the latest upstream main and added this sync maintenance update. The Vue branch is 7 commits ahead and 0 behind; six commits contain the Vue integration.
+- `npm run check`, `npm run check:lib`, `npm test`, `npm run build:demo:vue`, `npm run build:app`, and `npm pack ./packages/edentext-vue --dry-run` passed. The test run reported 179 files passed, 5 skipped; 1,958 tests passed, 30 skipped.
+- The Svelte check command is scoped to `src` and the root Svelte config so it does not inspect the nested Vue demo's Vite config.
 
 ## License gate
 
