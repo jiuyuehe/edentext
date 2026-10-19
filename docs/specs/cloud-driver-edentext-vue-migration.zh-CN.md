@@ -3,7 +3,7 @@
 English: [cloud-driver-edentext-vue-migration.md](cloud-driver-edentext-vue-migration.md)
 
 **状态：** EdenText Vue 分支和包侧桥接已实现。Cloud Driver 对话框及本地 tarball 集成已在工作区落地，生产构建通过；全项目类型检查仍有其他文件中的错误。使用真实账号的端到端检查待完成。
-**更新日期：** 2026-10-09
+**更新日期：** 2026-10-19
 
 ## 分支结构
 
@@ -11,12 +11,12 @@ Fork 中保留现有的 `main`、`main-new` 和 `foryly`。新增两条分支用
 
 | 分支 | 用途 | 当前状态 |
 |---|---|---|
-| `upstream-main` | `stffnb/edentext:main` 的纯镜像，不包含自有提交 | 当前指向 `c98c48a096ad603eed42f0fb0b4ee7db141d9a66`，已推送到 fork |
-| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于当前上游 main，包含 Vue 集成和后续维护改动 |
+| `upstream-main` | `stffnb/edentext:main` 的纯镜像，不包含自有提交 | 当前指向 `906aee14eb16b9d789ae85cd398465c75c6e68d5`，已推送到 fork |
+| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `906aee14`，领先 7 个提交、落后 0 个；其中 6 个为 Vue 功能提交，本次另增加同步维护记录 |
 
 Vue 改动按顺序移植自 `e0ad1d0f` 和 `02d647d3`，并针对最新上游实现进行了适配。没有把旧分支整体合并进来。旧的 `main`、`main-new` 和 `foryly` 引用仍保留作历史参考。
 
-在上表所列的上游快照下，旧分支与 `upstream/main` 的差异为：
+在 2026-10-09 的旧上游快照 `c98c48a096ad603eed42f0fb0b4ee7db141d9a66` 下，旧分支与 `upstream/main` 的差异为：
 
 | 分支 | 超前 `upstream/main` | 落后 `upstream/main` |
 |---|---:|---:|
@@ -109,6 +109,13 @@ Cloud Driver 验证结果：
 - 使用真实云盘账号做浏览器检查：编辑文档并上传新版本、用模板创建并上传文件、失败后重试、快速切换文件、确认宿主保存不触发浏览器下载，以及打开和关闭 Tauri 独立窗口。
 - 检查部署后的 Web base path 和 Tauri 的 `/` base path 下，运行时资源和字体能否正常加载。
 - 使用包含表格、图片、页眉页脚和页面布局的代表性 DOCX 文件抽查导入导出。记录不兼容之处，不要在发布前默认宣称完全往返一致。
+
+### 2026-10-19 上游同步记录
+
+- `upstream-main` 和 `upstream/main` 均指向 `906aee14eb16b9d789ae85cd398465c75c6e68d5`；镜像分支已推送到 fork。
+- Vue 分支原有的 6 个功能提交已 rebase 到最新上游 main，并增加本次同步维护提交。Vue 分支领先 7 个提交、落后 0 个提交，其中 6 个提交包含 Vue 集成。
+- `npm run check`、`npm run check:lib`、`npm test`、`npm run build:demo:vue`、`npm run build:app` 和 `npm pack ./packages/edentext-vue --dry-run` 均通过。本轮测试结果为 179 个文件通过、5 个跳过；1,958 项通过、30 项跳过。
+- Svelte 检查命令已限定在 `src` 和根目录 Svelte 配置，避免扫描 Vue demo 的嵌套 Vite 配置。
 
 ## 授权事项
 
