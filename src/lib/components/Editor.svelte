@@ -1400,7 +1400,8 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
       content: saved || undefined,
       // Nothing listens for TipTap's delete events, and computing them is quadratic in a
       // transaction's steps: seconds after a format change across a long document.
-      enableCoreExtensions: { delete: false },
+      // EdenText's block-scoped extension replaces TipTap's same-named core extension.
+      enableCoreExtensions: { delete: false, textDirection: false },
       editorProps: {
         // Our SpellCheck extension draws squiggles; turn off the browser's so
         // they don't double up.

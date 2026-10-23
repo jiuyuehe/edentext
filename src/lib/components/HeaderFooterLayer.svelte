@@ -290,8 +290,19 @@
   }
 
   function staticZone(node: HTMLElement, [id, doc]: [string, HfDoc]) {
-    const ed = new Editor({ element: { mount: scrollFree(node) }, editable: false, extensions: renderExts, content: doc as Content });
+    const ed = new Editor({
+      element: { mount: scrollFree(node) },
+      editable: false,
+      extensions: renderExts,
+      content: doc as Content,
+      enableCoreExtensions: { textDirection: false },
+    });
     stored.add(ed);
+    let raf = 0;
+    const bump = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => sourceVersion++);
+    };
     // NodeViews settle after the first render (an image's size, a box's layout).
     const mo = new MutationObserver(bump);
     mo.observe(ed.view.dom, { subtree: true, childList: true, attributes: true, characterData: true });
@@ -769,6 +780,7 @@
     liveId = `hf:${editingIndex}:${zoneKey(zone, editingVariant)}`;
     const ed = new Editor({
       element: mount,
+      enableCoreExtensions: { textDirection: false },
       extensions: [
         ...zoneExtensions(zone === 'header' ? t().hf.headerPlaceholder : t().hf.footerPlaceholder, true),
         ZoneHistory.configure({ body: () => bodyEditor, id: liveId }),
