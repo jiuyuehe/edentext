@@ -208,7 +208,13 @@
   let sources = $state<Record<string, HTMLElement>>({});
   let sourceVersion = $state(0);
   function staticZone(node: HTMLElement, [id, doc]: [string, HfDoc]) {
-    const ed = new Editor({ element: node, editable: false, extensions: renderExts, content: doc as Content });
+    const ed = new Editor({
+      element: node,
+      editable: false,
+      extensions: renderExts,
+      content: doc as Content,
+      enableCoreExtensions: { textDirection: false },
+    });
     let raf = 0;
     const bump = () => {
       cancelAnimationFrame(raf);
@@ -511,6 +517,7 @@
     liveId = `hf:${editingIndex}:${zoneKey(zone, editingVariant)}`;
     const ed = new Editor({
       element: mount,
+      enableCoreExtensions: { textDirection: false },
       extensions: [
         ...zoneExtensions(zone === 'header' ? t().hf.headerPlaceholder : t().hf.footerPlaceholder),
         ZoneHistory.configure({ body: () => bodyEditor, id: liveId }),

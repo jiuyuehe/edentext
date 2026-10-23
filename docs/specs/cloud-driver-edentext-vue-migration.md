@@ -3,7 +3,7 @@
 中文版：[cloud-driver-edentext-vue-migration.zh-CN.md](cloud-driver-edentext-vue-migration.zh-CN.md)
 
 **Status:** The EdenText Vue branch and package bridge are implemented. The Cloud Driver dialog and local tarball integration are implemented in the working tree. Its production build passes; the full project type check reports errors in unrelated files. Authenticated end-to-end checks remain pending.
-**Updated:** 2026-10-19
+**Updated:** 2026-10-23
 
 ## Branch layout
 
@@ -11,8 +11,8 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 
 | Branch | Purpose | Current state |
 |---|---|---|
-| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `906aee14eb16b9d789ae85cd398465c75c6e68d5`, pushed to the fork |
-| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `906aee14`; 7 commits ahead, 0 behind (6 Vue feature commits plus this sync maintenance update) |
+| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `b68972d5`, pushed to the fork |
+| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `b68972d5`; 8 commits ahead, 0 behind |
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
@@ -94,10 +94,11 @@ Completed in EdenText:
 
 - `npm run check`
 - `npm run check:lib`
-- `npm test` — 229 files passed, 5 skipped; 1,487 tests passed, 28 skipped
+- `npm --prefix examples/edentext-vue-demo run typecheck`
+- `npm test` — 179 files passed, 5 skipped; 1,962 tests passed, 30 skipped
 - `npm run build:demo:vue`
 - `npm run build:app`
-- `npm pack ./packages/edentext-vue --dry-run` and a local tarball pack
+- `npm pack ./packages/edentext-vue --dry-run`
 
 Verification results in Cloud Driver:
 
@@ -116,6 +117,14 @@ Still required:
 - Rebased the six existing Vue branch commits onto the latest upstream main and added this sync maintenance update. The Vue branch is 7 commits ahead and 0 behind; six commits contain the Vue integration.
 - `npm run check`, `npm run check:lib`, `npm test`, `npm run build:demo:vue`, `npm run build:app`, and `npm pack ./packages/edentext-vue --dry-run` passed. The test run reported 179 files passed, 5 skipped; 1,958 tests passed, 30 skipped.
 - The Svelte check command is scoped to `src` and the root Svelte config so it does not inspect the nested Vue demo's Vite config.
+
+### Upstream sync on 2026-10-23
+
+- Fast-forwarded `upstream-main` by 35 commits to `b68972d5` and pushed the exact mirror to the fork.
+- Rebased the Vue branch onto that upstream commit. The current branch is 8 commits ahead and 0 behind.
+- The new upstream added a core `textDirection` extension with the same name as EdenText's block-scoped extension. Disabled the duplicate core extension for body and header/footer editors; the browser demo now logs no duplicate-extension warning.
+- Vue demo smoke check: created a blank DOCX through the host save API, reopened that DOCX through the Vue dialog, then exported it as a new version. The browser reported 0 errors and 0 warnings; dictionary and thesaurus requests returned HTTP 200.
+- `npm run check`, `npm run check:lib`, Vue demo typecheck, `npm test`, `npm run build:demo:vue`, `npm run build:app`, and package dry-run all passed on this baseline.
 
 ## License gate
 
