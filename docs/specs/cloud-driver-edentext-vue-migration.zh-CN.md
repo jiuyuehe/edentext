@@ -12,7 +12,7 @@ Fork 中保留现有的 `main`、`main-new` 和 `foryly`。新增两条分支用
 | 分支 | 用途 | 当前状态 |
 |---|---|---|
 | `upstream-main` | `stffnb/edentext:main` 的纯镜像，不包含自有提交 | 当前指向 `b5ee86aa`，已推送到 fork |
-| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `b5ee86aa`，领先 10 个提交、落后 0 个 |
+| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `b5ee86aa`，领先 11 个提交、落后 0 个 |
 
 Vue 改动按顺序移植自 `e0ad1d0f` 和 `02d647d3`，并针对最新上游实现进行了适配。没有把旧分支整体合并进来。旧的 `main`、`main-new` 和 `foryly` 引用仍保留作历史参考。
 
@@ -138,7 +138,7 @@ Cloud Driver 验证结果：
 ### 公共 npm 发布 `edentext-vue@0.1.2`
 
 - 已将 Vue 包版本设为 `0.1.2`。公共 registry 当前尚未查询到该包名。
-- 发布前需通过构建、类型、单测、demo 和 tarball 检查。当前机器尚未登录 npm；需由包所有者在此环境完成认证后才能发布。
+- 构建、类型、单测、demo 和 tarball 检查均通过。CLI 已以 `xiaomin` 登录，但 registry 返回 HTTP 403：发布要求账号启用 2FA，或使用配置为允许绕过 2FA 的 granular token。当前尚未发布；建议启用 2FA 后通过交互式命令发布。
 
 ## 授权事项
 
