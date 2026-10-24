@@ -18,6 +18,7 @@ import { outlineLabel } from '../styles/outlineNumbering';
 import { deriveFilename } from '../storage/documentName';
 import { desktopPrintToPdf } from '../storage/desktopFiles';
 import { saveDocument } from './saveFile';
+import { runtimeAssetUrl } from '../runtimeAssets';
 import { BAR_STRIP_CM, commentListHtml, markReviewBlocks, printedComments, reviewPrintCss, type CommentLabels, type PrintedComment } from './reviewPrint';
 
 const DEFAULT_COMMENT_LABELS: CommentLabels = { heading: 'Comments', onPage: (n) => `Page ${n}` };
@@ -26,6 +27,10 @@ import editorCss from '../../styles/editor.css?inline';
 
 const PAGE_GAP = 20; // must match pageBreaks.ts / editor.css --page-gap
 const PT = 72 / 96;  // CSS px @96dpi → PDF points
+
+function pdfGlobalCss(): string {
+  return globalCss.replace(/https:\/\/edentext-vue-assets\.invalid\/([^"')\s]+)/g, (_match, path: string) => runtimeAssetUrl(path));
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
@@ -842,7 +847,7 @@ function printHtml(opts: PrintPdfOptions): { html: string; title: string } {
 
   const html =
     `<!doctype html><html data-theme="light"><head><meta charset="utf-8"><title>${title}</title>` +
-    `<style>${globalCss}\n${editorCss}\n${printCss(o, review)}</style></head>` +
+    `<style>${pdfGlobalCss()}\n${editorCss}\n${printCss(o, review)}</style></head>` +
     `<body><div class="paper"${o.markupAttrs ?? ''}><div class="tiptap">${host.innerHTML}</div>${list}</div></body></html>`;
   return { html, title };
 }

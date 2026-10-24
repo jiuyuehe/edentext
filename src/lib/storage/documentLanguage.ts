@@ -55,7 +55,13 @@ export function hasGrammar(code: DocumentLanguage): boolean {
 // and no importer warns about a dictionary it was never going to find.
 export function hasDictionary(code: DocumentLanguage): boolean {
   const def = findLanguage(code);
-  return !!def && def.noDict !== true;
+  if (!def || def.noDict === true) return false;
+  // The Vue package ships only English spell-check data. Other languages remain
+  // valid document languages, but must not request assets the package omits.
+  if (typeof __EDENTEXT_VUE_ZH_EN__ !== 'undefined' && __EDENTEXT_VUE_ZH_EN__) {
+    return code === 'en' || code === 'en-GB';
+  }
+  return true;
 }
 
 // East Asian text: both formats keep its language in their own asian slot, and both word

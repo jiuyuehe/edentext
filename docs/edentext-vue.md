@@ -43,7 +43,15 @@ import 'edentext-vue/style.css';
 </style>
 ```
 
-组件内部显示的是 EdenText 原生 UI，不需要也不应该在 Vue 页面外部重新做一个工具栏。`style.css` 会把 UI 选择器、主题和页面尺寸变量收进 `.edentext-vue-host`；`asset-base-url` 用于 logo、图标、拼写词典和同义词数据。字体由 `style.css` 的相对资源引用加载。
+组件内部显示的是 EdenText 原生 UI，不需要也不应该在 Vue 页面外部重新做一个工具栏。`style.css` 会把 UI 选择器、主题和页面尺寸变量收进 `.edentext-vue-host`；`asset-base-url` 用于 logo、图标、字体、拼写词典、同义词数据和按需加载的语法检查 WASM。字体由 `style.css` 的相对资源引用加载，PDF 导出会通过同一资源基址引用字体。
+
+Vue npm 包默认使用 zh-en 精简资源配置：保留简体中文文档语言、英文（美式和英式）拼写词典、共享的英文同义词库，以及按需下载的语法检查 WASM。其他文档语言仍可用于文档标记和导出，但会显示“无词典”且不会请求缺失资源。仓库内的网页应用构建仍携带完整语言资源。
+
+### 资源精简结果
+
+精简后的本地包构建不再把字体或 Harper WASM 编码进 JavaScript。浏览器可从 `asset-base-url` 加载字体；语法检查默认按需加载独立 WASM。完整包仍包含字体和语法检查资源，但词典只包含 `en`、`en-GB`，同义词库只保留共享的英文数据。中文文档使用 `zh-CN` 语言标记；EdenText 当前没有中文 Hunspell 词典。
+
+截至 2026-10-24，本地精简构建的 `npm pack --dry-run` 结果为压缩包 16.18 MB、解包 38.72 MB；原 `0.1.2` 基线为 35.26 MB、112.81 MB。`dist/index.js` 从 18.48 MB 降到 1.24 MB，语法检查入口块从 21.55 MB 降到 284 bytes。当前公共发布版仍是 `0.1.2`；精简改动将作为 `0.1.3` 候选版本，本次尚未发布。
 
 ### Props
 
@@ -187,7 +195,7 @@ npm run demo:vue
 
 然后访问 Vite 输出的本地地址。demo 提供“打开本地 DOCX”和“新建空白 DOCX”，通过 cloud-drive 风格弹窗验证静默打开、作者设置、宿主保存请求和字节导出。保存会下载结果文件来模拟上传前的输出；正式集成时将下载替换为云盘 API。
 
-运行 demo 时 `predev`/`prebuild` 会把 package 中的词典和同义词文件复制到 `examples/edentext-vue-demo/public/assets/`。正式部署时把 package 的 `dist/assets/*` 放到 `asset-base-url` 对应目录。
+运行 demo 时 `predev`/`prebuild` 会把 package 中的词典、同义词库、字体和语法检查 WASM 复制到 `examples/edentext-vue-demo/public/assets/`。正式部署时把 package 的 `dist/assets/*` 放到 `asset-base-url` 对应目录。
 
 也可以只构建 demo：
 
@@ -210,7 +218,7 @@ npm pack ./packages/edentext-vue --dry-run
 
 1. 用 `vite.lib.config.ts` 构建 ESM 入口；
 2. 用 `vue-tsc` 输出 `dist/vue/index.d.ts` 等声明文件；
-3. 把字体、Hunspell 词典、同义词库和许可证资源复制到 `dist/assets/`。
+3. 把字体、`en`/`en-GB` Hunspell 词典、英文同义词库、Harper WASM 和许可证资源复制到 `dist/assets/`。
 
 产物位于 `packages/edentext-vue/dist/`，包的导出约定为：
 

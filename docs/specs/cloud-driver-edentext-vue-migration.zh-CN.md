@@ -137,8 +137,20 @@ Cloud Driver 验证结果：
 
 ### 公共 npm 发布 `edentext-vue@0.1.2`
 
-- 已将 Vue 包版本设为 `0.1.2`。公共 registry 当前尚未查询到该包名。
-- 构建、类型、单测、demo 和 tarball 检查均通过。CLI 已以 `xiaomin` 登录，但 registry 返回 HTTP 403：发布要求账号启用 2FA，或使用配置为允许绕过 2FA 的 granular token。当前尚未发布；建议启用 2FA 后通过交互式命令发布。
+- Vue 分支上的 Vue 包版本设为 `0.1.2`，完成浏览器账号验证后已成功发布到公共 npm registry。
+
+### zh-en 包体积优化（2026-10-24）
+
+- Vue 库构建现在会把 PDF 字体引用和 Harper WebAssembly 二进制移至 `assetBaseUrl` 运行时资源；语法检查模块仍按需加载。
+- 包内只包含 `en`、`en-GB` Hunspell 词典和共享的英文同义词库。中文文档语言标记仍受支持；当前没有中文拼写词典。
+- `npm pack --dry-run` 测得压缩包 16.18 MB、解包 38.72 MB，低于原先的 35.26 MB 和 112.81 MB。`dist/index.js` 从 18.48 MB 降至 1.24 MB；语法检查入口块从 21.55 MB 降至 284 bytes。WASM 仍作为独立运行时资源随包提供，仅在开启语法检查时加载。
+- 精简后的包版本为 `0.1.3`，尚未发布；当前公共发布版 `0.1.2` 保持不变。
+
+### 生产版 Vue demo 资源检查
+
+- 在生产构建后的本地 Vue demo 中打开了一个 44.7 KB 的中英文 DOCX。文档正常显示，宿主加载状态在本机 793 ms 后结束。
+- demo 首页传输了 778,287 bytes；DOMContentLoaded 为 173 ms，load 事件为 176 ms。打开文档后额外传输 3,187,911 bytes，共有 21 个新增请求；观察到的 29 个请求均返回 HTTP 200。
+- 新增资源包括 6 个字体文件、按需加载的编辑器/DOCX 模块和英文 Hunspell 词典。本次打开没有请求同义词库或 Harper WASM。浏览器控制台无错误或警告。
 
 ## 授权事项
 

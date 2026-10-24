@@ -25,9 +25,13 @@ import 'edentext-vue/style.css';
 ```
 
 Copy the package's `dist/assets/*` into `/edentext-assets` (or another static
-directory) and set `asset-base-url` to that path. The package scopes its editor
-CSS and theme to the host container. `embedded` hides native file actions and
-emits `save-request` when the user presses Ctrl/Cmd+S.
+directory) and set `asset-base-url` to that path. The default package build is
+optimized for Chinese and English documents: it includes US/UK English spelling
+dictionaries, their shared English thesaurus, fonts, and the grammar-checking
+WASM loaded on demand. Other document-language tags are still preserved, but
+their spell-check data is marked unavailable. The package scopes its editor CSS
+and theme to the host container. `embedded` hides native file actions and emits
+`save-request` when the user presses Ctrl/Cmd+S.
 
 The package is browser-only, supports Vue 3, contains no React entry or React
 dependency, and is licensed under AGPL-3.0-only. See the repository guide at

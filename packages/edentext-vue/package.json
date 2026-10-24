@@ -1,6 +1,6 @@
 {
   "name": "edentext-vue",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A browser-only Vue 3 rich-text document editor with ODT, DOCX and PDF export.",
   "type": "module",
   "license": "AGPL-3.0-only",

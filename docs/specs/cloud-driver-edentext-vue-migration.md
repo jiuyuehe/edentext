@@ -137,8 +137,20 @@ Still required:
 
 ### Public npm release `edentext-vue@0.1.2`
 
-- Set the package version to `0.1.2` on the Vue branch. The package name is not currently present in the public registry.
-- Build, type, unit, demo and tarball checks passed. CLI authentication works as `xiaomin`, but the registry rejected publication with HTTP 403 because publishing requires account 2FA or a granular token configured to bypass 2FA. No version was published; interactive publishing after enabling 2FA is preferred.
+- Set the package version to `0.1.2` on the Vue branch and successfully published it to the public npm registry after completing browser-based account verification.
+
+### zh-en package-size optimization (2026-10-24)
+
+- The Vue library build now externalizes PDF font references and Harper's WebAssembly binary to the configured `assetBaseUrl`; the grammar binary remains lazy-loaded.
+- The package includes only `en` and `en-GB` Hunspell dictionaries and the shared English thesaurus. Chinese document language tags remain supported; Chinese spell-check data is not available.
+- `npm pack --dry-run` measured 16.18 MB compressed and 38.72 MB unpacked, down from the previous 35.26 MB and 112.81 MB. `dist/index.js` decreased from 18.48 MB to 1.24 MB; the grammar entry chunk decreased from 21.55 MB to 284 bytes. The WASM is still included as a separate runtime asset and fetched only when grammar checking is enabled.
+- The optimized package version is `0.1.3`; it has not been published. The existing public `0.1.2` remains unchanged.
+
+### Production Vue demo resource check
+
+- Opened a local 44.7 KB Chinese/English DOCX in the production-built Vue demo. The editor displayed the document and cleared its host loading state in 793 ms on this machine.
+- The demo landing page transferred 778,287 bytes; DOMContentLoaded was 173 ms and the load event was 176 ms. Opening the document triggered 3,187,911 additional transferred bytes across 21 requests; all 29 observed requests returned HTTP 200.
+- The additional requests included six font files, lazy editor/DOCX modules, and the English Hunspell dictionary. No thesaurus or Harper WASM request occurred during this open. Browser console had no errors or warnings.
 
 ## License gate
 

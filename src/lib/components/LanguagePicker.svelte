@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Editor } from '@tiptap/core';
-  import { LANGUAGES, NO_LANGUAGE, tagForLanguage, codeForTag, documentLangs, type DocumentLanguage, type LanguageDef } from '../storage/documentLanguage';
+  import { LANGUAGES, NO_LANGUAGE, tagForLanguage, codeForTag, documentLangs, hasDictionary, type DocumentLanguage, type LanguageDef } from '../storage/documentLanguage';
   import { uniformLanguage } from '../utils/selectionFormat';
   import { t } from '../i18n/i18n.svelte';
 
@@ -35,7 +35,7 @@
   // A language without a bundled dictionary still names the document's language; the
   // suffix says that checking stays off, as the grammar switch says for its engine.
   function label(l: LanguageDef): string {
-    return l.noDict ? `${l.label} ${t().spellPicker.noDictionary}` : l.label;
+    return hasDictionary(l.code) ? l.label : `${l.label} ${t().spellPicker.noDictionary}`;
   }
 
   function apply(raw: string) {
