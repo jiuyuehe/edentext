@@ -3,7 +3,7 @@
 English: [cloud-driver-edentext-vue-migration.md](cloud-driver-edentext-vue-migration.md)
 
 **状态：** EdenText Vue 分支和包侧桥接已实现。Cloud Driver 对话框及本地 tarball 集成已在工作区落地，生产构建通过；全项目类型检查仍有其他文件中的错误。使用真实账号的端到端检查待完成。
-**更新日期：** 2026-10-23
+**更新日期：** 2026-10-24
 
 ## 分支结构
 
@@ -11,8 +11,8 @@ Fork 中保留现有的 `main`、`main-new` 和 `foryly`。新增两条分支用
 
 | 分支 | 用途 | 当前状态 |
 |---|---|---|
-| `upstream-main` | `stffnb/edentext:main` 的纯镜像，不包含自有提交 | 当前指向 `b68972d5`，已推送到 fork |
-| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `b68972d5`，领先 8 个提交、落后 0 个 |
+| `upstream-main` | `stffnb/edentext:main` 的纯镜像，不包含自有提交 | 当前指向 `b5ee86aa`，已推送到 fork |
+| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `b5ee86aa`，领先 9 个提交、落后 0 个 |
 
 Vue 改动按顺序移植自 `e0ad1d0f` 和 `02d647d3`，并针对最新上游实现进行了适配。没有把旧分支整体合并进来。旧的 `main`、`main-new` 和 `foryly` 引用仍保留作历史参考。
 
@@ -125,6 +125,15 @@ Cloud Driver 验证结果：
 - 新上游在 Tiptap 核心中加入了同名 `textDirection` 扩展，与 EdenText 的段落级实现重复。已在正文和页眉页脚编辑器中禁用重复的核心扩展；浏览器检查不再出现重复扩展警告。
 - Vue demo 浏览器冒烟检查：通过宿主保存 API 新建并导出 DOCX，再通过 Vue 对话框重新打开该 DOCX，并导出为新版本。浏览器报告 0 个错误、0 个警告；词典和同义词库请求均返回 HTTP 200。
 - 在此基线上，`npm run check`、`npm run check:lib`、Vue demo 类型检查、`npm test`、`npm run build:demo:vue`、`npm run build:app` 和包 dry-run 全部通过。
+
+### 2026-10-24 上游同步记录
+
+- `upstream-main` 快进同步上游 5 个提交至发布提交 `b5ee86aa`（tag：`v0.12.0`），并已将纯镜像推送到 fork。
+- Vue 分支原有的 8 个 fork 提交已 rebase 到该上游发布提交，本次新增同步记录后 `vue-component` 领先 9 个提交、落后 0 个提交。
+- rebase 后重新验证 Vue 包：`npm run check`、`npm run check:lib`、demo 类型检查、`npm test`（1,962 项通过、30 项跳过）、`npm run build:demo:vue`、`npm run build:app` 和 `npm pack ./packages/edentext-vue --dry-run` 均通过。
+- 本地浏览器冒烟测试通过：在 Vue demo 中新建并导出空白 DOCX，通过文件选择器重新打开该 DOCX，再导出为新版本。浏览器错误和警告均为 0；观测到的 37 个静态资源请求全部返回 HTTP 200。
+- 上游主应用版本为 `0.12.0`；独立的 `edentext-vue` 包版本仍为 `0.1.0`。Vue 包需要单独确定合法的包版本和发布目标；主应用的发布流程不会发布 Vue 包。
+- 生产构建仍有 Lightning CSS 对 `::highlight` 的提示及大体积分块提示，但构建均成功。
 
 ## 授权事项
 

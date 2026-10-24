@@ -3,7 +3,7 @@
 中文版：[cloud-driver-edentext-vue-migration.zh-CN.md](cloud-driver-edentext-vue-migration.zh-CN.md)
 
 **Status:** The EdenText Vue branch and package bridge are implemented. The Cloud Driver dialog and local tarball integration are implemented in the working tree. Its production build passes; the full project type check reports errors in unrelated files. Authenticated end-to-end checks remain pending.
-**Updated:** 2026-10-23
+**Updated:** 2026-10-24
 
 ## Branch layout
 
@@ -11,8 +11,8 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 
 | Branch | Purpose | Current state |
 |---|---|---|
-| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `b68972d5`, pushed to the fork |
-| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `b68972d5`; 8 commits ahead, 0 behind |
+| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `b5ee86aa`, pushed to the fork |
+| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `b5ee86aa`; 9 commits ahead, 0 behind |
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
@@ -125,6 +125,15 @@ Still required:
 - The new upstream added a core `textDirection` extension with the same name as EdenText's block-scoped extension. Disabled the duplicate core extension for body and header/footer editors; the browser demo now logs no duplicate-extension warning.
 - Vue demo smoke check: created a blank DOCX through the host save API, reopened that DOCX through the Vue dialog, then exported it as a new version. The browser reported 0 errors and 0 warnings; dictionary and thesaurus requests returned HTTP 200.
 - `npm run check`, `npm run check:lib`, Vue demo typecheck, `npm test`, `npm run build:demo:vue`, `npm run build:app`, and package dry-run all passed on this baseline.
+
+### Upstream sync on 2026-10-24
+
+- Fast-forwarded `upstream-main` by 5 commits to `b5ee86aa` (`v0.12.0`) and pushed the exact mirror to the fork.
+- Rebased the 8 existing fork commits onto the release commit, then added this sync record; `vue-component` is 9 commits ahead and 0 behind `upstream/main`.
+- Verified the Vue package after the rebase: `npm run check`, `npm run check:lib`, demo typecheck, `npm test` (1,962 passed; 30 skipped), `npm run build:demo:vue`, `npm run build:app`, and `npm pack ./packages/edentext-vue --dry-run` all passed.
+- Browser smoke check on the Vue demo created and exported a blank DOCX, reopened the downloaded DOCX through the file picker, and exported it as a new version. The browser reported 0 errors and 0 warnings; all 37 observed static requests returned HTTP 200.
+- The upstream application is `0.12.0`; the independent `edentext-vue` package remains `0.1.0`. A Vue package release needs its own valid package version and publishing target; the main application release workflow does not publish the Vue package.
+- Production builds still report Lightning CSS warnings for `::highlight` and large chunks; both builds complete successfully.
 
 ## License gate
 
