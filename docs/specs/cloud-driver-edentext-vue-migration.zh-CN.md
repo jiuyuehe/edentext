@@ -12,7 +12,7 @@ Fork 中保留现有的 `main`、`main-new` 和 `foryly`。新增两条分支用
 | 分支 | 用途 | 当前状态 |
 |---|---|---|
 | `upstream-main` | `stffnb/edentext:main` 的纯镜像，不包含自有提交 | 当前指向 `b5ee86aa`，已推送到 fork |
-| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `b5ee86aa`，领先 9 个提交、落后 0 个 |
+| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `b5ee86aa`，领先 10 个提交、落后 0 个 |
 
 Vue 改动按顺序移植自 `e0ad1d0f` 和 `02d647d3`，并针对最新上游实现进行了适配。没有把旧分支整体合并进来。旧的 `main`、`main-new` 和 `foryly` 引用仍保留作历史参考。
 
@@ -86,7 +86,7 @@ npm pack ./packages/edentext-vue --pack-destination output
 pnpm install
 ```
 
-Cloud Driver 当前使用依赖路径 `file:../../../edentext/output/edentext-vue-0.1.0.tgz`。该路径只适用于当前两个仓库的相对目录布局，作为本地开发依赖使用。Tarball 属于被忽略的构建产物，因此干净的 CI checkout 或其他开发者环境中没有这个文件。团队共享或部署 Cloud Driver 改动前，应选定已批准的私有 registry 或 CI 可访问的包产物，并更新依赖清单和锁文件。在发布负责人确认包的授权路径之前，不要发布到公共 npm。
+Cloud Driver 当前使用依赖路径 `file:../../../edentext/output/edentext-vue-0.1.0.tgz`。该路径只适用于当前两个仓库的相对目录布局，作为本地开发依赖使用。Tarball 属于被忽略的构建产物，因此干净的 CI checkout 或其他开发者环境中没有这个文件。发布负责人已选择公共 npm 并指定版本 `0.1.2`；发布后应将 Cloud Driver 的依赖清单和 pnpm 锁文件改为 `edentext-vue@0.1.2`，以供团队及 CI 安装。该包仍使用 `AGPL-3.0-only`；在 SaaS 中部署前还需单独解决授权问题。
 
 ## 验证状态
 
@@ -134,6 +134,11 @@ Cloud Driver 验证结果：
 - 本地浏览器冒烟测试通过：在 Vue demo 中新建并导出空白 DOCX，通过文件选择器重新打开该 DOCX，再导出为新版本。浏览器错误和警告均为 0；观测到的 37 个静态资源请求全部返回 HTTP 200。
 - 上游主应用版本为 `0.12.0`；独立的 `edentext-vue` 包版本仍为 `0.1.0`。Vue 包需要单独确定合法的包版本和发布目标；主应用的发布流程不会发布 Vue 包。
 - 生产构建仍有 Lightning CSS 对 `::highlight` 的提示及大体积分块提示，但构建均成功。
+
+### 公共 npm 发布 `edentext-vue@0.1.2`
+
+- 已将 Vue 包版本设为 `0.1.2`。公共 registry 当前尚未查询到该包名。
+- 发布前需通过构建、类型、单测、demo 和 tarball 检查。当前机器尚未登录 npm；需由包所有者在此环境完成认证后才能发布。
 
 ## 授权事项
 

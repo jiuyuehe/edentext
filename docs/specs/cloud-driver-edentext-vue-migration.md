@@ -12,7 +12,7 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 | Branch | Purpose | Current state |
 |---|---|---|
 | `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `b5ee86aa`, pushed to the fork |
-| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `b5ee86aa`; 9 commits ahead, 0 behind |
+| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `b5ee86aa`; 10 commits ahead, 0 behind |
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
@@ -86,7 +86,7 @@ npm pack ./packages/edentext-vue --pack-destination output
 pnpm install
 ```
 
-Cloud Driver currently references `file:../../../edentext/output/edentext-vue-0.1.0.tgz`. This works for the present sibling checkout layout and is only a local development dependency. The tarball is ignored build output, so this path is not suitable for a clean CI checkout or other developers. Before sharing or deploying the Cloud Driver change, choose an approved private registry or a CI-accessible package artifact and update the manifest and lockfiles. Do not publish publicly until the release owner approves the package and licensing path.
+Cloud Driver currently references `file:../../../edentext/output/edentext-vue-0.1.0.tgz`. This works for the present sibling checkout layout and is only a local development dependency. The tarball is ignored build output, so this path is not suitable for a clean CI checkout or other developers. The release owner selected public npm and version `0.1.2`; after publication, update the Cloud Driver manifest and pnpm lockfile to `edentext-vue@0.1.2` for shared and CI installs. The package remains `AGPL-3.0-only`; SaaS deployment licensing must be resolved separately.
 
 ## Verification status
 
@@ -134,6 +134,11 @@ Still required:
 - Browser smoke check on the Vue demo created and exported a blank DOCX, reopened the downloaded DOCX through the file picker, and exported it as a new version. The browser reported 0 errors and 0 warnings; all 37 observed static requests returned HTTP 200.
 - The upstream application is `0.12.0`; the independent `edentext-vue` package remains `0.1.0`. A Vue package release needs its own valid package version and publishing target; the main application release workflow does not publish the Vue package.
 - Production builds still report Lightning CSS warnings for `::highlight` and large chunks; both builds complete successfully.
+
+### Public npm release `edentext-vue@0.1.2`
+
+- Set the package version to `0.1.2` on the Vue branch. The package name is not currently present in the public registry.
+- Build, type, unit, demo and tarball checks are required before publishing. `npm whoami` currently reports that this machine has no npm login; publish only after the owner authenticates this environment.
 
 ## License gate
 
