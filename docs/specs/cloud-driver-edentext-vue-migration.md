@@ -12,7 +12,7 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 | Branch | Purpose | Current state |
 |---|---|---|
 | `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `b5ee86aa`, pushed to the fork |
-| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `b5ee86aa`; 10 commits ahead, 0 behind |
+| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `b5ee86aa`; 11 commits ahead, 0 behind |
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
@@ -138,7 +138,7 @@ Still required:
 ### Public npm release `edentext-vue@0.1.2`
 
 - Set the package version to `0.1.2` on the Vue branch. The package name is not currently present in the public registry.
-- Build, type, unit, demo and tarball checks are required before publishing. `npm whoami` currently reports that this machine has no npm login; publish only after the owner authenticates this environment.
+- Build, type, unit, demo and tarball checks passed. CLI authentication works as `xiaomin`, but the registry rejected publication with HTTP 403 because publishing requires account 2FA or a granular token configured to bypass 2FA. No version was published; interactive publishing after enabling 2FA is preferred.
 
 ## License gate
 
