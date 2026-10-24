@@ -28,7 +28,7 @@
   import Icon from './ribbon/Icon.svelte';
   import Toggle from './Toggle.svelte';
   import CustomColorPanel from './CustomColorPanel.svelte';
-  import { LANGUAGES, NO_LANGUAGE, type DocumentLanguage } from '../storage/documentLanguage';
+  import { LANGUAGES, NO_LANGUAGE, hasDictionary, type DocumentLanguage } from '../storage/documentLanguage';
   import { hostAi, hostDictation } from '../storage/hostConfig.svelte';
   import { aiSettings, setAi, aiConfig, aiHostOff, aiInUse, aiFromHost, plainHttpEndpoint, AI_PRESETS, presetOf, DEFAULT_CONTEXT_TOKENS, type CustomCommand } from '../storage/ai.svelte';
   import { COMMANDS, commandName } from '../ai/commands';
@@ -308,7 +308,7 @@
             <div class="info"><div class="name">{t().spellPicker.label}</div><div class="desc">{t().settings.spellLanguageHint}</div></div>
             <!-- Sets only the document's default; paragraphs and runs with their own language keep it. -->
             <select value={documentLanguage} onchange={(e) => onLanguage(e.currentTarget.value)}>
-              {#each LANGUAGES as l (l.code)}<option value={l.code}>{l.noDict ? `${l.label} ${t().spellPicker.noDictionary}` : l.label}</option>{/each}
+              {#each LANGUAGES as l (l.code)}<option value={l.code}>{hasDictionary(l.code) ? l.label : `${l.label} ${t().spellPicker.noDictionary}`}</option>{/each}
               <option value={NO_LANGUAGE}>{t().spellPicker.noSpellCheck}</option>
             </select>
           </div>
