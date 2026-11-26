@@ -43,7 +43,7 @@
   import { aiEnabled } from '../../storage/ai.svelte';
   import { dictationAvailable } from '../../dictation/session.svelte';
   import { volatile } from '../../storage/docScope';
-  import { embedded, whiteLabel } from '../../embed/mode';
+  import { embedded as embedMode, whiteLabel } from '../../embed/mode';
   import { templateOffer } from '../../storage/hostConfig.svelte';
 
   let {
@@ -93,7 +93,7 @@
     aiOpen = false, onToggleAi,
     recentFiles = [], onOpenRecent, onForgetRecent,
     assetBaseUrl = '',
-    embedded = false,
+    embedded = embedMode,
   }: {
     editor: Editor | null;
     tick: number;

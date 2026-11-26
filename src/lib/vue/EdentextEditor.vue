@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { mount, unmount } from 'svelte';
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import NativeEdenTextApp from '../../App.svelte';
 import '../../styles/global.css';
 import { startNativeApp } from '../native/bootstrap';
+import { setRuntimeEmbedded } from '../embed/runtime';
 import { setRuntimeAssetBaseUrl } from '../runtimeAssets';
 import type { NativeEdenTextApi } from '../native/types';
 import type { EdentextEditorApi, EdentextEditorProps } from './types';
@@ -20,8 +20,10 @@ let nativeComponent: unknown = null;
 let nativeApi: NativeEdenTextApi | null = null;
 let publicApi: EdentextEditorApi | null = null;
 let stopNativeApp: (() => void) | null = null;
+let destroyed = false;
 
 function destroy(): void {
+  destroyed = true;
   if (nativeComponent) {
     void unmount(nativeComponent as never);
     nativeComponent = null;
@@ -44,11 +46,14 @@ function requireApi(): NativeEdenTextApi {
   return nativeApi;
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (!host.value) return;
   setRuntimeAssetBaseUrl(props.assetBaseUrl);
+  setRuntimeEmbedded(props.embedded === true);
   stopNativeApp = startNativeApp(host.value);
   try {
+    const { default: NativeEdenTextApp } = await import('../../App.svelte');
+    if (destroyed) return;
     nativeComponent = mount(NativeEdenTextApp, {
       target: host.value,
       props: {

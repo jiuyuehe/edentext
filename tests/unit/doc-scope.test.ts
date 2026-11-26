@@ -23,6 +23,23 @@ describe('pickSlot', () => {
 });
 
 describe('deleteDocument', () => {
+  it('keeps a framework-embedded document only in memory', async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.resetModules();
+    const { setRuntimeEmbedded } = await import('../../src/lib/embed/runtime');
+    setRuntimeEmbedded(true);
+    const scope = await import('../../src/lib/storage/docScope');
+    scope.docStore.setItem(scope.docKey('edentext-doc-name'), 'host-owned.docx');
+
+    expect(scope.volatile).toBe(true);
+    expect(scope.docStore).not.toBe(localStorage);
+    expect(scope.docStore.getItem(scope.docKey('edentext-doc-name'))).toBe('host-owned.docx');
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+    setRuntimeEmbedded(false);
+  });
+
   it('drops the first document by its registered names and another by its suffix', async () => {
     localStorage.clear();
     sessionStorage.setItem('edentext-tab-doc', 'd9');

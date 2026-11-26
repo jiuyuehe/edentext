@@ -72,7 +72,7 @@ function contentSecurityPolicy(): Plugin {
       order: 'post',
       handler(html) {
         const hashes = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)]
-          .map(([, body]) => `'sha256-${createHash('sha256').update(body).digest('base64')}'`);
+          .map(([, body]) => `'sha256-${createHash('sha256').update(body.replace(/\r\n?/g, '\n')).digest('base64')}'`);
         const policy = [
           "default-src 'self'",
           `script-src 'self' 'wasm-unsafe-eval' ${hashes.join(' ')}`,

@@ -85,4 +85,3 @@ export async function setLocale(next: Locale, keep = true): Promise<void> {
     languageTarget.dir = isRtlLocale(next) ? 'rtl' : 'ltr';
   } else reflectLocale(next);
 }
-}

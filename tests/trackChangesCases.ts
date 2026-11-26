@@ -14,7 +14,13 @@ const settled = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(
 export function open(content: unknown) {
   const element = document.createElement('div');
   document.body.appendChild(element);
-  return new Editor({ element, extensions, content: content as string });
+  return new Editor({
+    element,
+    extensions,
+    content: content as string,
+    enableCoreExtensions: { textDirection: false },
+    editorProps: { handleScrollToSelection: () => true },
+  });
 }
 
 export const select = (e: Editor, from: number, to = from) =>

@@ -70,7 +70,7 @@ check(/refusing/.test(refused) && existsSync(join(project, 'src/app.js')), 'eden
 run('npx vite build --logLevel error', project);
 
 // The dev server serves the editor under /edentext/, with a 404 past its files.
-const dev = spawn('npx', ['vite', '--port', String(PORT + 1), '--strictPort'], { cwd: project, stdio: 'ignore', detached: true });
+const dev = spawn(process.execPath, [join(project, 'node_modules/vite/bin/vite.js'), '--port', String(PORT + 1), '--strictPort'], { cwd: project, stdio: 'ignore', detached: process.platform !== 'win32' });
 const devUrl = `http://localhost:${PORT + 1}/edentext/`;
 let devOk = false;
 for (let i = 0; i < 60 && !devOk; i++) {
@@ -79,7 +79,8 @@ for (let i = 0; i < 60 && !devOk; i++) {
 }
 const devConfig = await fetch(`${devUrl}embed.config.json`).then((r) => r.json()).catch(() => null);
 const devMissing = await fetch(`${devUrl}dictionaries/xx/xx.aff`).then((r) => r.status).catch(() => 0);
-process.kill(-dev.pid);
+if (process.platform === 'win32') dev.kill();
+else process.kill(-dev.pid);
 check(devOk && devConfig?.origins?.join() === 'self' && devMissing === 404, `vite dev serves the editor under /edentext/ (${devOk}, ${JSON.stringify(devConfig)}, ${devMissing})`);
 
 const out = join(project, 'dist');

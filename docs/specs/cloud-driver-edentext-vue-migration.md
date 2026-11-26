@@ -2,8 +2,8 @@
 
 中文版：[cloud-driver-edentext-vue-migration.zh-CN.md](cloud-driver-edentext-vue-migration.zh-CN.md)
 
-**Status:** The EdenText Vue branch and package bridge are implemented. The Cloud Driver dialog and local tarball integration are implemented in the working tree. Its production build passes; the full project type check reports errors in unrelated files. Authenticated end-to-end checks remain pending.
-**Updated:** 2026-10-24
+**Status:** The EdenText Vue branch and package bridge are implemented and synchronized to upstream `v0.15.0`. Native and Vue builds, the full unit suite, package integration checks, and local browser validation pass. Cloud Driver integration is implemented in the working tree; authenticated cloud end-to-end checks remain pending.
+**Updated:** 2026-11-27
 
 ## Branch layout
 
@@ -11,8 +11,8 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 
 | Branch | Purpose | Current state |
 |---|---|---|
-| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `b5ee86aa`, pushed to the fork |
-| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `b5ee86aa`; 11 commits ahead, 0 behind |
+| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `8731355c` (`v0.15.0`), pushed to the fork |
+| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `8731355c`; 12 commits ahead, 0 behind before the sync maintenance commit |
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
@@ -95,9 +95,11 @@ Completed in EdenText:
 - `npm run check`
 - `npm run check:lib`
 - `npm --prefix examples/edentext-vue-demo run typecheck`
-- `npm test` — 179 files passed, 5 skipped; 1,962 tests passed, 30 skipped
+- `npm test` — 183 files passed, 6 skipped; 2,466 tests passed, 32 skipped, 4 todo
+- `npm run test:npm`
 - `npm run build:demo:vue`
 - `npm run build:app`
+- `npm run build:lib`
 - `npm pack ./packages/edentext-vue --dry-run`
 
 Verification results in Cloud Driver:
@@ -109,7 +111,7 @@ Still required:
 
 - Browser checks using real cloud credentials: edit and upload a new version, create and upload a template, retry after failure, switch documents quickly, verify no browser download on host save, and open/close the standalone Tauri window.
 - Check runtime requests and fonts under the deployed web base path and the Tauri `/` base path.
-- Inspect representative DOCX files containing tables, images, headers/footers and page layout. Record any import/export differences before rollout.
+- Expand the local DOCX corpus beyond the validated text, table, header/footer, and page-layout cases before rollout; record any import/export differences.
 
 ### Upstream sync on 2026-10-19
 
@@ -151,6 +153,21 @@ Still required:
 - Opened a local 44.7 KB Chinese/English DOCX in the production-built Vue demo. The editor displayed the document and cleared its host loading state in 793 ms on this machine.
 - The demo landing page transferred 778,287 bytes; DOMContentLoaded was 173 ms and the load event was 176 ms. Opening the document triggered 3,187,911 additional transferred bytes across 21 requests; all 29 observed requests returned HTTP 200.
 - The additional requests included six font files, lazy editor/DOCX modules, and the English Hunspell dictionary. No thesaurus or Harper WASM request occurred during this open. Browser console had no errors or warnings.
+
+### Upstream sync on 2026-11-27
+
+- Fetched 390 upstream commits and fast-forwarded both `upstream-main` and `upstream/main` to `8731355c` (`v0.15.0`). The pure mirror was pushed to the fork.
+- Rebased the 12 existing Vue branch commits onto upstream `main`; before this maintenance record the branch is 12 commits ahead and 0 behind. Existing `main`, `main-new`, `foryly`, the exact restore stash, and unrelated local work were preserved.
+- Reconciled local compatibility work with upstream's three-language-slot DOCX model, newer RTL/revision handling, dynamic locale assets, iframe embedding, and page geometry. Local CJK language inference remains integrated. Rebase-only syntax conflicts were resolved in the editor, ribbon, i18n, theme, and test setup.
+- Fixed the Windows npm package integration runner to start the installed Vite CLI through Node and to terminate its process directly instead of using POSIX-only process-group cleanup.
+- Normalized CSP inline-script source to LF before hashing. Browser HTML parsing normalizes CRLF, so the previous Windows hash calculation could block the production startup script.
+- Embedded Ctrl/Cmd+S and the modern toolbar save button now notify both the Vue host callback and the native iframe bridge.
+- The Vue wrapper now sets the runtime embedded flag before dynamically importing `App.svelte`. Embedded document data therefore stays in memory and does not write document-level localStorage or sessionStorage entries. The app became a lazy chunk; `dist/index.js` is about 3.61 kB, with the main application in a separate lazy chunk.
+- Added a regression test for framework-embedded storage isolation. Final verification: `npm run check`, `npm run check:lib`, demo typecheck, `npm test` (183 files passed, 6 skipped; 2,466 passed, 32 skipped, 4 todo), `npm run test:npm`, `npm run build:demo:vue`, `npm run build:app`, and `npm run build:lib` passed.
+- Vue dev browser check with a real DOCX: ready in 3,686 ms; 1,016 characters across 3 pages; no horizontal overflow; English/Chinese locale switching passed; Ctrl+S exported an 18,566-byte DOCX that reopened with the inserted marker intact; header/footer corpus rendered correctly. No CSP violation, browser error, or document-level storage key was observed.
+- Correctly scoped production Vue preview: landing-page resources were 490,003 bytes uncompressed; opening the editor fetched 6,746,514 bytes of lazy resources; the real DOCX was ready in 3,627 ms. All observed requests returned HTTP 200, with no browser error or document-level storage key. Language, ribbon, and page UI preferences still use localStorage by design.
+- The `edentext-vue@0.1.3` package remains unpublished; public `0.1.2` is unchanged. The stale earlier `0.1.3` tarball must not be published without rebuilding. Production builds still report large-chunk warnings.
+- Runtime asset-base URL and i18n target are module singletons. Validation covers the normal single-editor Cloud Driver dialog; multiple simultaneously mounted Vue editors still need separate verification.
 
 ## License gate
 

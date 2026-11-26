@@ -1,7 +1,9 @@
 // AGPL-3.0-only with an additional term under section 7(b): see NOTICE.md.
-// `?embed=1`: the app runs inside another application's iframe, which owns the file.
+import { runtimeEmbedded } from './runtime';
+
+// `?embed=1`, or a framework host's embedded prop: another application owns the file.
 // A module of its own, since docScope.ts reads it while the import graph is walked.
-export const embedded = (() => {
+export const embedded = runtimeEmbedded() || (() => {
   try { return new URLSearchParams(location.search).has('embed'); } catch { return false; }
 })();
 

@@ -154,7 +154,6 @@ export function applyTheme(mode: ThemeMode, target: HTMLElement = document.docum
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', THEME_BG[resolved]));
   }
 }
-}
 
 // The chrome's accent colour; 'slate' is the logo's and stays the stored-nothing default.
 // A custom accent is stored as its own '#rrggbb'.

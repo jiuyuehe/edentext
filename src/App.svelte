@@ -1446,8 +1446,10 @@
   }
 
   function requestSave(): void {
-    if (embedded) onSaveRequest?.();
-    else void handleSave();
+    if (embedded) {
+      onSaveRequest?.();
+      notify('saveRequest');
+    } else void handleSave();
   }
 
   // The Vue wrapper receives this object after the real native editor exists. The
@@ -1466,7 +1468,7 @@
       replaceDocument,
       save: async () => requestSave(),
       saveAs: (format) => handleSaveAs(format),
-      exportDocument: (format) => format === 'pdf' ? handleExportPdf() : handleSaveAs(format),
+      exportDocument: async (format) => format === 'pdf' ? handleExportPdf() : handleSaveAs(format),
       exportDocumentBytes,
       setAuthor,
       setUiLocale,
@@ -2300,7 +2302,7 @@
         <!-- Single Save / Export button → ODT, Raster PDF, or Vector PDF (beta). -->
         <div class="save-split" use:exportMenuClickOutside>
           <div class="save-control">
-            <button class="file-action-btn save-main" data-cmd="save" onclick={handleSave} disabled={!editor || pdfBusy} title={`${t().app.save} (${withShortcut('Ctrl+S')})`}>
+            <button class="file-action-btn save-main" data-cmd="save" onclick={requestSave} disabled={!editor || pdfBusy} title={`${t().app.save} (${withShortcut('Ctrl+S')})`}>
               {@render saveIcon()}
             </button>
             <button

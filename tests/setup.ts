@@ -17,3 +17,15 @@ if (!globalThis.localStorage) {
 // jsdom has no alert(); a load failure reporting through one would print
 // "Not implemented" from every suite that builds a spell-checking editor.
 globalThis.alert = () => {};
+
+// jsdom omits Range geometry; pagination runs in animation-frame callbacks after
+// individual assertions finish, so an absent method surfaces as an unhandled error.
+if (typeof Range !== 'undefined') {
+  if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => [] as DOMRectList;
+  if (!Range.prototype.getBoundingClientRect) {
+    Range.prototype.getBoundingClientRect = () => ({
+      x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0,
+      toJSON() { return this; },
+    }) as DOMRect;
+  }
+}

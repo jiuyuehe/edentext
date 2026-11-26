@@ -689,7 +689,6 @@ import { EMPTY_PAGE_DECOR, type PageDecor } from '../storage/pageDecor';
     while (p < pageBoxes.length && pageBoxes[p].top <= y) p++;
     return Math.max(1, Math.min(numPages, p));
   }
-  }
 
   // --- Right-click context menu (text menu, spelling suggestions merged in) ---
   let ctxMenu = $state<{ top: number; left: number; items: MenuEntry[] } | null>(null);
