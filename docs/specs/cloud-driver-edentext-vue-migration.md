@@ -12,7 +12,7 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 | Branch | Purpose | Current state |
 |---|---|---|
 | `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `8731355c` (`v0.15.0`), pushed to the fork |
-| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `8731355c`; 12 commits ahead, 0 behind before the sync maintenance commit |
+| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `8731355c`; 12 commits ahead, 0 behind before the 2026-11-27 maintenance commits |
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
@@ -158,7 +158,7 @@ Still required:
 
 - Fetched 390 upstream commits and fast-forwarded both `upstream-main` and `upstream/main` to `8731355c` (`v0.15.0`). The pure mirror was pushed to the fork.
 - Rebased the 12 existing Vue branch commits onto upstream `main`; before this maintenance record the branch is 12 commits ahead and 0 behind. Existing `main`, `main-new`, `foryly`, the exact restore stash, and unrelated local work were preserved.
-- Reconciled local compatibility work with upstream's three-language-slot DOCX model, newer RTL/revision handling, dynamic locale assets, iframe embedding, and page geometry. Local CJK language inference remains integrated. Rebase-only syntax conflicts were resolved in the editor, ribbon, i18n, theme, and test setup.
+- Reconciled restored local compatibility work in the working tree with upstream's three-language-slot DOCX model, newer RTL/revision handling, dynamic locale assets, iframe embedding, and page geometry. Local CJK inference and TOC-style fixes remain uncommitted and were adapted to the new APIs; the rebase-only syntax conflicts in the editor, ribbon, i18n, theme, and test setup are included in this synchronization commit.
 - Fixed the Windows npm package integration runner to start the installed Vite CLI through Node and to terminate its process directly instead of using POSIX-only process-group cleanup.
 - Normalized CSP inline-script source to LF before hashing. Browser HTML parsing normalizes CRLF, so the previous Windows hash calculation could block the production startup script.
 - Embedded Ctrl/Cmd+S and the modern toolbar save button now notify both the Vue host callback and the native iframe bridge.

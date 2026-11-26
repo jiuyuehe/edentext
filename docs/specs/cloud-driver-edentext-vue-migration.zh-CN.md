@@ -12,7 +12,7 @@ Fork 中保留现有的 `main`、`main-new` 和 `foryly`。新增两条分支用
 | 分支 | 用途 | 当前状态 |
 |---|---|---|
 | `upstream-main` | `stffnb/edentext:main` 的纯镜像，不包含自有提交 | 当前指向 `8731355c`（`v0.15.0`），已推送到 fork |
-| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `8731355c`；同步维护提交前领先 12 个提交、落后 0 个 |
+| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `8731355c`；2026-11-27 维护提交前领先 12 个提交、落后 0 个 |
 
 Vue 改动按顺序移植自 `e0ad1d0f` 和 `02d647d3`，并针对最新上游实现进行了适配。没有把旧分支整体合并进来。旧的 `main`、`main-new` 和 `foryly` 引用仍保留作历史参考。
 
@@ -158,7 +158,7 @@ Cloud Driver 验证结果：
 
 - 拉取上游 390 个提交，并将 `upstream-main` 和 `upstream/main` 快进到 `8731355c`（`v0.15.0`）；纯镜像已推送到 fork。
 - 将 Vue 分支原有的 12 个提交 rebase 到上游 `main`；本次维护记录提交前，分支领先 12 个提交、落后 0 个。现有 `main`、`main-new`、`foryly`、精确恢复 stash 和其他本地工作均保留。
-- 将本地兼容改动与上游的三语言槽 DOCX 模型、新版 RTL/修订处理、动态语言资源、iframe 嵌入和页面几何实现协调；保留并接入本地 CJK 语言推断。已解决 rebase 在编辑器、ribbon、i18n、主题和测试初始化中造成的语法冲突。
+- 将工作区中恢复的本地兼容改动与上游的三语言槽 DOCX 模型、新版 RTL/修订处理、动态语言资源、iframe 嵌入和页面几何实现协调。本地 CJK 推断和 TOC 样式修复仍未提交，并已适配新 API；编辑器、ribbon、i18n、主题和测试初始化中的 rebase 语法冲突修复包含在本次同步提交中。
 - 修复 Windows 下 npm 包集成测试：通过 Node 启动已安装的 Vite CLI，并在 Windows 直接结束该进程，不再使用仅适用于 POSIX 的进程组清理方式。
 - CSP 内联脚本哈希计算前先将源码统一为 LF。浏览器解析 HTML 时会规范化 CRLF，之前的 Windows 哈希计算可能阻断生产环境启动脚本。
 - 嵌入模式下的 Ctrl/Cmd+S 和现代工具栏保存按钮现在同时通知 Vue 宿主回调与原生 iframe 桥接。
