@@ -143,7 +143,7 @@ async function handleSave(): Promise<void> {
     const bytes = await editorApi.value.exportDocumentBytes('docx');
     const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     const fileName = isCreateMode.value ? createFileName.value || '新建文档.docx' : currentFile.value?.name || '新建文档.docx';
-    downloadDocx(new Blob([bytes], { type: mimeType }), fileName);
+    downloadDocx(new Blob([bytes.slice().buffer], { type: mimeType }), fileName);
     if (isCreateMode.value) console.info('[demo cloud upload]', { fileName, parentId: createParentId.value, scope: createScope.value });
     saveSuccess.value = true;
     emit('saved', isCreateMode.value ? 'created' : 'version');

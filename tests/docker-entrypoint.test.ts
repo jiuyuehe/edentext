@@ -17,7 +17,12 @@ function start(env: Record<string, string>) {
   mkdirSync(join(dir, 'nginx/conf.d'), { recursive: true });
   writeFileSync(join(dir, 'nginx/conf.d/default.conf'), SITE);
   const run = spawnSync('sh', [script], {
-    env: { PATH: process.env.PATH, EDENTEXT_HTML_DIR: join(dir, 'html'), EDENTEXT_NGINX_DIR: join(dir, 'nginx'), ...env },
+    env: {
+      PATH: process.env.PATH,
+      EDENTEXT_HTML_DIR: join(dir, 'html').replaceAll('\\', '/'),
+      EDENTEXT_NGINX_DIR: join(dir, 'nginx').replaceAll('\\', '/'),
+      ...env,
+    },
     encoding: 'utf8',
   });
   const proxies = join(dir, 'nginx/edentext.d/proxy.conf');

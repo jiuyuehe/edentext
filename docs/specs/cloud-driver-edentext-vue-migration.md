@@ -11,8 +11,8 @@ The fork keeps the existing `main`, `main-new` and `foryly` branches unchanged. 
 
 | Branch | Purpose | Current state |
 |---|---|---|
-| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `8731355c` (`v0.15.0`), pushed to the fork |
-| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `8731355c`; 12 commits ahead, 0 behind before the 2026-11-27 maintenance commits |
+| `upstream-main` | Exact mirror of `stffnb/edentext:main`; no local commits | At `204a53bd`, pushed to the fork |
+| `vue-component` | Vue host and package changes maintained separately from upstream | Based on `upstream/main` at `204a53bd`; 15 commits ahead, 0 behind after the follow-up maintenance commit |
 
 The Vue changes were ported in order from `e0ad1d0f` and `02d647d3`, then reconciled against the latest upstream implementation. Old branch work was not merged wholesale. The old `main`, `main-new` and `foryly` refs remain available as historical references.
 
@@ -95,7 +95,7 @@ Completed in EdenText:
 - `npm run check`
 - `npm run check:lib`
 - `npm --prefix examples/edentext-vue-demo run typecheck`
-- `npm test` — 183 files passed, 6 skipped; 2,466 tests passed, 32 skipped, 4 todo
+- `npm test` — 189 files passed, 6 skipped; 2,643 tests passed, 32 skipped, 4 todo
 - `npm run test:npm`
 - `npm run build:demo:vue`
 - `npm run build:app`
@@ -156,16 +156,17 @@ Still required:
 
 ### Upstream sync on 2026-11-27
 
-- Fetched 390 upstream commits and fast-forwarded both `upstream-main` and `upstream/main` to `8731355c` (`v0.15.0`). The pure mirror was pushed to the fork.
-- Rebased the 12 existing Vue branch commits onto upstream `main`; before this maintenance record the branch is 12 commits ahead and 0 behind. Existing `main`, `main-new`, `foryly`, the exact restore stash, and unrelated local work were preserved.
-- Reconciled restored local compatibility work in the working tree with upstream's three-language-slot DOCX model, newer RTL/revision handling, dynamic locale assets, iframe embedding, and page geometry. Local CJK inference and TOC-style fixes remain uncommitted and were adapted to the new APIs; the rebase-only syntax conflicts in the editor, ribbon, i18n, theme, and test setup are included in this synchronization commit.
+- The initial synchronization fetched 390 upstream commits through `8731355c`. A follow-up fetch on the same day added 373 more commits through `204a53bd`; local and fork `upstream-main` now both point to `204a53bd`.
+- Rebased all 14 Vue branch commits onto `204a53bd` and added this follow-up maintenance record; the branch is now 15 commits ahead and 0 behind. Existing `main`, `main-new`, `foryly`, both exact restore stashes, and unrelated local work were preserved.
+- Resolved new conflicts from upstream collaboration, layout, host-template, script, and dependency changes while preserving the Vue package, runtime asset scoping, and native bridge. Restored local CJK inference and TOC-style fixes remain uncommitted and were adapted to the new APIs.
 - Fixed the Windows npm package integration runner to start the installed Vite CLI through Node and to terminate its process directly instead of using POSIX-only process-group cleanup.
 - Normalized CSP inline-script source to LF before hashing. Browser HTML parsing normalizes CRLF, so the previous Windows hash calculation could block the production startup script.
 - Embedded Ctrl/Cmd+S and the modern toolbar save button now notify both the Vue host callback and the native iframe bridge.
 - The Vue wrapper now sets the runtime embedded flag before dynamically importing `App.svelte`. Embedded document data therefore stays in memory and does not write document-level localStorage or sessionStorage entries. The app became a lazy chunk; `dist/index.js` is about 3.61 kB, with the main application in a separate lazy chunk.
-- Added a regression test for framework-embedded storage isolation. Final verification: `npm run check`, `npm run check:lib`, demo typecheck, `npm test` (183 files passed, 6 skipped; 2,466 passed, 32 skipped, 4 todo), `npm run test:npm`, `npm run build:demo:vue`, `npm run build:app`, and `npm run build:lib` passed.
+- Added a regression test for framework-embedded storage isolation. Scoped the Vue demo typecheck with its own TypeScript config and made its DOCX Blob copy explicitly ArrayBuffer-backed for TypeScript 6. Normalized temporary POSIX paths in the Docker entrypoint test so Windows `awk` does not consume backslashes as escapes.
+- Final verification passed: `npm run check`, `npm run check:lib`, demo typecheck, `npm test` (189 files passed, 6 skipped; 2,643 passed, 32 skipped, 4 todo), `npm run test:npm`, `npm run build:demo:vue`, `npm run build:app`, and `npm run build:lib`. The rebuilt package entry is about 3.61 kB, with a 1,729.80 kB lazy application chunk; the demo application chunk is about 1.35 MB.
 - Vue dev browser check with a real DOCX: ready in 3,686 ms; 1,016 characters across 3 pages; no horizontal overflow; English/Chinese locale switching passed; Ctrl+S exported an 18,566-byte DOCX that reopened with the inserted marker intact; header/footer corpus rendered correctly. No CSP violation, browser error, or document-level storage key was observed.
-- Correctly scoped production Vue preview: landing-page resources were 490,003 bytes uncompressed; opening the editor fetched 6,746,514 bytes of lazy resources; the real DOCX was ready in 3,627 ms. All observed requests returned HTTP 200, with no browser error or document-level storage key. Language, ribbon, and page UI preferences still use localStorage by design.
+- Cold-cache production Vue check with a real DOCX: the landing page transferred 129,387 bytes, DOMContentLoaded was 35 ms, and the load event was 37 ms; no editor application chunk was preloaded. The document was ready in 1,236 ms with 1,016 characters across 3 pages. Across landing, import, and reopen, 35 same-origin resource entries transferred 4,055,822 bytes, including six fonts, lazy editor/DOCX modules, and the English dictionary; every observed response succeeded. Ctrl+S exported a DOCX that reopened in 844 ms with the edit marker intact. There were no CSP violations, browser errors, failed requests, or document-level storage keys; UI preferences still use localStorage by design.
 - The `edentext-vue@0.1.3` package remains unpublished; public `0.1.2` is unchanged. The stale earlier `0.1.3` tarball must not be published without rebuilding. Production builds still report large-chunk warnings.
 - Runtime asset-base URL and i18n target are module singletons. Validation covers the normal single-editor Cloud Driver dialog; multiple simultaneously mounted Vue editors still need separate verification.
 

@@ -11,8 +11,8 @@ Fork 中保留现有的 `main`、`main-new` 和 `foryly`。新增两条分支用
 
 | 分支 | 用途 | 当前状态 |
 |---|---|---|
-| `upstream-main` | `stffnb/edentext:main` 的纯镜像，不包含自有提交 | 当前指向 `8731355c`（`v0.15.0`），已推送到 fork |
-| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `8731355c`；2026-11-27 维护提交前领先 12 个提交、落后 0 个 |
+| `upstream-main` | `stffnb/edentext:main` 的纯镜像，不包含自有提交 | 当前指向 `204a53bd`，已推送到 fork |
+| `vue-component` | 独立维护 Vue 宿主和包功能 | 基于 `upstream/main` 的 `204a53bd`；后续维护提交后领先 15 个提交、落后 0 个 |
 
 Vue 改动按顺序移植自 `e0ad1d0f` 和 `02d647d3`，并针对最新上游实现进行了适配。没有把旧分支整体合并进来。旧的 `main`、`main-new` 和 `foryly` 引用仍保留作历史参考。
 
@@ -95,7 +95,7 @@ EdenText 中已完成：
 - `npm run check`
 - `npm run check:lib`
 - `npm --prefix examples/edentext-vue-demo run typecheck`
-- `npm test`：183 个测试文件通过、6 个跳过；2,466 项测试通过、32 项跳过、4 项 todo
+- `npm test`：189 个测试文件通过、6 个跳过；2,643 项测试通过、32 项跳过、4 项 todo
 - `npm run test:npm`
 - `npm run build:demo:vue`
 - `npm run build:app`
@@ -156,16 +156,17 @@ Cloud Driver 验证结果：
 
 ### 2026-11-27 上游同步记录
 
-- 拉取上游 390 个提交，并将 `upstream-main` 和 `upstream/main` 快进到 `8731355c`（`v0.15.0`）；纯镜像已推送到 fork。
-- 将 Vue 分支原有的 12 个提交 rebase 到上游 `main`；本次维护记录提交前，分支领先 12 个提交、落后 0 个。现有 `main`、`main-new`、`foryly`、精确恢复 stash 和其他本地工作均保留。
-- 将工作区中恢复的本地兼容改动与上游的三语言槽 DOCX 模型、新版 RTL/修订处理、动态语言资源、iframe 嵌入和页面几何实现协调。本地 CJK 推断和 TOC 样式修复仍未提交，并已适配新 API；编辑器、ribbon、i18n、主题和测试初始化中的 rebase 语法冲突修复包含在本次同步提交中。
+- 首次同步拉取上游 390 个提交至 `8731355c`。同日再次拉取又新增 373 个提交至 `204a53bd`；本地和 fork 的 `upstream-main` 现均指向 `204a53bd`。
+- 将 Vue 分支全部 14 个提交 rebase 到 `204a53bd`，并增加本次后续维护记录；分支现领先 15 个提交、落后 0 个。现有 `main`、`main-new`、`foryly`、两个精确恢复 stash 和其他本地工作均保留。
+- 解决上游协作、布局、宿主模板、脚本和依赖变化带来的新冲突，同时保留 Vue 包、运行时资源作用域和原生桥接。恢复的本地 CJK 推断和 TOC 样式修复仍未提交，并已适配新 API。
 - 修复 Windows 下 npm 包集成测试：通过 Node 启动已安装的 Vite CLI，并在 Windows 直接结束该进程，不再使用仅适用于 POSIX 的进程组清理方式。
 - CSP 内联脚本哈希计算前先将源码统一为 LF。浏览器解析 HTML 时会规范化 CRLF，之前的 Windows 哈希计算可能阻断生产环境启动脚本。
 - 嵌入模式下的 Ctrl/Cmd+S 和现代工具栏保存按钮现在同时通知 Vue 宿主回调与原生 iframe 桥接。
 - Vue 包装器现在会在动态导入 `App.svelte` 前设置运行时 embedded 标志。因此嵌入文档仅保存在内存中，不写入文档级 localStorage 或 sessionStorage。应用已拆为懒加载分块：`dist/index.js` 约 3.61 kB，主应用位于独立懒加载分块。
-- 新增框架嵌入模式存储隔离回归测试。最终验证通过：`npm run check`、`npm run check:lib`、demo 类型检查、`npm test`（183 个文件通过、6 个跳过；2,466 项通过、32 项跳过、4 项 todo）、`npm run test:npm`、`npm run build:demo:vue`、`npm run build:app` 和 `npm run build:lib`。
+- 新增框架嵌入模式存储隔离回归测试。Vue demo 现在使用独立 TypeScript 配置做类型检查，并显式复制为 ArrayBuffer 支持的 DOCX Blob 数据以兼容 TypeScript 6。Docker 入口测试会先把临时路径规范为 POSIX 斜杠，避免 Windows `awk` 将反斜杠当作转义符。
+- 最终验证通过：`npm run check`、`npm run check:lib`、demo 类型检查、`npm test`（189 个文件通过、6 个跳过；2,643 项通过、32 项跳过、4 项 todo）、`npm run test:npm`、`npm run build:demo:vue`、`npm run build:app` 和 `npm run build:lib`。重建后的包入口约 3.61 kB，懒加载应用分块为 1,729.80 kB；demo 应用分块约 1.35 MB。
 - Vue 开发环境真实 DOCX 浏览器检查：3,686 ms 就绪；1,016 个字符、3 页；无横向溢出；中英文界面切换通过；Ctrl+S 导出 18,566 bytes DOCX，重新打开后插入标记保留；页眉页脚样例渲染正确。未观察到 CSP 违规、浏览器错误或文档级存储键。
-- 正确限定目录后的 Vue 生产预览：首页资源 490,003 bytes（未压缩）；打开编辑器时加载 6,746,514 bytes 懒加载资源；真实 DOCX 在 3,627 ms 就绪。所有观测请求均返回 HTTP 200，无浏览器错误或文档级存储键。语言、ribbon 和页面 UI 偏好仍按设计写入 localStorage。
+- 冷缓存生产版 Vue 真实 DOCX 检查：首页传输 129,387 bytes，DOMContentLoaded 35 ms、load 事件 37 ms，且未预加载编辑器应用分块。文档在 1,236 ms 就绪，共 1,016 个字符、3 页。首页、导入和重开共观测到 35 个同源资源条目，传输 4,055,822 bytes，包括 6 个字体、懒加载编辑器/DOCX 模块和英文词典；所有响应均成功。Ctrl+S 导出的 DOCX 在 844 ms 后重开，编辑标记仍保留。未观察到 CSP 违规、浏览器错误、失败请求或文档级存储键；UI 偏好仍按设计写入 localStorage。
 - `edentext-vue@0.1.3` 尚未发布；公共版本 `0.1.2` 保持不变。此前生成的 `0.1.3` tarball 已过期，未经重新构建不得发布。生产构建仍会提示大体积分块。
 - 运行时资源 base URL 和 i18n 目标为模块级单例。当前验证覆盖常规单编辑器 Cloud Driver 对话框；多个 Vue 编辑器同时挂载仍需单独验证。
 
